@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="deep-space">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>腾昇智和 · 短视频智能体技术演示</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — 深空原子朋克
+   ═══════════════════════════════════════════════════ */
+:root {
+  --space-deep: #050a14;
+  --space-panel: #0a1228;
+  --space-card: #0d1630;
+  --space-elevated: #111d3a;
+  --glow-warm: #e89840;
+  --glow-cool: #6088d8;
+  --glow-aurora: #9880d0;
+  --glow-green: #40c880;
+  --glow-red: #d84060;
+  --glow-cyan: #40b8d8;
+  --text-primary: #e0e0e8;
+  --text-secondary: #8890a8;
+  --text-muted: #505870;
+  --border-subtle: rgba(96, 136, 216, 0.12);
+  --border-glow: rgba(232, 152, 64, 0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glow-warm) var(--space-deep);
+}
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--space-deep);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  line-height: 1.7;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--space-deep); }
+::-webkit-scrollbar-thumb { background: var(--glow-warm); border-radius: 3px; }
+
+/* ── Canvas Background ── */
+#starfield {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none;
+}
+
+/* ── Navigation ── */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(5, 10, 20, 0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 40px;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: transform 0.3s;
+}
+.nav.hidden { transform: translateY(-100%); }
+.nav-brand {
+  font-family: 'ZCOOL QingKe HuangYou', cursive;
+  font-size: 18px;
+  color: var(--glow-warm);
+  letter-spacing: 2px;
+}
+.nav-links { display: flex; gap: 6px; }
+.nav-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  transition: all 0.25s;
+  font-weight: 500;
+}
+.nav-links a:hover, .nav-links a.active {
+  color: var(--glow-warm);
+  background: rgba(232, 152, 64, 0.08);
+}
+
+/* ── Sections ── */
+.section {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 120px 60px 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* ── Hero ── */
+.hero {
+  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 56px;
+}
+.hero-icon {
+  font-size: 72px;
+  margin-bottom: 20px;
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.hero h1 {
+  font-family: 'ZCOOL QingKe HuangYou', cursive;
+  font-size: 64px;
+  background: linear-gradient(135deg, var(--glow-warm), var(--glow-aurora), var(--glow-cool));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+  letter-spacing: 8px;
+}
+.hero .subtitle {
+  font-size: 22px;
+  color: var(--text-secondary);
+  margin-bottom: 40px;
+  font-weight: 300;
+}
+.hero .tech-stack {
+  display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+}
+.tech-badge {
+  padding: 8px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid;
+  background: rgba(10, 18, 40, 0.6);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s;
+}
+.tech-badge:hover { transform: translateY(-2px); }
+.tech-badge.warm { border-color: var(--glow-warm); color: var(--glow-warm); }
+.tech-badge.cool { border-color: var(--glow-cool); color: var(--glow-cool); }
+.tech-badge.aurora { border-color: var(--glow-aurora); color: var(--glow-aurora); }
+.tech-badge.green { border-color: var(--glow-green); color: var(--glow-green); }
+.tech-badge.cyan { border-color: var(--glow-cyan); color: var(--glow-cyan); }
+
+.scroll-hint {
+  margin-top: 60px;
+  color: var(--text-muted);
+  font-size: 13px;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+.scroll-hint .arrow {
+  display: block; font-size: 24px; margin-top: 8px;
+  animation: bounce 1.5s ease-in-out infinite;
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+
+/* ── Section Headers ── */
+.section-header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+.section-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--glow-warm);
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  opacity: 0.7;
+}
+.section-title {
+  font-family: 'ZCOOL QingKe HuangYou', cursive;
+  font-size: 42px;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--glow-warm), var(--glow-cool));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.section-desc {
+  color: var(--text-secondary);
+  font-size: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* ── Cards ── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.card {
+  background: linear-gradient(135deg, var(--space-panel), var(--space-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 28px;
+  transition: all 0.35s;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--glow-warm), transparent);
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.card:hover {
+  border-color: var(--border-glow);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 40px rgba(232, 152, 64, 0.08);
+}
+.card:hover::before { opacity: 1; }
+.card-icon {
+  font-size: 28px;
+  margin-bottom: 14px;
+}
+.card h3 {
+  font-size: 18px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.card p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ── Architecture Diagram ── */
+.arch-diagram {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px;
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+.arch-diagram .highlight { color: var(--glow-warm); font-weight: 700; }
+.arch-diagram .cool { color: var(--glow-cool); }
+.arch-diagram .aurora { color: var(--glow-aurora); }
+.arch-diagram .green { color: var(--glow-green); }
+
+/* ── File Tree ── */
+.file-tree {
+  max-width: 900px;
+  margin: 0 auto;
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 28px 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  overflow-x: auto;
+}
+.file-tree .dir { color: var(--glow-cool); font-weight: 600; }
+.file-tree .file { color: var(--text-secondary); }
+.file-tree .desc { color: var(--text-muted); font-size: 11px; }
+
+/* ── Tables ── */
+.table-wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+thead th {
+  background: var(--space-panel);
+  color: var(--glow-warm);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--border-glow);
+  white-space: nowrap;
+}
+tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+tbody tr:hover { background: rgba(232, 152, 64, 0.03); }
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: rgba(96, 136, 216, 0.1);
+  color: var(--glow-cool);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Flow Diagram ── */
+.flow {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--space-panel);
+  border-left: 3px solid var(--glow-warm);
+  border-radius: 0 12px 12px 0;
+  transition: all 0.3s;
+}
+.flow-step:hover {
+  background: var(--space-card);
+  border-left-color: var(--glow-cool);
+  transform: translateX(4px);
+}
+.flow-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--glow-warm);
+  min-width: 36px;
+}
+.flow-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.flow-text strong { color: var(--text-primary); }
+
+/* ── DB Schema ── */
+.db-table {
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+.db-table h4 {
+  font-size: 15px;
+  color: var(--glow-warm);
+  margin-bottom: 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.db-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.db-field {
+  padding: 4px 8px;
+  background: rgba(96, 136, 216, 0.06);
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+.db-field .name { color: var(--glow-cool); }
+.db-field .type { color: var(--text-muted); }
+
+/* ── API Endpoint ── */
+.api-card {
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.3s;
+}
+.api-card:hover {
+  border-color: var(--border-glow);
+  transform: translateX(4px);
+}
+.api-method {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  min-width: 52px;
+  text-align: center;
+}
+.api-method.post { background: rgba(232, 152, 64, 0.15); color: var(--glow-warm); }
+.api-method.get { background: rgba(64, 200, 128, 0.15); color: var(--glow-green); }
+.api-method.put { background: rgba(96, 136, 216, 0.15); color: var(--glow-cool); }
+.api-method.del { background: rgba(216, 64, 96, 0.15); color: var(--glow-red); }
+.api-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  min-width: 260px;
+}
+.api-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.api-auth {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── Stats ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto 40px;
+}
+.stat-card {
+  text-align: center;
+  padding: 28px 16px;
+  background: linear-gradient(135deg, var(--space-panel), var(--space-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+}
+.stat-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--glow-warm), var(--glow-cool));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* ── Code Block ── */
+.code-block {
+  max-width: 900px;
+  margin: 20px auto;
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-x: auto;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+.code-block .kw { color: var(--glow-aurora); }
+.code-block .str { color: var(--glow-green); }
+.code-block .cmt { color: var(--text-muted); font-style: italic; }
+.code-block .fn { color: var(--glow-cool); }
+.code-block .num { color: var(--glow-warm); }
+
+/* ── ER Diagram ── */
+.er-wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  background: var(--space-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 40px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: pre;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .section { padding: 100px 20px 60px; }
+  .hero h1 { font-size: 36px; }
+  .hero .subtitle { font-size: 16px; }
+  .section-title { font-size: 28px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .db-fields { grid-template-columns: 1fr; }
+  .nav-links { display: none; }
+  .api-card { flex-wrap: wrap; }
+  .api-auth { margin-left: 0; }
+}
+
+/* ── Reveal Animation ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+
+/* ── Why Section ── */
+.why-section {
+  max-width: 1100px;
+  margin: 40px auto 0;
+  padding: 32px;
+  background: linear-gradient(135deg, rgba(10,18,40,0.8), rgba(13,22,48,0.9));
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  position: relative;
+}
+.why-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  background: rgba(232, 152, 64, 0.12);
+  border: 1px solid rgba(232, 152, 64, 0.3);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--glow-warm);
+  margin-bottom: 20px;
+  letter-spacing: 1px;
+}
+.why-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.compare-card {
+  padding: 18px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(5, 10, 20, 0.5);
+  transition: all 0.3s;
+  position: relative;
+}
+.compare-card.chosen {
+  border-color: var(--glow-warm);
+  background: rgba(232, 152, 64, 0.04);
+}
+.compare-card.chosen::after {
+  content: '✓ 已选用';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--glow-warm);
+  background: rgba(232, 152, 64, 0.12);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+.compare-card:not(.chosen):hover {
+  border-color: rgba(96, 136, 216, 0.2);
+  transform: translateY(-2px);
+}
+.compare-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.compare-card.chosen .compare-name { color: var(--glow-warm); }
+.compare-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+.tag-pro { background: rgba(64, 200, 128, 0.12); color: var(--glow-green); }
+.tag-con { background: rgba(216, 64, 96, 0.12); color: var(--glow-red); }
+.tag-neutral { background: rgba(96, 136, 216, 0.12); color: var(--glow-cool); }
+.compare-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-top: 6px;
+}
+.compare-verdict {
+  margin-top: 20px;
+  padding: 14px 20px;
+  background: rgba(232, 152, 64, 0.06);
+  border-left: 3px solid var(--glow-warm);
+  border-radius: 0 10px 10px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.compare-verdict strong { color: var(--glow-warm); }
+
+/* ── Why Section ── */
+.why-box {
+  max-width: 1100px; margin: 40px auto 0; padding: 32px;
+  background: linear-gradient(135deg, rgba(10,18,40,0.8), rgba(13,22,48,0.9));
+  border: 1px solid var(--border-subtle); border-radius: 16px;
+}
+.why-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 14px; background: rgba(232,152,64,0.12);
+  border: 1px solid rgba(232,152,64,0.3); border-radius: 20px;
+  font-size: 12px; font-weight: 600; color: var(--glow-warm);
+  margin-bottom: 16px; letter-spacing: 1px;
+}
+.why-title { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.cmp-card {
+  padding: 16px 18px; border-radius: 12px; border: 1px solid var(--border-subtle);
+  background: rgba(5,10,20,0.5); transition: all 0.3s; position: relative;
+}
+.cmp-card.pick { border-color: var(--glow-warm); background: rgba(232,152,64,0.04); }
+.cmp-card.pick::after {
+  content: '✓ 已选用'; position: absolute; top: 10px; right: 10px;
+  font-size: 10px; font-weight: 700; color: var(--glow-warm);
+  background: rgba(232,152,64,0.12); padding: 2px 8px; border-radius: 8px;
+}
+.cmp-card:not(.pick):hover { border-color: rgba(96,136,216,0.2); transform: translateY(-2px); }
+.cmp-name { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.cmp-card.pick .cmp-name { color: var(--glow-warm); }
+.cmp-tag {
+  display: inline-block; font-size: 10px; padding: 2px 8px;
+  border-radius: 6px; margin-bottom: 6px; font-weight: 500;
+}
+.tag-ok { background: rgba(64,200,128,0.12); color: var(--glow-green); }
+.tag-no { background: rgba(216,64,96,0.12); color: var(--glow-red); }
+.tag-mid { background: rgba(96,136,216,0.12); color: var(--glow-cool); }
+.cmp-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.cmp-verdict {
+  margin-top: 16px; padding: 12px 18px;
+  background: rgba(232,152,64,0.06); border-left: 3px solid var(--glow-warm);
+  border-radius: 0 10px 10px 0; font-size: 13px; color: var(--text-secondary); line-height: 1.7;
+}
+.cmp-verdict strong { color: var(--glow-warm); }
+
+</style>
+</head>
+<body>
+
+<!-- ═══ Canvas ═══ -->
+<canvas id="starfield"></canvas>
+
+<!-- ═══ Navigation ═══ -->
+<nav class="nav" id="nav">
+  <div class="nav-brand">⬡ 腾昇智和</div>
+  <div class="nav-links">
+    <a href="#overview">概述</a>
+    <a href="#architecture">架构</a>
+    <a href="#frontend">前端</a>
+    <a href="#opc-agent">AI 助手</a>
+    <a href="#backend">后端</a>
+    <a href="#api">API</a>
+    <a href="#dataflow">数据流</a>
+    <a href="#database">数据库</a>
+    <a href="#electron">Electron</a>
+  </div>
+</nav>
+
+<!-- ═══ Hero ═══ -->
+<section class="hero" id="hero">
+  <div class="hero-icon">⬡</div>
+  <h1>腾昇智和</h1>
+  <p class="subtitle">短视频智能体 · 全链路技术演示</p>
+  <div class="tech-stack">
+    <span class="tech-badge warm">Next.js 16</span>
+    <span class="tech-badge cool">React 19</span>
+    <span class="tech-badge aurora">Express 5</span>
+    <span class="tech-badge green">SQLite</span>
+    <span class="tech-badge cyan">Coze v3 API</span>
+    <span class="tech-badge warm">Electron</span>
+    <span class="tech-badge cool">Three.js</span>
+    <span class="tech-badge aurora">GSAP</span>
+  </div>
+  <div class="scroll-hint">
+    向下滚动探索
+    <span class="arrow">↓</span>
+  </div>
+</section>
+
+<!-- ═══ 一、项目概述 ═══ -->
+<section class="section" id="overview">
+  <div class="section-header reveal">
+    <div class="section-num">01</div>
+    <h2 class="section-title">项目概述</h2>
+    <p class="section-desc">基于 Coze 平台的 AI 短视频全链路自动生成智能体系统</p>
+  </div>
+
+  <div class="stats-grid reveal">
+    <div class="stat-card">
+      <div class="stat-num" data-count="35">0</div>
+      <div class="stat-label">前端组件</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="32">0</div>
+      <div class="stat-label">API 端点</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="12">0</div>
+      <div class="stat-label">数据库表</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="10">0</div>
+      <div class="stat-label">内置主题</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">🌐</div>
+      <h3>浏览器模式</h3>
+      <p>Next.js Dev Server (port 3000) → Express Backend (port 8080) → Coze API</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">🚀</div>
+      <h3>生产模式</h3>
+      <p>静态导出 (out/) → Express 内嵌服务 (port 8080) → Coze API</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">🖥️</div>
+      <h3>桌面模式</h3>
+      <p>Electron → 内嵌 Express → 静态前端 + API 服务一体化</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 二、系统架构 ═══ -->
+<section class="section" id="architecture">
+  <div class="section-header reveal">
+    <div class="section-num">02</div>
+    <h2 class="section-title">系统架构总览</h2>
+    <p class="section-desc">四层分离架构 · 前后端解耦 · AI 引擎对接</p>
+  </div>
+
+  <div class="arch-diagram reveal">
+<span class="highlight">┌─────────────────────────────────────────────────────────────────┐</span>
+<span class="highlight">│</span>                       <span class="cool">用户交互层</span>                              <span class="highlight">│</span>
+<span class="highlight">│</span>  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ <span class="highlight">│</span>
+<span class="highlight">│</span>  │  <span class="aurora">Web 浏览器</span>   │  │ <span class="aurora">Electron 桌面</span> │  │   <span class="aurora">移动端 (PWA)</span>      │ <span class="highlight">│</span>
+<span class="highlight">│</span>  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘ <span class="highlight">│</span>
+<span class="highlight">│</span>         │                  │                      │             <span class="highlight">│</span>
+<span class="highlight">│</span>  ┌──────▼──────────────────▼──────────────────────▼──────────┐ <span class="highlight">│</span>
+<span class="highlight">│</span>  │              <span class="cool">Next.js 前端 (React 19)</span>                      │ <span class="highlight">│</span>
+<span class="highlight">│</span>  │   ChatFlow  ·  OPCPanel  ·  StatsDashboard  ·  Welcome   │ <span class="highlight">│</span>
+<span class="highlight">│</span>  │   auth.ts (API 客户端)  ·  sync.ts (双写同步)            │ <span class="highlight">│</span>
+<span class="highlight">│</span>  └──────────────────────┬───────────────────────────────────┘ <span class="highlight">│</span>
+<span class="highlight">└──────────────────────────┼──────────────────────────────────────┘</span>
+                           │ <span class="green">HTTP / SSE</span>
+<span class="highlight">┌──────────────────────────▼──────────────────────────────────────┐</span>
+<span class="highlight">│</span>              <span class="cool">Express 后端 (port 8080)</span>                        <span class="highlight">│</span>
+<span class="highlight">│</span>  JWT 鉴权 → API Key 鉴权 → 路由分发                          <span class="highlight">│</span>
+<span class="highlight">│</span>  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    <span class="highlight">│</span>
+<span class="highlight">│</span>  │  <span class="aurora">/auth</span>   │ │<span class="aurora">/convers.</span>│ │<span class="aurora">/templates</span>│ │ <span class="aurora">/generations</span>  │    <span class="highlight">│</span>
+<span class="highlight">│</span>  └──────────┘ └──────────┘ └──────────┘ └──────────────┘    <span class="highlight">│</span>
+<span class="highlight">│</span>  ┌────────────────────────────────────────────────────────┐  <span class="highlight">│</span>
+<span class="highlight">│</span>  │  <span class="highlight">/api/agent → callCozeStream() → Coze v3 Chat API</span>     │  <span class="highlight">│</span>
+<span class="highlight">│</span>  └────────────────────────────────────────────────────────┘  <span class="highlight">│</span>
+<span class="highlight">│</span>  ┌──────────────┐                                            <span class="highlight">│</span>
+<span class="highlight">│</span>  │ <span class="green">SQLite (WAL)</span> │  users · conversations · messages · ...  <span class="highlight">│</span>
+<span class="highlight">│</span>  └──────────────┘                                            <span class="highlight">│</span>
+<span class="highlight">└─────────────────────────────────────────────────────────────────┘</span>
+                           │ <span class="green">HTTPS</span>
+<span class="highlight">┌──────────────────────────▼──────────────────────────────────────┐</span>
+<span class="highlight">│</span>            <span class="cool">Coze v3 Chat API (api.coze.cn)</span>                   <span class="highlight">│</span>
+<span class="highlight">│</span>   Bot ID  +  Knowledge Base  +  模型参数  +  工作流编排      <span class="highlight">│</span>
+<span class="highlight">└─────────────────────────────────────────────────────────────────┘</span></div>
+</section>
+
+<!-- ═══ 三、前端架构 ═══ -->
+<section class="section" id="frontend">
+  <div class="section-header reveal">
+    <div class="section-num">03</div>
+    <h2 class="section-title">前端技术架构</h2>
+    <p class="section-desc">Next.js 16 · React 19 · 30+ 组件 · 10 套深空主题</p>
+  </div>
+
+  <div class="file-tree reveal">
+<span class="dir">app/</span>
+├── <span class="file">layout.tsx</span>          <span class="desc">根布局（字体加载 + PWA + 主题色 + 背景层）</span>
+├── <span class="file">page.tsx</span>            <span class="desc">入口页（渲染 HomeClient）</span>
+├── <span class="file">globals.css</span>         <span class="desc">全局样式（900+ 行：10 主题 + edge-glow + 组件）</span>
+├── <span class="dir">login/page.tsx</span>      <span class="desc">登录页（JWT 认证 + 跳过登录）</span>
+├── <span class="dir">register/page.tsx</span>   <span class="desc">注册页（用户名密码 + 确认）</span>
+├── <span class="dir">api/agent/</span>          <span class="desc">Agent 代理（转发 / FormData / Mock）</span>
+├── <span class="dir">lib/</span>
+│   ├── <span class="file">auth.ts</span>        <span class="desc">认证 + API 客户端（Token 管理 + 所有后端调用）</span>
+│   ├── <span class="file">sync.ts</span>        <span class="desc">localStorage ↔ 服务端双向同步</span>
+│   ├── <span class="file">notify.ts</span>      <span class="desc">通知（Web Audio 提示音 + 浏览器通知）</span>
+│   ├── <span class="file">tracker.ts</span>     <span class="desc">客户端统计（localStorage 按日/周/月聚合）</span>
+│   └── <span class="file">needsUnoptimized.ts</span> <span class="desc">blob URL 检测</span>
+├── <span class="dir">components/</span>
+│   ├── <span class="file">HomeClient.tsx</span>     <span class="desc">主工作区壳（页面路由 + 状态管理 + 背景层）</span>
+│   ├── <span class="file">ChatFlow.tsx</span>       <span class="desc">对话核心（消息管理 + SSE/API + 持久化）</span>
+│   ├── <span class="file">ChatInput.tsx</span>      <span class="desc">悬浮胶囊输入框（文件附件 + 自动伸缩）</span>
+│   ├── <span class="file">WelcomeScreen.tsx</span>  <span class="desc">开场白（打字机动画 + 快捷操作按钮）</span>
+│   ├── <span class="file">ResultCard.tsx</span>     <span class="desc">结果卡片（视频播放器 + 图片画廊 + Lightbox）</span>
+│   ├── <span class="file">LeftSidebar.tsx</span>    <span class="desc">左侧栏（文件暂存 + 对话历史）</span>
+│   ├── <span class="file">SettingsDrawer.tsx</span> <span class="desc">设置抽屉（10 主题 + 参数配置）</span>
+│   ├── <span class="file">OPCPanel.tsx</span>       <span class="desc">OPC 工作区（运镜知识库 + 风格参数）</span>
+│   ├── <span class="file">StatsDashboard.tsx</span> <span class="desc">统计面板（Canvas 甘特图 + 主题色跟随）</span>
+│   ├── <span class="file">SplashScreen.tsx</span>   <span class="desc">像素首页（GSAP 恒星坍缩 + QR 码）</span>
+│   ├── <span class="file">StarfieldBackground</span> <span class="desc">Three.js 粒子星空（680 粒 + 星座连线）</span>
+│   ├── <span class="file">OrbitRings.tsx</span>     <span class="desc">CSS 星环（5 层 + 恒星 + GSAP 脉冲）</span>
+│   ├── <span class="file">CursorTrail.tsx</span>    <span class="desc">鼠标拖尾 + 涟漪（Canvas 绘制）</span>
+│   ├── <span class="file">Toast.tsx</span>          <span class="desc">Toast 通知（成功/错误/信息 3.5s 自动消失）</span>
+│   ├── <span class="file">AuthProvider.tsx</span>   <span class="desc">认证上下文（Token 验证 + 数据同步）</span>
+│   └── <span class="file">MarkdownRenderer</span>   <span class="desc">Markdown 渲染器（语法高亮 + GFM）</span>
+  </div>
+
+  <div style="height: 40px"></div>
+
+  <div class="card-grid">
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">🎨</div>
+      <h3>10 套深空主题</h3>
+      <p>深空观测者 / 原子实验室 / 量子花园 / 星云漂流 / 太阳熔炉 / 水晶洞穴 / 虚空信号 / 锈蚀密室 / 光子场 / 深海虚空</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">✨</div>
+      <h3>edge-glow 辉光系统</h3>
+      <p>CSS @property 驱动旋转锥形渐变边缘辉光，四级强度：edge-glow / strong / subtle / pulse / sweep</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">🌌</div>
+      <h3>Three.js 粒子系统</h3>
+      <p>680 粒子 + 星座连线 + 鼠标引力/斥力 + 生命周期 + CSS 变量主题跟随</p>
+    </div>
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">⚡</div>
+      <h3>GSAP 动画引擎</h3>
+      <p>恒星坍缩爆炸 + ScrollTrigger + timeline 编排 + anime.js 微交互</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">📝</div>
+      <h3>对话工作流</h3>
+      <p>多轮上下文 + 文件上传 + 思考阶段轮播 + 历史持久化 + SSE 流式 + follow_up 建议</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">🎬</div>
+      <h3>OPC 运镜知识库</h3>
+      <p>15 种基础运镜 + 组合运镜 + 风格参数面板 + Coze 知识库检索</p>
+    </div>
+  </div>
+
+  <div class="why-box reveal">
+    <div class="why-badge">💡 WHY</div>
+    <div class="why-title">为什么选 Next.js 16 + React 19？</div>
+    <div class="cmp-grid">
+      <div class="cmp-card pick">
+        <div class="cmp-name">Next.js 16 + React 19</div>
+        <span class="cmp-tag tag-ok">生态最强</span> <span class="cmp-tag tag-ok">静态导出</span>
+        <div class="cmp-desc">React 19 生态最丰富（Three.js/R3F/GSAP 完美支持）。App Router + output:"export" 兼顾开发体验和部署灵活性。Tailwind CSS 4 原生集成。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">Nuxt 4 + Vue 3</div>
+        <span class="cmp-tag tag-ok">Vue 生态</span> <span class="cmp-tag tag-no">3D 弱</span>
+        <div class="cmp-desc">Vue 3 优秀，但 Three.js/R3F 在 Vue 中的库支持远不如 React（react-three-fiber）。粒子星空需要大量额外适配。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">纯 Vite SPA</div>
+        <span class="cmp-tag tag-ok">轻量</span> <span class="cmp-tag tag-no">无路由</span>
+        <div class="cmp-desc">极致轻量，但缺少文件路由、API 代理、Image 优化等内置能力。需要手动搭建大量基础设施。</div>
+      </div>
+    </div>
+    <div class="cmp-verdict"><strong>结论：</strong>项目需要 Three.js + R3F 做粒子星空，React 生态是唯一选择。Next.js 静态导出模式完美适配 Electron 打包。</div>
+  </div>
+  <div class="why-box reveal">
+    <div class="why-badge">💡 WHY</div>
+    <div class="why-title">为什么选 Three.js + GSAP + anime.js？</div>
+    <div class="cmp-grid">
+      <div class="cmp-card pick">
+        <div class="cmp-name">Three.js + R3F</div>
+        <span class="cmp-tag tag-ok">WebGL</span> <span class="cmp-tag tag-ok">React 集成</span>
+        <div class="cmp-desc">680 粒子 + 3D 星座连线需要 WebGL GPU 渲染。R3F 声明式写法 + drei 预制组件。CSS 3D / Canvas 2D 性能不足。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">Babylon.js / CSS 3D</div>
+        <span class="cmp-tag tag-mid">可行</span> <span class="cmp-tag tag-no">生态弱</span>
+        <div class="cmp-desc">Babylon.js React 封装库社区远不如 R3F。CSS 3D Transform 无法处理 680 粒子实时动画。</div>
+      </div>
+      <div class="cmp-card pick">
+        <div class="cmp-name">GSAP timeline + anime.js</div>
+        <span class="cmp-tag tag-ok">编排王</span> <span class="cmp-tag tag-ok">微交互</span>
+        <div class="cmp-desc">GSAP 处理复杂编排（恒星坍缩 10+ 步精确序列）。anime.js 处理轻量微交互（涟漪/弹性）。职责分离各取所长。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">Framer Motion / 纯 CSS</div>
+        <span class="cmp-tag tag-mid">可行</span> <span class="cmp-tag tag-no">编排弱</span>
+        <div class="cmp-desc">Framer Motion 不支持 WebGL。纯 CSS @keyframes 无法做 timeline 级动画编排。</div>
+      </div>
+    </div>
+    <div class="cmp-verdict"><strong>结论：</strong>WebGL (Three.js) 是粒子系统的唯一选择。GSAP timeline 是复杂动画编排的唯一选择。两者组合 = 视觉效果天花板。</div>
+  </div>
+</section>
+
+<!-- ═══ 四、OPC AI 创作助手 ═══ -->
+<section class="section" id="opc-agent">
+  <div class="section-header reveal">
+    <div class="section-num">04</div>
+    <h2 class="section-title">OPC AI 创作助手</h2>
+    <p class="section-desc">多模型 LLM · 链式工作流 · 联网搜索 · 跨会话记忆 · 对话压缩</p>
+  </div>
+
+  <div class="stats-grid reveal">
+    <div class="stat-card">
+      <div class="stat-num" data-count="8">0</div>
+      <div class="stat-label">LLM 模型预设</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="6">0</div>
+      <div class="stat-label">链式工作流</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="4">0</div>
+      <div class="stat-label">思考深度等级</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-count="30">0</div>
+      <div class="stat-label">搜索触发词</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">🤖</div>
+      <h3>多模型 LLM 集成</h3>
+      <p>支持 DeepSeek、通义千问、OpenAI、智谱、Kimi、Anthropic、小米 MiMo、Ollama 共 8 个预设。OpenAI / Anthropic 双协议自动检测。思考深度四级可调（快速/标准/深度/极深）。</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">🔗</div>
+      <h3>链式工作流执行</h3>
+      <p>6 个专业工作流（全链路视频创作、提示词优化、风格调研、AB 对比、广告脚本、AIGC 趋势研究）。每步输出自动传递为下一步输入，含上下文和系统提示词。</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">🌐</div>
+      <h3>联网搜索集成</h3>
+      <p>Bing 搜索服务端代理（绕过 CORS）。30+ 触发词自动检测搜索意图。搜索结果注入系统提示词，AI 可直接引用。工作流研究步骤自动触发搜索。</p>
+    </div>
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">🧠</div>
+      <h3>跨会话记忆</h3>
+      <p>opc_memory 表存储持久化知识。按分类组织（general/preference/context）。下次会话自动注入系统提示词。支持手动管理（增删改查）。</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">🗜️</div>
+      <h3>对话自动压缩</h3>
+      <p>消息数超 40 条时触发 LLM 摘要。保留最近 10 条原始消息 + 摘要系统消息。压缩后上下文不丢失，Token 消耗大幅降低。</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">⚙️</div>
+      <h3>数据库全持久化</h3>
+      <p>LLM 配置、用户偏好、通知、主题设置全部存入 SQLite。localStorage 立即写 + 服务端异步同步。离线回退、服务端优先读取。</p>
+    </div>
+  </div>
+
+  <div style="height: 30px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-warm); font-size:18px; margin-bottom:20px;">AI 助手数据流</h3>
+
+  <div class="flow reveal">
+    <div class="flow-step">
+      <div class="flow-num">①</div>
+      <div class="flow-text">用户输入 → <strong>OpcAgentPanel</strong> 检测意图（对话 / 工作流 / 搜索）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">②</div>
+      <div class="flow-text"><strong>buildOpcSystemPrompt()</strong> 构建系统提示词（注入 OPC 配置 + 记忆 + 搜索结果 + 思考后缀）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">③</div>
+      <div class="flow-text"><strong>streamLlmResponse()</strong> → 根据协议选择 OpenAI/Anthropic API 格式</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">④</div>
+      <div class="flow-text">SSE 流式返回 → <strong>打字机渲染</strong> + 思考过程折叠显示</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑤</div>
+      <div class="flow-text">消息存入 <strong>opc_messages</strong> → 超 40 条触发 <strong>LLM 摘要压缩</strong></div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑥</div>
+      <div class="flow-text">工作流模式: 步骤 1 输出 → <strong>buildPrompt()</strong> 拼接 → 步骤 2 输入 → ...</div>
+    </div>
+  </div>
+
+  <div style="height: 30px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-cool); font-size:18px; margin-bottom:20px;">6 大链式工作流</h3>
+
+  <div class="table-wrap reveal">
+    <table>
+      <thead>
+        <tr><th>工作流</th><th>步骤数</th><th>流程</th><th>用途</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>full-video</code></td><td>4</td><td>创意构思 → 分镜脚本 → 提示词生成 → 方案整合</td><td>短视频全链路创作</td></tr>
+        <tr><td><code>prompt-optimizer</code></td><td>4</td><td>分析 → 优化 → 变体生成 → 质量评估</td><td>提示词优化迭代</td></tr>
+        <tr><td><code>style-research</code></td><td>3</td><td>联网调研 → 特征提取 → 应用方案</td><td>视觉风格研究</td></tr>
+        <tr><td><code>ab-compare</code></td><td>4</td><td>分析A → 分析B → 差异矩阵 → 应用推荐</td><td>方案对比决策</td></tr>
+        <tr><td><code>ad-script</code></td><td>4</td><td>策略分析 → 脚本撰写 → 分镜设计 → 提示词生成</td><td>广告短视频脚本</td></tr>
+        <tr><td><code>aigc-trends</code></td><td>4</td><td>联网搜集 → 趋势分析 → 干货提取 → 报告生成</td><td>AIGC 行业研究</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="height: 30px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-aurora); font-size:18px; margin-bottom:20px;">8 大 LLM 模型预设</h3>
+
+  <div class="table-wrap reveal">
+    <table>
+      <thead>
+        <tr><th>模型</th><th>协议</th><th>思考</th><th>搜索</th><th>特色</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>DeepSeek</code></td><td>OpenAI</td><td>✅</td><td>✅ tools</td><td>国产首选，reasoner 深度推理</td></tr>
+        <tr><td><code>通义千问</code></td><td>OpenAI</td><td>—</td><td>✅ enable_search</td><td>阿里云，内置搜索</td></tr>
+        <tr><td><code>OpenAI</code></td><td>OpenAI</td><td>✅</td><td>—</td><td>GPT-4o，reasoning_effort</td></tr>
+        <tr><td><code>智谱 GLM</code></td><td>OpenAI</td><td>—</td><td>—</td><td>清华系，中文优化</td></tr>
+        <tr><td><code>Kimi</code></td><td>OpenAI</td><td>—</td><td>—</td><td>长上下文，200K tokens</td></tr>
+        <tr><td><code>Anthropic</code></td><td>Anthropic</td><td>✅</td><td>—</td><td>Claude，thinking budget</td></tr>
+        <tr><td><code>小米 MiMo</code></td><td>OpenAI</td><td>—</td><td>—</td><td>轻量推理</td></tr>
+        <tr><td><code>Ollama</code></td><td>OpenAI</td><td>—</td><td>—</td><td>本地部署，零成本</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 五、后端架构 ═══ -->
+<section class="section" id="backend">
+  <div class="section-header reveal">
+    <div class="section-num">05</div>
+    <h2 class="section-title">后端服务架构</h2>
+    <p class="section-desc">Express 5 · SQLite · JWT 鉴权 · Coze v3 SSE 流式</p>
+  </div>
+
+  <div class="file-tree reveal">
+<span class="dir">server/</span>
+├── <span class="file">server.js</span>            <span class="desc">主服务入口（Coze 对接 + 鉴权 + 路由挂载 + 日志）</span>
+├── <span class="file">server-express.js</span>    <span class="desc">Electron 内嵌版（自包含，无 DB/鉴权/文件上传）</span>
+├── <span class="file">db.js</span>                <span class="desc">SQLite 初始化（6 张表 + WAL 模式 + 索引）</span>
+├── <span class="dir">routes/</span>
+│   ├── <span class="file">auth.js</span>          <span class="desc">认证路由（注册/登录/获取用户，JWT 10 年有效期）</span>
+│   ├── <span class="file">conversations.js</span> <span class="desc">对话 CRUD（列表/详情/创建/更新/删除/消息保存）</span>
+│   ├── <span class="file">templates.js</span>     <span class="desc">模板 CRUD（创建/列表/删除）</span>
+│   ├── <span class="file">generations.js</span>   <span class="desc">生成记录（列表/统计/recordGeneration）</span>
+│   └── <span class="file">settings.js</span>      <span class="desc">用户设置（主题/语言/OPC 参数）</span>
+├── <span class="dir">services/</span>
+│   └── <span class="file">coze.ts</span>          <span class="desc">Coze API 客户端（chatStream / collectStream / extractMedia）</span>
+├── <span class="dir">middleware/</span>
+│   ├── <span class="file">cors.ts</span>          <span class="desc">CORS 配置</span>
+│   ├── <span class="file">auth.ts</span>          <span class="desc">API Key 鉴权中间件</span>
+│   └── <span class="file">logger.ts</span>        <span class="desc">请求日志中间件</span>
+├── <span class="dir">logs/</span>                <span class="desc">按日期滚动日志（YYYY-MM-DD.log）</span>
+└── <span class="file">stzh.db</span>              <span class="desc">SQLite 数据库文件</span>
+  </div>
+
+  <div style="height: 40px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-warm); font-size:18px; margin-bottom:20px;">中间件处理链</h3>
+
+  <div class="flow reveal">
+    <div class="flow-step">
+      <div class="flow-num">①</div>
+      <div class="flow-text"><strong>CORS 中间件</strong> → 允许 localhost:3000/3001 跨域请求</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">②</div>
+      <div class="flow-text"><strong>JSON 解析</strong> → express.json({ limit: "10mb" })</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">③</div>
+      <div class="flow-text"><strong>JWT 用户提取</strong> → 解析 Authorization: Bearer &lt;token&gt;，非阻塞（无 token 也放行）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">④</div>
+      <div class="flow-text"><strong>API Key 鉴权</strong> → 仅保护 /api/agent 路由（有 JWT 则跳过 API Key 检查）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑤</div>
+      <div class="flow-text"><strong>路由分发</strong> → auth / conversations / templates / generations / settings / agent</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑥</div>
+      <div class="flow-text"><strong>404 兜底</strong> → 返回 JSON 错误响应</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 五、API 接口 ═══ -->
+<section class="section" id="api">
+  <div class="section-header reveal">
+    <div class="section-num">06</div>
+    <h2 class="section-title">API 接口文档</h2>
+    <p class="section-desc">32 个 RESTful 端点 · JWT / API Key 双鉴权 · SSE 流式</p>
+  </div>
+
+  <div style="max-width:1000px; margin:0 auto;">
+    <h3 class="reveal" style="color:var(--glow-warm); font-size:16px; margin-bottom:16px;">🎯 Agent 核心接口</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/agent</span>
+      <span class="api-desc">发送 prompt → Coze AI → JSON 响应（含视频/图片 URL）</span>
+      <span class="api-auth">JWT 或 API Key</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/agent/stream</span>
+      <span class="api-desc">SSE 流式版本（逐 token 转发 + follow_up 建议）</span>
+      <span class="api-auth">JWT 或 API Key</span>
+    </div>
+
+    <h3 class="reveal" style="color:var(--glow-cool); font-size:16px; margin: 24px 0 16px;">🔐 认证接口</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/auth/register</span>
+      <span class="api-desc">注册（bcrypt 哈希密码，返回 JWT）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/auth/login</span>
+      <span class="api-desc">登录（JWT 10 年有效期）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/auth/me</span>
+      <span class="api-desc">获取当前用户信息</span>
+      <span class="api-auth">JWT</span>
+    </div>
+
+  <div class="why-box reveal">
+    <div class="why-badge">💡 WHY</div>
+    <div class="why-title">为什么选 JWT 而不是 Session？</div>
+    <div class="cmp-grid">
+      <div class="cmp-card pick">
+        <div class="cmp-name">JWT (JSON Web Token)</div>
+        <span class="cmp-tag tag-ok">无状态</span> <span class="cmp-tag tag-ok">跨端通用</span>
+        <div class="cmp-desc">服务端无状态，Token 自包含用户信息。浏览器 / Electron / PWA 三端通用。10 年有效期减少频繁登录。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">Session Cookie</div>
+        <span class="cmp-tag tag-ok">简单</span> <span class="cmp-tag tag-no">需状态</span>
+        <div class="cmp-desc">服务端存储 session。Electron 内嵌 Express 无持久化 store，跨域需额外配置 cookie。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">OAuth 2.0</div>
+        <span class="cmp-tag tag-ok">第三方登录</span> <span class="cmp-tag tag-no">过度设计</span>
+        <div class="cmp-desc">本项目是内部工具，用户名密码注册足够。OAuth 需注册第三方应用 + 回调配置，复杂度不匹配。</div>
+      </div>
+    </div>
+    <div class="cmp-verdict"><strong>结论：</strong>JWT 无状态 = 浏览器/Electron/PWA 通用。服务端无需 session store，Electron 天然兼容。</div>
+  </div>
+
+    <h3 class="reveal" style="color:var(--glow-aurora); font-size:16px; margin: 24px 0 16px;">💬 对话管理</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/conversations</span>
+      <span class="api-desc">获取用户所有对话（含消息计数）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/conversations/:id</span>
+      <span class="api-desc">获取单个对话及其所有消息</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/conversations</span>
+      <span class="api-desc">创建对话 { id, title? }</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method put">PUT</span>
+      <span class="api-path">/api/conversations/:id</span>
+      <span class="api-desc">更新对话标题 { title }</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method del">DEL</span>
+      <span class="api-path">/api/conversations/:id</span>
+      <span class="api-desc">删除对话（级联删除消息）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/conversations/:id/messages</span>
+      <span class="api-desc">保存消息（INSERT OR REPLACE 事务）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+
+    <h3 class="reveal" style="color:var(--glow-green); font-size:16px; margin: 24px 0 16px;">📋 其他接口</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/templates</span>
+      <span class="api-desc">获取用户模板列表</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/templates</span>
+      <span class="api-desc">创建自定义模板</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/generations</span>
+      <span class="api-desc">获取生成记录（分页）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/generations/stats</span>
+      <span class="api-desc">生成统计（总数/今日/视频数）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/settings</span>
+      <span class="api-desc">获取用户设置</span>
+      <span class="api-auth">JWT</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method put">PUT</span>
+      <span class="api-path">/api/settings</span>
+      <span class="api-desc">更新用户设置（主题/语言/OPC）</span>
+      <span class="api-auth">JWT</span>
+    </div>
+
+    <h3 class="reveal" style="color:var(--glow-cyan); font-size:16px; margin: 24px 0 16px;">🤖 OPC AI 助手接口</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/opc/sessions</span>
+      <span class="api-desc">列出 OPC 会话（最多 50 条）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/opc/sessions</span>
+      <span class="api-desc">创建 OPC 会话</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method del">DEL</span>
+      <span class="api-path">/api/opc/sessions/:id</span>
+      <span class="api-desc">删除会话（级联删除消息）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/opc/sessions/:id/messages</span>
+      <span class="api-desc">获取会话消息（最多 200 条）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/opc/sessions/:id/messages</span>
+      <span class="api-desc">添加单条消息</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/opc/sessions/:id/compress</span>
+      <span class="api-desc">压缩对话（LLM 摘要 + 保留最近 N 条）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/opc/memory</span>
+      <span class="api-desc">列出跨会话记忆</span>
+      <span class="api-auth">无</span>
+    </div>
+
+    <h3 class="reveal" style="color:var(--glow-warm); font-size:16px; margin: 24px 0 16px;">🧠 LLM / 偏好 / 通知接口</h3>
+
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/llm/providers</span>
+      <span class="api-desc">列出所有 LLM 模型配置</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/llm/providers/:id/activate</span>
+      <span class="api-desc">激活指定模型</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/prefs</span>
+      <span class="api-desc">获取所有用户偏好</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/notifications</span>
+      <span class="api-desc">列出通知（最多 50 条）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method get">GET</span>
+      <span class="api-path">/api/settings</span>
+      <span class="api-desc">获取应用设置（主题等）</span>
+      <span class="api-auth">无</span>
+    </div>
+    <div class="api-card reveal">
+      <span class="api-method post">POST</span>
+      <span class="api-path">/api/search</span>
+      <span class="api-desc">Bing 搜索代理（服务端抓取，绕过 CORS）</span>
+      <span class="api-auth">无</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 六、数据流 ═══ -->
+<section class="section" id="dataflow">
+  <div class="section-header reveal">
+    <div class="section-num">07</div>
+    <h2 class="section-title">数据传输全链路</h2>
+    <p class="section-desc">SSE 流式传输 · localStorage 双写同步 · JWT 鉴权</p>
+  </div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-warm); font-size:18px; margin-bottom:24px;">AI 对话请求全流程</h3>
+
+  <div class="flow reveal">
+    <div class="flow-step">
+      <div class="flow-num">①</div>
+      <div class="flow-text">用户在 <strong>ChatFlow</strong> 输入 prompt → 构造请求体</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">②</div>
+      <div class="flow-text"><strong>authFetch()</strong> 附加 JWT Token → POST /api/agent/stream</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">③</div>
+      <div class="flow-text">Express <strong>JWT 中间件</strong> 解析 Token → req.user</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">④</div>
+      <div class="flow-text"><strong>buildMessages()</strong> 组装对话历史（最多最近 20 条）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑤</div>
+      <div class="flow-text">POST <strong>https://api.coze.cn/v3/chat</strong> → stream: true</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑥</div>
+      <div class="flow-text">Coze SSE 事件流 → <strong>event:delta</strong> 逐 token 转发</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑦</div>
+      <div class="flow-text">前端实时渲染 → <strong>打字机效果</strong>展示 AI 回复</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑧</div>
+      <div class="flow-text"><strong>event:follow_up</strong> → 显示追问建议按钮</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑨</div>
+      <div class="flow-text"><strong>event:done</strong> → extractMediaUrls() 提取视频/图片 URL</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑩</div>
+      <div class="flow-text">渲染 <strong>ResultCard</strong>（视频播放器 / 图片画廊 / 文本）</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑪</div>
+      <div class="flow-text"><strong>recordGeneration()</strong> 写入 SQLite + localStorage 双写</div>
+    </div>
+  </div>
+
+  <div style="height: 40px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-cool); font-size:18px; margin-bottom:24px;">SSE 事件转发规则</h3>
+
+  <div class="table-wrap reveal">
+    <table>
+      <thead>
+        <tr><th>Coze 事件</th><th>后端处理</th><th>转发给前端</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>conversation.message.delta</code></td><td>role=assistant && type=answer</td><td><code>event: delta</code> → 逐 token 文本</td></tr>
+        <tr><td><code>conversation.message.completed</code></td><td>type=answer → parseCozeCard()</td><td>暂存，等 chat.completed</td></tr>
+        <tr><td><code>conversation.message.completed</code></td><td>type=follow_up</td><td><code>event: follow_up</code> → 追问建议</td></tr>
+        <tr><td><code>conversation.chat.completed</code></td><td>extractMediaUrls()</td><td><code>event: done</code> → 最终结果</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="why-box reveal">
+    <div class="why-badge">💡 WHY</div>
+    <div class="why-title">为什么选 Coze 而不是直接调 Claude API？</div>
+    <div class="cmp-grid">
+      <div class="cmp-card pick">
+        <div class="cmp-name">Coze v3 Chat API</div>
+        <span class="cmp-tag tag-ok">免费额度</span> <span class="cmp-tag tag-ok">工作流</span>
+        <div class="cmp-desc">智能体编排 + 知识库检索 + 工作流一站式。免费额度充足。SSE 流式 + follow_up 建议开箱即用。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">Claude API (Anthropic)</div>
+        <span class="cmp-tag tag-ok">质量最高</span> <span class="cmp-tag tag-no">按量计费</span>
+        <div class="cmp-desc">最强对话模型。但按 Token 计费（视频生成场景消耗大），缺少知识库检索和工作流编排。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">自建模型</div>
+        <span class="cmp-tag tag-ok">完全控制</span> <span class="cmp-tag tag-no">成本极高</span>
+        <div class="cmp-desc">训练自有视频生成模型需 GPU 集群 + 大量数据 + ML 团队。对初创项目是天文数字成本。</div>
+      </div>
+    </div>
+    <div class="cmp-verdict"><strong>结论：</strong>Coze 提供「智能体 + 知识库 + 工作流」一站式方案，免费额度足够 MVP 阶段。未来可按需切换到 Claude API。</div>
+  </div>
+</section>
+
+<!-- ═══ 七、数据库 ═══ -->
+<section class="section" id="database">
+  <div class="section-header reveal">
+    <div class="section-num">08</div>
+    <h2 class="section-title">SQLite 数据库设计</h2>
+    <p class="section-desc">12 张表 · WAL 模式 · 外键级联删除 · 双写同步</p>
+  </div>
+
+  <div class="er-wrap reveal">
+<span style="color:var(--glow-warm)">┌─── 用户认证组 (server.js) ───────────────────────────────────┐</span>
+<span style="color:var(--glow-warm)">│</span> <span style="color:var(--glow-warm)">users</span> (1) ──→ (N) <span style="color:var(--glow-cool)">conversations</span>    <span style="color:var(--text-muted)">[CASCADE DELETE]</span>       <span style="color:var(--glow-warm)">│</span>
+<span style="color:var(--glow-warm)">│</span> <span style="color:var(--glow-warm)">users</span> (1) ──→ (N) <span style="color:var(--glow-aurora)">templates</span>          <span style="color:var(--text-muted)">[CASCADE DELETE]</span>       <span style="color:var(--glow-warm)">│</span>
+<span style="color:var(--glow-warm)">│</span> <span style="color:var(--glow-warm)">users</span> (1) ──→ (N) <span style="color:var(--glow-green)">generations</span>        <span style="color:var(--text-muted)">[CASCADE DELETE]</span>       <span style="color:var(--glow-warm)">│</span>
+<span style="color:var(--glow-warm)">│</span> <span style="color:var(--glow-warm)">users</span> (1) ──→ (1) <span style="color:var(--glow-cyan)">user_settings</span>      <span style="color:var(--text-muted)">[CASCADE DELETE]</span>       <span style="color:var(--glow-warm)">│</span>
+<span style="color:var(--glow-warm)">│</span> <span style="color:var(--glow-cool)">conversations</span> (1) ──→ (N) <span style="color:var(--glow-red)">messages</span>   <span style="color:var(--text-muted)">[CASCADE DELETE]</span>       <span style="color:var(--glow-warm)">│</span>
+<span style="color:var(--glow-warm)">└──────────────────────────────────────────────────────────────┘</span>
+
+<span style="color:var(--glow-cool)">┌─── OPC / 应用组 (server-express.js) ─────────────────────────┐</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-cool)">opc_sessions</span> (1) ──→ (N) <span style="color:var(--glow-aurora)">opc_messages</span>  <span style="color:var(--text-muted)">[CASCADE DELETE]</span>   <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-green)">opc_memory</span>     <span style="color:var(--text-muted)">(key-value, 独立)</span>                          <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-warm)">llm_providers</span>  <span style="color:var(--text-muted)">(JSON config, 独立)</span>                         <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-aurora)">user_prefs</span>     <span style="color:var(--text-muted)">(key-value, 独立)</span>                          <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-cyan)">notifications</span>  <span style="color:var(--text-muted)">(CRUD, 独立)</span>                               <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">│</span> <span style="color:var(--glow-red)">app_settings</span>   <span style="color:var(--text-muted)">(key-value, 独立)</span>                          <span style="color:var(--glow-cool)">│</span>
+<span style="color:var(--glow-cool)">└──────────────────────────────────────────────────────────────┘</span></div>
+
+  
+  <div class="why-box reveal">
+    <div class="why-badge">💡 WHY</div>
+    <div class="why-title">为什么选 SQLite 而不是 PostgreSQL / MongoDB？</div>
+    <div class="cmp-grid">
+      <div class="cmp-card pick">
+        <div class="cmp-name">SQLite (better-sqlite3)</div>
+        <span class="cmp-tag tag-ok">零配置</span> <span class="cmp-tag tag-ok">嵌入式</span>
+        <div class="cmp-desc">单文件数据库，无需安装服务。同步 API 代码简洁无 async 噪音。WAL 模式支持并发读写。Electron 打包随应用分发。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">PostgreSQL</div>
+        <span class="cmp-tag tag-ok">功能最全</span> <span class="cmp-tag tag-no">需服务</span>
+        <div class="cmp-desc">企业级数据库，但需单独安装维护。单用户场景大材小用。对非技术用户部署成本高。</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-name">MongoDB</div>
+        <span class="cmp-tag tag-ok">灵活</span> <span class="cmp-tag tag-no">需服务</span>
+        <div class="cmp-desc">文档数据库 schema 灵活，但对话/消息是结构化关系数据，SQL 外键约束和事务更可靠。</div>
+      </div>
+    </div>
+    <div class="cmp-verdict"><strong>结论：</strong>单用户/小团队场景，SQLite 零配置 + 嵌入式是最优解。未来用户量增长可平滑迁移到 PostgreSQL（SQL 兼容）。</div>
+  </div>
+
+  <div style="height: 30px"></div>
+
+  <div style="max-width: 1000px; margin: 0 auto;">
+    <div class="db-table reveal">
+      <h4>users — 用户表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">INTEGER PK AUTO</span></div>
+        <div class="db-field"><span class="name">username</span> <span class="type">TEXT UNIQUE</span></div>
+        <div class="db-field"><span class="name">password</span> <span class="type">TEXT (bcrypt)</span></div>
+        <div class="db-field"><span class="name">display_name</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">TEXT</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>conversations — 对话会话表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK (UUID)</span></div>
+        <div class="db-field"><span class="name">user_id</span> <span class="type">INTEGER FK → users</span></div>
+        <div class="db-field"><span class="name">title</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>messages — 消息记录表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK (UUID)</span></div>
+        <div class="db-field"><span class="name">conversation_id</span> <span class="type">TEXT FK</span></div>
+        <div class="db-field"><span class="name">role</span> <span class="type">TEXT (user/agent)</span></div>
+        <div class="db-field"><span class="name">content</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">payload</span> <span class="type">TEXT (JSON)</span></div>
+        <div class="db-field"><span class="name">is_error</span> <span class="type">INTEGER</span></div>
+        <div class="db-field"><span class="name">error_text</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>generations — 生成记录表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">INTEGER PK AUTO</span></div>
+        <div class="db-field"><span class="name">user_id</span> <span class="type">INTEGER FK</span></div>
+        <div class="db-field"><span class="name">conversation_id</span> <span class="type">TEXT FK</span></div>
+        <div class="db-field"><span class="name">prompt</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">video_url</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">image_urls</span> <span class="type">TEXT (JSON)</span></div>
+        <div class="db-field"><span class="name">raw_text</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">status</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">coze_conversation_id</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">tokens_used</span> <span class="type">INTEGER</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">idx_gen_date</span> <span class="type">INDEX</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>templates — 自定义模板表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">INTEGER PK AUTO</span></div>
+        <div class="db-field"><span class="name">user_id</span> <span class="type">INTEGER FK</span></div>
+        <div class="db-field"><span class="name">category</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">icon</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">label</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">prompt</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"></div>
+        <div class="db-field"></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>user_settings — 用户设置表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">user_id</span> <span class="type">INTEGER PK/FK</span></div>
+        <div class="db-field"><span class="name">theme</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">language</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">opc_style</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">opc_params</span> <span class="type">TEXT (JSON)</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">TEXT</span></div>
+        <div class="db-field"></div>
+        <div class="db-field"></div>
+      </div>
+    </div>
+
+    <div style="height: 20px"></div>
+    <h3 class="reveal" style="color:var(--glow-cool); font-size:16px; margin-bottom:16px;">OPC / 应用组 (server-express.js)</h3>
+
+    <div class="db-table reveal">
+      <h4>opc_sessions — OPC 会话表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">title</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+        <div class="db-field"><span class="name">message_count</span> <span class="type">INTEGER</span></div>
+        <div class="db-field"><span class="name">summary</span> <span class="type">TEXT (压缩摘要)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>opc_messages — OPC 消息表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">session_id</span> <span class="type">TEXT FK → opc_sessions</span></div>
+        <div class="db-field"><span class="name">role</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">content</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">timestamp</span> <span class="type">INTEGER (unixepoch)</span></div>
+        <div class="db-field"><span class="name">metadata</span> <span class="type">TEXT (JSON)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>opc_memory — 跨会话记忆表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">key</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">value</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">category</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>llm_providers — LLM 模型配置表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">config</span> <span class="type">TEXT (JSON 含 API Key)</span></div>
+        <div class="db-field"><span class="name">is_active</span> <span class="type">INTEGER (0/1)</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>user_prefs — 用户偏好表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">key</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">value</span> <span class="type">TEXT (JSON)</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>notifications — 通知表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">id</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">title</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">message</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">type</span> <span class="type">TEXT (info/success/warning/error)</span></div>
+        <div class="db-field"><span class="name">read</span> <span class="type">INTEGER (0/1)</span></div>
+        <div class="db-field"><span class="name">created_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+      </div>
+    </div>
+
+    <div class="db-table reveal">
+      <h4>app_settings — 应用设置表</h4>
+      <div class="db-fields">
+        <div class="db-field"><span class="name">key</span> <span class="type">TEXT PK</span></div>
+        <div class="db-field"><span class="name">value</span> <span class="type">TEXT</span></div>
+        <div class="db-field"><span class="name">updated_at</span> <span class="type">INTEGER (unixepoch)</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 八、Electron ═══ -->
+<section class="section" id="electron">
+  <div class="section-header reveal">
+    <div class="section-num">09</div>
+    <h2 class="section-title">Electron 桌面打包</h2>
+    <p class="section-desc">内嵌 Express + 静态前端 · NSIS 安装包 · 无需 Node.js</p>
+  </div>
+
+  <div class="card-grid" style="max-width:800px;">
+    <div class="card reveal reveal-delay-1">
+      <div class="card-icon">📦</div>
+      <h3>electron/main.js</h3>
+      <p>主进程：扫描空闲端口 → 加载 server-express.js → 创建 BrowserWindow (1400×900)</p>
+    </div>
+    <div class="card reveal reveal-delay-2">
+      <div class="card-icon">⚡</div>
+      <h3>server-express.js</h3>
+      <p>内嵌 Express：OPC/LLM/偏好/通知/设置 API + 静态文件服务 + SPA fallback</p>
+    </div>
+    <div class="card reveal reveal-delay-3">
+      <div class="card-icon">🌐</div>
+      <h3>out/ 静态导出</h3>
+      <p>Next.js build → 纯 HTML/JS/CSS，由 Express 内嵌服务直接提供</p>
+    </div>
+    <div class="card reveal reveal-delay-4">
+      <div class="card-icon">💾</div>
+      <h3>NSIS 安装包</h3>
+      <p>electron-builder 打包，Windows x64，约 179MB，双击即可运行</p>
+    </div>
+  </div>
+
+  <div style="height: 30px"></div>
+
+  <h3 class="reveal" style="text-align:center; color:var(--glow-warm); font-size:18px; margin-bottom:20px;">启动流程</h3>
+
+  <div class="flow reveal">
+    <div class="flow-step">
+      <div class="flow-num">①</div>
+      <div class="flow-text">Electron main.js 启动</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">②</div>
+      <div class="flow-text">扫描端口 <strong>8080~8090</strong>，找第一个空闲端口</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">③</div>
+      <div class="flow-text">require('./server-express.js') 加载<strong>内嵌 Express</strong></div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">④</div>
+      <div class="flow-text">Express 同时提供 <strong>API (/api/*)</strong> 和<strong>静态文件 (out/*)</strong></div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑤</div>
+      <div class="flow-text">创建 BrowserWindow 加载 <strong>http://localhost:{port}</strong></div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">⑥</div>
+      <div class="flow-text">用户关闭窗口 → 退出 Electron 进程</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer style="text-align:center; padding:80px 20px; position:relative; z-index:1;">
+  <div style="font-size:36px; margin-bottom:16px;">⬡</div>
+  <div style="font-family:'ZCOOL QingKe HuangYou',cursive; font-size:20px; color:var(--glow-warm); margin-bottom:8px;">腾昇智和</div>
+  <div style="color:var(--text-muted); font-size:13px;">短视频智能体 · 全链路技术演示</div>
+  <div style="color:var(--text-muted); font-size:12px; margin-top:16px;">2026-06-05 · Next.js 16 + Express 5 + SQLite (12表) + Electron · OPC AI 助手</div>
+</footer>
+
+<!-- ═══ Scripts ═══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── Starfield Background ──
+(function() {
+  const canvas = document.getElementById('starfield');
+  const ctx = canvas.getContext('2d');
+  let w, h, particles = [];
+  const COLORS = ['#e89840','#6088d8','#9880d0','#40c880','#40b8d8'];
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+
+  function init() {
+    resize();
+    particles = [];
+    for (let i = 0; i < 200; i++) {
+      particles.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: Math.random() * 1.5 + 0.3,
+        dx: (Math.random() - 0.5) * 0.15,
+        dy: (Math.random() - 0.5) * 0.15,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        alpha: Math.random() * 0.6 + 0.2,
+        pulse: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    particles.forEach(p => {
+      p.x += p.dx;
+      p.y += p.dy;
+      p.pulse += 0.01;
+      if (p.x < 0) p.x = w;
+      if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h;
+      if (p.y > h) p.y = 0;
+      const a = p.alpha * (0.6 + 0.4 * Math.sin(p.pulse));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      ctx.fill();
+      // glow
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a * 0.08;
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  init();
+  draw();
+})();
+
+// ── Scroll Reveal ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ── Counter Animation ──
+const counterObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const el = e.target;
+      const target = parseInt(el.dataset.count);
+      let current = 0;
+      const step = Math.ceil(target / 30);
+      const timer = setInterval(() => {
+        current += step;
+        if (current >= target) { current = target; clearInterval(timer); }
+        el.textContent = current + '+';
+      }, 40);
+      counterObserver.unobserve(el);
+    }
+  });
+}, { threshold: 0.5 });
+
+document.querySelectorAll('.stat-num').forEach(el => counterObserver.observe(el));
+
+// ── Nav Active State ──
+const sections = document.querySelectorAll('.section, .hero');
+const navLinks = document.querySelectorAll('.nav-links a');
+
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => {
+    const top = s.offsetTop - 100;
+    if (window.scrollY >= top) current = s.id;
+  });
+  navLinks.forEach(a => {
+    a.classList.remove('active');
+    if (a.getAttribute('href') === '#' + current) a.classList.add('active');
+  });
+});
+
+// ── Nav Hide on Scroll Down ──
+let lastScroll = 0;
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  const cur = window.scrollY;
+  if (cur > lastScroll && cur > 100) nav.classList.add('hidden');
+  else nav.classList.remove('hidden');
+  lastScroll = cur;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "腾昇智和 · 短视频智能体",
+  "short_name": "腾昇智和",
+  "description": "腾昇智和短视频智能体交互展示与调用页面。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b12",
+  "theme_color": "#070b12",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "name": "stzh-video-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "author": "腾昇智和",
+  "description": "AI 短视频全链路自动生成智能体",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build && electron-builder --win",
+    "electron:build:portable": "npm run build && electron-builder --win portable",
+    "rag:start": "cd rag-service && python main.py",
+    "rag:ingest": "cd rag-service && python ingest.py"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "better-sqlite3": "^12.10.0",
+    "docx": "^9.7.0",
+    "gsap": "^3.15.0",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.4",
+    "playwright": "^1.60.0",
+    "pptx-automizer": "^0.8.1",
+    "pptxgenjs": "^4.0.1",
+    "qrcode": "^1.5.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "electron": "^35.7.5",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.stzh.video-workspace",
+    "productName": "腾昇智和 Video Workspace",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "out/**/*",
+      "!node_modules"
+    ],
+    "asarUnpack": [
+      "server/**/*",
+      "out/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "腾昇智和"
+    },
+    "asar": true,
+    "compression": "maximum"
+  }
+}

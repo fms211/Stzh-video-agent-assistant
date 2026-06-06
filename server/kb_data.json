@@ -1,0 +1,654 @@
+{
+  "camera": [
+    {
+      "name": "定机",
+      "en": "Locked Down",
+      "cat": "基础运镜",
+      "effect": "强化稳定感；突出表演；减少干扰"
+    },
+    {
+      "name": "摇镜",
+      "en": "Pan",
+      "cat": "基础运镜",
+      "effect": "连接空间；引导注意力；增强信息展开"
+    },
+    {
+      "name": "俯仰",
+      "en": "Tilt",
+      "cat": "基础运镜",
+      "effect": "制造揭示感；强化纵深；塑造气势"
+    },
+    {
+      "name": "变焦",
+      "en": "Zoom",
+      "cat": "基础运镜",
+      "effect": "快速收拢注意力；突出细节；改变观看距离"
+    },
+    {
+      "name": "升降",
+      "en": "Pedestal",
+      "cat": "基础运镜",
+      "effect": "保持距离关系；平稳展示高度变化；增强空间感"
+    },
+    {
+      "name": "推拉",
+      "en": "Dolly",
+      "cat": "基础运镜",
+      "effect": "增强沉浸感；制造压迫或释放；强化主观感受"
+    },
+    {
+      "name": "横移",
+      "en": "Truck",
+      "cat": "基础运镜",
+      "effect": "保持主体连贯；展示侧向空间；增强流动感"
+    },
+    {
+      "name": "跟拍",
+      "en": "Follow",
+      "cat": "基础运镜",
+      "effect": "增强代入感；维持主体中心；强化过程感"
+    },
+    {
+      "name": "环绕",
+      "en": "Arc",
+      "cat": "基础运镜",
+      "effect": "增强包围感；突出主体；制造电影感"
+    },
+    {
+      "name": "摇臂",
+      "en": "Crane / Jib",
+      "cat": "基础运镜",
+      "effect": "提升气势；揭示空间结构；形成宏观视角"
+    },
+    {
+      "name": "手持",
+      "en": "Handheld",
+      "cat": "基础运镜",
+      "effect": "增强紧张感；制造现场感；强化即时性"
+    },
+    {
+      "name": "稳定器运镜",
+      "en": "Stabilized / Gimbal",
+      "cat": "基础运镜",
+      "effect": "提升高级感；增强平滑沉浸；保持运动美感"
+    },
+    {
+      "name": "焦点转移",
+      "en": "Rack Focus",
+      "cat": "基础运镜",
+      "effect": "转移视线；建立关系；制造层次变化"
+    },
+    {
+      "name": "眩晕变焦",
+      "en": "Dolly Zoom",
+      "cat": "基础运镜",
+      "effect": "制造失衡感；强化主观冲击；突出心理变化"
+    },
+    {
+      "name": "航拍",
+      "en": "Aerial / Drone",
+      "cat": "基础运镜",
+      "effect": "展现规模；突出空间关系；提升宏观气质"
+    },
+    {
+      "name": "联合摇移",
+      "en": "Pan + Tilt",
+      "cat": "组合运镜",
+      "effect": "提高信息覆盖；增强动态视线引导；形成复合揭示"
+    },
+    {
+      "name": "摇镜变焦",
+      "en": "Pan + Zoom",
+      "cat": "组合运镜",
+      "effect": "从面到点收拢注意力；增强目标发现感"
+    },
+    {
+      "name": "俯仰变焦",
+      "en": "Tilt + Zoom",
+      "cat": "组合运镜",
+      "effect": "增强揭示层次；突出重点；形成戏剧性上扬或下压"
+    },
+    {
+      "name": "摇镜转焦",
+      "en": "Pan + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "建立关系；增强流动感；平滑完成信息切换"
+    },
+    {
+      "name": "俯仰转焦",
+      "en": "Tilt + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "增强空间纵深；突出上下层关系；制造发现感"
+    },
+    {
+      "name": "推拉摇镜",
+      "en": "Dolly + Pan",
+      "cat": "组合运镜",
+      "effect": "增强空间层次；保持叙事连续；提升电影感"
+    },
+    {
+      "name": "推拉俯仰",
+      "en": "Dolly + Tilt",
+      "cat": "组合运镜",
+      "effect": "增强压迫感或仰视感；拉开层次；形成戏剧推进"
+    },
+    {
+      "name": "推拉转焦",
+      "en": "Dolly + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "提升沉浸感；增强层次推进；突出关系变化"
+    },
+    {
+      "name": "横移摇镜",
+      "en": "Truck + Pan",
+      "cat": "组合运镜",
+      "effect": "保持主体可见；强化横向空间；增强陪伴感"
+    },
+    {
+      "name": "横移俯仰",
+      "en": "Truck + Tilt",
+      "cat": "组合运镜",
+      "effect": "增加画面层次；强化移动中的信息揭示"
+    },
+    {
+      "name": "横移转焦",
+      "en": "Truck + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "平滑完成关注切换；展示空间关系；增强节奏感"
+    },
+    {
+      "name": "手持跟拍",
+      "en": "Follow + Handheld",
+      "cat": "组合运镜",
+      "effect": "提升紧张感；增强临场感；制造不确定性"
+    },
+    {
+      "name": "稳定跟拍",
+      "en": "Follow + Stabilized",
+      "cat": "组合运镜",
+      "effect": "增强高级感；提升沉浸感；保持主体连贯"
+    },
+    {
+      "name": "跟随摇镜",
+      "en": "Follow + Pan",
+      "cat": "组合运镜",
+      "effect": "保持主体在画面内；强化过程感；增强动势"
+    },
+    {
+      "name": "平行跟拍",
+      "en": "Follow + Truck",
+      "cat": "组合运镜",
+      "effect": "突出运动轨迹；增强陪伴感；展现周边环境"
+    },
+    {
+      "name": "跟拍转焦",
+      "en": "Follow + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "强化叙事切换；增加层次变化；提升动态信息量"
+    },
+    {
+      "name": "环绕跟拍",
+      "en": "Arc + Follow",
+      "cat": "组合运镜",
+      "effect": "增强主角感；制造浪漫或史诗气质；提升动势"
+    },
+    {
+      "name": "环绕转焦",
+      "en": "Arc + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "增强空间包围感；强化关系层次；制造电影感"
+    },
+    {
+      "name": "环绕变焦",
+      "en": "Arc + Zoom",
+      "cat": "组合运镜",
+      "effect": "增强视觉张力；让主体更突出；形成华丽感"
+    },
+    {
+      "name": "摇臂摇镜",
+      "en": "Crane + Pan",
+      "cat": "组合运镜",
+      "effect": "提升规模感；扩大信息覆盖；形成宏观扫视"
+    },
+    {
+      "name": "摇臂俯仰",
+      "en": "Crane + Tilt",
+      "cat": "组合运镜",
+      "effect": "增强仪式感；提升纵深；形成宏大收束"
+    },
+    {
+      "name": "摇臂跟随",
+      "en": "Crane + Follow",
+      "cat": "组合运镜",
+      "effect": "强化主角动线；提升空间层级；制造气势"
+    },
+    {
+      "name": "摇臂变焦",
+      "en": "Crane + Zoom",
+      "cat": "组合运镜",
+      "effect": "从全局切入重点；强化戏剧感；增强舞台气质"
+    },
+    {
+      "name": "摇臂环绕",
+      "en": "Crane + Arc",
+      "cat": "组合运镜",
+      "effect": "增强史诗感；塑造空间层次；突出仪式感"
+    },
+    {
+      "name": "升降俯仰",
+      "en": "Pedestal + Tilt",
+      "cat": "组合运镜",
+      "effect": "提升揭示效率；增强层次变化；保持观看连贯"
+    },
+    {
+      "name": "升降转焦",
+      "en": "Pedestal + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "平稳转移注意力；增加纵向层次；提升精致感"
+    },
+    {
+      "name": "定机转焦",
+      "en": "Locked Down + Rack Focus",
+      "cat": "组合运镜",
+      "effect": "平稳引导注意力；突出景深关系；减少运动干扰"
+    },
+    {
+      "name": "定机变焦",
+      "en": "Locked Down + Zoom",
+      "cat": "组合运镜",
+      "effect": "快速聚焦重点；保持画面稳定；提升信息指向"
+    },
+    {
+      "name": "手持推进",
+      "en": "Handheld Push In",
+      "cat": "组合运镜",
+      "effect": "强化压迫感；增强临场冲击；制造主观张力"
+    }
+  ],
+  "imgParams": {
+    "主体 > 位置与占比 > 画面占比": [
+      {
+        "key": "subject_ratio",
+        "cn": "主体占比5%",
+        "en": "subject occupies 5% of the frame",
+        "desc": "极小主体，强化环境叙事与孤独感；孤独空旷的感觉、寂寥氛围"
+      },
+      {
+        "key": "subject_ratio",
+        "cn": "主体占比10%",
+        "en": "subject occupies 10% of the frame",
+        "desc": "小主体，突出环境比例关系"
+      },
+      {
+        "key": "subject_ratio",
+        "cn": "主体占比15%",
+        "en": "subject occupies 15% of the frame",
+        "desc": "主体存在感较弱，适合讲环境故事"
+      },
+      {
+        "key": "subject_ratio",
+        "cn": "主体占比20%",
+        "en": "subject occupies 20% of the frame",
+        "desc": "环境主导，主体清晰可辨"
+      },
+      {
+        "key": "subject_ratio",
+        "cn": "主体占比25%",
+        "en": "subject occupies 25% of the frame",
+        "desc": "主体与环境相对均衡"
+      }
+    ],
+    "主体 > 位置与占比 > 主体位置": [
+      {
+        "key": "subject_position",
+        "cn": "居中",
+        "en": "centered",
+        "desc": "稳定、庄重、适合品牌主视觉"
+      },
+      {
+        "key": "subject_position",
+        "cn": "略偏左",
+        "en": "positioned slightly to the left",
+        "desc": "符合阅读动线，参考PDF高频写法"
+      },
+      {
+        "key": "subject_position",
+        "cn": "略偏右",
+        "en": "positioned slightly to the right",
+        "desc": "为左侧留白，便于排版"
+      },
+      {
+        "key": "subject_position",
+        "cn": "左三分位",
+        "en": "placed on the left third",
+        "desc": "叙事感强，适合前进方向在右侧"
+      },
+      {
+        "key": "subject_position",
+        "cn": "右三分位",
+        "en": "placed on the right third",
+        "desc": "适合视线朝向左侧或右侧留景"
+      }
+    ],
+    "环境 > 场景类型 > 环境母类": [
+      {
+        "key": "environment_type",
+        "cn": "影棚背景",
+        "en": "studio backdrop",
+        "desc": "可控光线，适合商业与产品"
+      },
+      {
+        "key": "environment_type",
+        "cn": "室内居家",
+        "en": "cozy indoor home setting",
+        "desc": "亲密、生活方式感"
+      },
+      {
+        "key": "environment_type",
+        "cn": "复古客厅",
+        "en": "retro living room",
+        "desc": "有年代感与生活痕迹"
+      },
+      {
+        "key": "environment_type",
+        "cn": "咖啡馆",
+        "en": "cafe interior",
+        "desc": "文艺、社交、日常"
+      },
+      {
+        "key": "environment_type",
+        "cn": "图书馆",
+        "en": "library interior",
+        "desc": "知识感、安静、理性"
+      }
+    ],
+    "气氛 > 情绪氛围 > 画面气氛": [
+      {
+        "key": "atmosphere",
+        "cn": "宁静",
+        "en": "calm atmosphere",
+        "desc": "让画面更安定、易形成高级感；氛围更宁静；画面情绪偏宁静；整体感觉更宁静"
+      },
+      {
+        "key": "atmosphere",
+        "cn": "浪漫",
+        "en": "romantic atmosphere",
+        "desc": "柔和、适合情侣与海边场景；氛围更浪漫；画面情绪偏浪漫"
+      },
+      {
+        "key": "atmosphere",
+        "cn": "梦幻",
+        "en": "dreamy atmosphere",
+        "desc": "轻雾、柔光、朦胧；氛围更梦幻；画面情绪偏梦幻"
+      },
+      {
+        "key": "atmosphere",
+        "cn": "复古怀旧",
+        "en": "nostalgic atmosphere",
+        "desc": "年代感、记忆感；氛围更复古怀旧；画面情绪偏复古怀旧"
+      },
+      {
+        "key": "atmosphere",
+        "cn": "电影感",
+        "en": "cinematic atmosphere",
+        "desc": "叙事强，空间层次好；氛围更电影感；画面情绪偏电影感"
+      }
+    ],
+    "灯光 > 基础光型 > 普通光影": [
+      {
+        "key": "lighting_basic",
+        "cn": "柔和散射光",
+        "en": "soft diffused lighting",
+        "desc": "肤质友好，层次柔顺"
+      },
+      {
+        "key": "lighting_basic",
+        "cn": "硬光",
+        "en": "hard light",
+        "desc": "轮廓锐利，对比强"
+      },
+      {
+        "key": "lighting_basic",
+        "cn": "正面光",
+        "en": "front lighting",
+        "desc": "信息完整、阴影少"
+      },
+      {
+        "key": "lighting_basic",
+        "cn": "侧光",
+        "en": "side lighting",
+        "desc": "强调体积和材质"
+      },
+      {
+        "key": "lighting_basic",
+        "cn": "逆光",
+        "en": "backlighting",
+        "desc": "轮廓梦幻，常用于黄金时刻"
+      }
+    ],
+    "灯光 > 复杂光影 > 高级光效": [
+      {
+        "key": "lighting_complex",
+        "cn": "反射光",
+        "en": "reflected light",
+        "desc": "提高真实感和空间环境色"
+      },
+      {
+        "key": "lighting_complex",
+        "cn": "折射光",
+        "en": "refracted light",
+        "desc": "适合玻璃、水晶、液体"
+      },
+      {
+        "key": "lighting_complex",
+        "cn": "体积光",
+        "en": "volumetric lighting",
+        "desc": "增强空气感和电影感"
+      },
+      {
+        "key": "lighting_complex",
+        "cn": "丁达尔效应",
+        "en": "tyndall effect",
+        "desc": "高端商业光感，适合梦核与泳池核"
+      },
+      {
+        "key": "lighting_complex",
+        "cn": "上帝光",
+        "en": "god rays",
+        "desc": "神圣与戏剧化"
+      }
+    ],
+    "色彩 > 色彩体系 > 色彩方案": [
+      {
+        "key": "color_palette",
+        "cn": "低饱和电影色",
+        "en": "low saturation cinematic palette",
+        "desc": "高级、稳重、耐看"
+      },
+      {
+        "key": "color_palette",
+        "cn": "高饱和流行色",
+        "en": "high saturation pop palette",
+        "desc": "抓眼、年轻、有社媒传播力"
+      },
+      {
+        "key": "color_palette",
+        "cn": "蓝橙互补",
+        "en": "blue and orange complementary palette",
+        "desc": "经典电影对比"
+      },
+      {
+        "key": "color_palette",
+        "cn": "青粉霓虹",
+        "en": "cyan and magenta palette",
+        "desc": "赛博、Y2K、夜生活感"
+      },
+      {
+        "key": "color_palette",
+        "cn": "金蓝奢华",
+        "en": "deep navy and liquid gold palette",
+        "desc": "参考PDF商业KV，贵气强"
+      }
+    ],
+    "拍摄视角 > 视线高度 > 基础角度": [
+      {
+        "key": "camera_angle",
+        "cn": "平视",
+        "en": "eye-level view",
+        "desc": "最自然，适合真实感与人物交流"
+      },
+      {
+        "key": "camera_angle",
+        "cn": "低机位仰拍",
+        "en": "low angle shot",
+        "desc": "增强力量和主体高度"
+      },
+      {
+        "key": "camera_angle",
+        "cn": "高机位俯拍",
+        "en": "high angle shot",
+        "desc": "强化空间组织和脆弱感"
+      },
+      {
+        "key": "camera_angle",
+        "cn": "鸟瞰",
+        "en": "bird's eye view",
+        "desc": "适合几何关系和大场景"
+      },
+      {
+        "key": "camera_angle",
+        "cn": "虫视",
+        "en": "worm's eye view",
+        "desc": "夸张、戏剧化、压迫感强"
+      }
+    ],
+    "构图 > 几何与结构 > 结构构图": [
+      {
+        "key": "composition_structure",
+        "cn": "三分法构图",
+        "en": "rule of thirds",
+        "desc": "最通用的稳定叙事构图"
+      },
+      {
+        "key": "composition_structure",
+        "cn": "中心构图",
+        "en": "center composition",
+        "desc": "稳定、权威、便于品牌传播"
+      },
+      {
+        "key": "composition_structure",
+        "cn": "对称构图",
+        "en": "symmetrical composition",
+        "desc": "秩序与仪式感强"
+      },
+      {
+        "key": "composition_structure",
+        "cn": "对角线构图",
+        "en": "diagonal composition",
+        "desc": "画面动态更强"
+      },
+      {
+        "key": "composition_structure",
+        "cn": "三角构图",
+        "en": "triangular composition",
+        "desc": "视觉稳定，适合多人或姿态组织"
+      }
+    ],
+    "构图 > 视觉引导与空间关系 > 引导方式": [
+      {
+        "key": "composition_guidance",
+        "cn": "引导线",
+        "en": "leading lines",
+        "desc": "自然把视线带到主体"
+      },
+      {
+        "key": "composition_guidance",
+        "cn": "消失点",
+        "en": "vanishing point",
+        "desc": "空间纵深强"
+      },
+      {
+        "key": "composition_guidance",
+        "cn": "前景遮挡",
+        "en": "foreground occlusion",
+        "desc": "参考PDF高频要素，提升抓拍与景深感"
+      },
+      {
+        "key": "composition_guidance",
+        "cn": "前景虚化",
+        "en": "foreground blur",
+        "desc": "制造镜头层次与偷看感"
+      },
+      {
+        "key": "composition_guidance",
+        "cn": "负空间",
+        "en": "vast negative space",
+        "desc": "适合海报排版和孤独感表达；孤独空旷的感觉、寂寥氛围"
+      }
+    ],
+    "构图 > 特殊透视与视角 > 透视方式": [
+      {
+        "key": "composition_perspective",
+        "cn": "广角透视夸张",
+        "en": "exaggerated wide-angle perspective",
+        "desc": "空间张力强"
+      },
+      {
+        "key": "composition_perspective",
+        "cn": "长焦压缩透视",
+        "en": "telephoto compression",
+        "desc": "参考PDF 85mm 高频表达"
+      },
+      {
+        "key": "composition_perspective",
+        "cn": "微距透视",
+        "en": "macro perspective",
+        "desc": "强调微观细节和材质"
+      },
+      {
+        "key": "composition_perspective",
+        "cn": "顶视平铺",
+        "en": "top-down flat lay",
+        "desc": "清晰展示物件排列"
+      },
+      {
+        "key": "composition_perspective",
+        "cn": "超近距离特写",
+        "en": "extreme close-up",
+        "desc": "强化眼睛、嘴唇、材质细节"
+      }
+    ],
+    "画面风格 > 整体艺术风格 > 风格流派": [
+      {
+        "key": "style_overall",
+        "cn": "超写实摄影",
+        "en": "hyper-realistic photography",
+        "desc": "适合高保真人物和产品"
+      },
+      {
+        "key": "style_overall",
+        "cn": "电影写实",
+        "en": "cinematic realism",
+        "desc": "故事感和情绪层次更强"
+      },
+      {
+        "key": "style_overall",
+        "cn": "纪实抓拍",
+        "en": "documentary candid style",
+        "desc": "更像真实生活瞬间"
+      },
+      {
+        "key": "style_overall",
+        "cn": "时尚大片",
+        "en": "editorial fashion photography",
+        "desc": "高级、潮流、可用于品牌大片"
+      },
+      {
+        "key": "style_overall",
+        "cn": "商业主视觉",
+        "en": "commercial key visual",
+        "desc": "适合品牌KV和广告图"
+      }
+    ]
+  }
+}
