@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - 作品画廊</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a1228; color: #dbe1ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; padding: 24px; padding-top: calc(env(safe-area-inset-top, 24px) + 24px); }
+  .neumorphic-raised { background: #171f35; box-shadow: 6px 6px 12px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .header-title { font-size: 18px; font-weight: 700; color: #ffb870; }
+  .count-badge { font-size: 12px; background: #171f35; padding: 4px 12px; border-radius: 12px; color: #d8c3b1; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; }
+  .filter-chip { padding: 6px 14px; border-radius: 20px; font-size: 12px; border: none; cursor: pointer; white-space: nowrap; background: #171f35; color: #d8c3b1; }
+  .filter-chip.active { background: #e89840; color: #4a2800; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card { border-radius: 12px; overflow: hidden; }
+  .thumb { width: 100%; aspect-ratio: 4/3; background: #222940; display: flex; align-items: center; justify-content: center; position: relative; }
+  .thumb-icon { font-size: 28px; opacity: 0.6; }
+  .duration { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+  .card-title { font-size: 12px; font-weight: 500; padding: 8px 10px 4px; }
+  .card-mode { font-size: 10px; color: #d8c3b1; padding: 0 10px 10px; }
+  .empty { text-align: center; padding: 60px 0; color: #d8c3b1; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">🌌 作品画廊</div>
+    <span class="count-badge" id="count">0 个作品</span>
+  </div>
+  <div class="filter-row">
+    <button class="filter-chip active" onclick="filter('all',this)">全部</button>
+    <button class="filter-chip" onclick="filter('remix',this)">混剪</button>
+    <button class="filter-chip" onclick="filter('continuous',this)">连贯</button>
+    <button class="filter-chip" onclick="filter('ip',this)">IP强锁</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div id="empty" class="empty" style="display:none;">🌌 暂无作品</div>
+
+<script>
+  let videos = [];
+  let currentFilter = 'all';
+
+  function render() {
+    const filtered = videos.filter(v => currentFilter === 'all' || v.mode === currentFilter);
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+    document.getElementById('count').textContent = filtered.length + ' 个作品';
+    if (!filtered.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    grid.innerHTML = filtered.map(v => `<div class="card neumorphic-raised">
+      <div class="thumb"><span class="thumb-icon">▶</span><span class="duration">${v.duration}</span></div>
+      <div class="card-title">${v.title}</div>
+      <div class="card-mode">${v.modeLabel}</div>
+    </div>`).join('');
+  }
+
+  function filter(type, el) {
+    currentFilter = type;
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    render();
+  }
+
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'gallery_data') { videos = data.videos || []; render(); }
+    } catch {}
+  });
+
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'request_gallery' }));
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - AI 协同</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background-color: #0a1228;
+    color: #dbe1ff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .neumorphic-inset {
+    background: #0a1228;
+    box-shadow: inset 4px 4px 8px rgba(0,0,0,0.6), inset -2px -2px 6px rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+  .neumorphic-raised {
+    background: #171f35;
+    box-shadow: 6px 6px 12px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* 头部 */
+  .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; padding-top: calc(env(safe-area-inset-top, 16px) + 16px); }
+  .header-title { font-size: 18px; font-weight: 700; color: #ffb870; }
+  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; }
+
+  /* 模型状态栏 */
+  .model-bar { display: flex; align-items: center; gap: 8px; padding: 0 24px 12px; font-size: 12px; }
+  .model-name { color: #ffb870; font-weight: 500; }
+  .model-id { color: #d8c3b1; font-family: monospace; font-size: 11px; }
+
+  /* 对话区域 */
+  .chat-area { flex: 1; overflow-y: auto; padding: 0 24px; padding-bottom: 12px; }
+  .bubble { max-width: 85%; padding: 16px; border-radius: 16px; margin-bottom: 12px; line-height: 1.5; font-size: 14px; }
+  .bubble-ai { align-self: flex-start; background: #171f35; border-bottom-left-radius: 4px; }
+  .bubble-user { align-self: flex-end; background: #e89840; color: #4a2800; border-bottom-right-radius: 4px; }
+
+  /* 操作按钮 */
+  .action-row { display: flex; gap: 8px; padding: 8px 24px; }
+  .action-primary { background: #ffb870; color: #4a2800; padding: 8px 16px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .action-outline { background: transparent; color: #dbe1ff; padding: 8px 16px; border-radius: 20px; border: 1px solid #a08d7e; font-size: 12px; cursor: pointer; }
+
+  /* 输入区域 */
+  .input-area { display: flex; align-items: center; gap: 8px; padding: 12px 24px; padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 12px); }
+  .input-field {
+    flex: 1;
+    height: 40px;
+    padding: 0 16px;
+    background: #0a1228;
+    border: none;
+    border-radius: 20px;
+    color: #dbe1ff;
+    font-size: 14px;
+    outline: none;
+  }
+  .send-btn { width: 40px; height: 40px; border-radius: 20px; background: #ffb870; border: none; color: #4a2800; font-size: 16px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .send-btn:disabled { opacity: 0.5; }
+
+  /* 空状态 */
+  .empty { text-align: center; padding-top: 80px; color: #d8c3b1; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-text { font-size: 16px; font-weight: 600; color: #dbe1ff; margin-bottom: 8px; }
+  .empty-hint { font-size: 12px; }
+</style>
+</head>
+<body>
+  <!-- 头部 -->
+  <div class="header">
+    <div class="header-title">🤖 OPC AI 助手</div>
+    <div class="online-dot"></div>
+  </div>
+
+  <!-- 模型状态 -->
+  <div class="model-bar">
+    <span class="model-name" id="modelName">未配置</span>
+    <span class="model-id" id="modelId">点击设置配置模型</span>
+  </div>
+
+  <!-- 对话区域 -->
+  <div class="chat-area" id="chatArea">
+    <div class="empty" id="emptyState">
+      <div class="empty-icon">🤖</div>
+      <div class="empty-text">开始和 AI 助手对话吧</div>
+      <div class="empty-hint">描述你的创作想法，AI 会从四维视角分析</div>
+    </div>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div class="action-row" id="actionRow" style="display:none;">
+    <button class="action-primary" onclick="sendToMain()">发送到主站</button>
+    <button class="action-outline" onclick="generateVideo()">生成视频</button>
+    <button class="action-outline" onclick="saveAsTemplate()">存为模板</button>
+  </div>
+
+  <!-- 输入区域 -->
+  <div class="input-area">
+    <input class="input-field" id="inputField" type="text" placeholder="输入消息..." onkeypress="if(event.key==='Enter')sendMessage()"/>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
+  </div>
+
+<script>
+  let messages = [];
+  let isSending = false;
+
+  // 添加消息到界面
+  function addMessage(role, content) {
+    const chatArea = document.getElementById('chatArea');
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.style.display = 'none';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-ai');
+    bubble.textContent = content;
+    chatArea.appendChild(bubble);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  // 发送消息
+  function sendMessage() {
+    const input = document.getElementById('inputField');
+    const text = input.value.trim();
+    if (!text || isSending) return;
+
+    isSending = true;
+    document.getElementById('sendBtn').disabled = true;
+    input.value = '';
+
+    addMessage('user', text);
+
+    // 通知原生端发送
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'send_message',
+      content: text
+    }));
+  }
+
+  // 显示操作按钮
+  function showActions() {
+    document.getElementById('actionRow').style.display = 'flex';
+  }
+
+  // 操作按钮
+  function sendToMain() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'send_to_main' }));
+  }
+  function generateVideo() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'generate_video' }));
+  }
+  function saveAsTemplate() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'save_template' }));
+  }
+
+  // 接收原生端消息
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'ai_reply') {
+        addMessage('assistant', data.content);
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+        showActions();
+      }
+
+      if (data.type === 'ai_error') {
+        addMessage('assistant', '❌ ' + (data.message || 'AI 回复失败'));
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+      }
+
+      if (data.type === 'model_info') {
+        document.getElementById('modelName').textContent = data.name;
+        document.getElementById('modelId').textContent = data.model;
+      }
+    } catch {}
+  });
+</script>
+</body>
+</html>

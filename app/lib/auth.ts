@@ -1,6 +1,6 @@
 // 开发环境直接请求 Express 后端
 const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || "http://localhost:8080")
+  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
   : "";
 
 export type User = {

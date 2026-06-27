@@ -1,15 +1,26 @@
 // 服务端同步 API — LLM 配置、偏好、通知、主题
 // 服务端优先 + localStorage 缓存
 
+import { getToken } from "./auth";
+
 const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || "http://localhost:8080")
+  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
   : "";
 
 const isBrowser = typeof window !== "undefined";
 
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (isBrowser) {
+    const token = getToken();
+    if (token) h["Authorization"] = `Bearer ${token}`;
+  }
+  return h;
+}
+
 async function apiGet<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
     if (res.ok) return await res.json();
   } catch { /* 离线 */ }
   return null;
@@ -19,7 +30,7 @@ async function apiPost(path: string, body: unknown): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify(body),
     });
     return res.ok;
@@ -28,7 +39,7 @@ async function apiPost(path: string, body: unknown): Promise<boolean> {
 
 async function apiDelete(path: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+    const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers: authHeaders() });
     return res.ok;
   } catch { return false; }
 }
@@ -152,7 +163,7 @@ export async function clearNotificationsOnServer() {
 // ══════════════════════════════════════════
 
 export async function syncSettings(): Promise<Record<string, string>> {
-  const data = await apiGet<{ settings: Record<string, string> }>("/api/settings");
+  const data = await apiGet<{ settings: Record<string, string> }>("/api/app-settings");
   if (data && Object.keys(data.settings).length > 0) {
     for (const [key, value] of Object.entries(data.settings)) {
       localStorage.setItem(key, value);
@@ -163,9 +174,9 @@ export async function syncSettings(): Promise<Record<string, string>> {
 }
 
 export async function saveSettingToServer(key: string, value: string) {
-  await apiPost("/api/settings", { key, value });
+  await apiPost("/api/app-settings", { key, value });
 }
 
 export async function saveSettingsBatchToServer(settings: Record<string, string>) {
-  await apiPost("/api/settings/batch", { settings });
+  await apiPost("/api/app-settings/batch", { settings });
 }

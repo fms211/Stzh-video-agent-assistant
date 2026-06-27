@@ -66,7 +66,7 @@ export async function ragRetrieve(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, top_k: topK, score_threshold: scoreThreshold }),
-      signal: AbortSignal.timeout(3000), // 3秒超时，避免阻塞对话
+      signal: AbortSignal.timeout(120000), // 120秒超时
     });
 
     if (!res.ok) return [];
@@ -77,6 +77,87 @@ export async function ragRetrieve(
     // RAG 服务不可用时静默降级
     return [];
   }
+}
+
+/**
+ * ReAct 多轮检索（简化版）
+ *
+ * 如果第一轮检索结果质量不高（最高分 < 0.6 或结果数 < 2），
+ * 自动进行第二轮检索，使用更具体的查询。
+ *
+ * @param query 原始用户查询
+ * @param topK 返回条数
+ * @param force 是否强制检索
+ * @returns 合并后的检索结果
+ */
+export async function ragRetrieveWithReact(
+  query: string,
+  topK: number = 5,
+  force: boolean = false,
+): Promise<RagResult[]> {
+  // 第一轮检索
+  const firstRound = await ragRetrieve(query, topK, 0.45, force);
+
+  // 如果第一轮结果质量好，直接返回
+  if (firstRound.length >= 2 && firstRound[0]?.score >= 0.6) {
+    return firstRound;
+  }
+
+  // 第二轮：尝试更具体的查询
+  const refinedQuery = refineQuery(query, firstRound);
+  if (refinedQuery === query) {
+    // 没有改进空间，返回第一轮结果
+    return firstRound;
+  }
+
+  const secondRound = await ragRetrieve(refinedQuery, topK, 0.45, force);
+
+  // 合并两轮结果，去重，保留最高分
+  const merged = new Map<string, RagResult>();
+  for (const r of firstRound) {
+    merged.set(r.id, r);
+  }
+  for (const r of secondRound) {
+    const existing = merged.get(r.id);
+    if (!existing || r.score > existing.score) {
+      merged.set(r.id, r);
+    }
+  }
+
+  // 按分数排序，返回 topK
+  return Array.from(merged.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}
+
+/**
+ * 根据第一轮结果优化查询
+ * 如果第一轮找到了相关知识，用该知识的关键词补充查询
+ */
+function refineQuery(originalQuery: string, firstRoundResults: RagResult[]): string {
+  if (firstRoundResults.length === 0) {
+    return originalQuery;
+  }
+
+  // 从第一轮结果中提取关键词
+  const topResult = firstRoundResults[0];
+  const nameCn = topResult.metadata.name_cn;
+  const nameEn = topResult.metadata.name_en;
+
+  // 如果已经有很好的匹配，不需要改进
+  if (topResult.score >= 0.7) {
+    return originalQuery;
+  }
+
+  // 用找到的知识名称补充查询
+  if (nameCn && !originalQuery.includes(nameCn)) {
+    return `${originalQuery} ${nameCn}`;
+  }
+  if (nameEn && !originalQuery.includes(nameEn)) {
+    return `${originalQuery} ${nameEn}`;
+  }
+
+  return originalQuery;
 }
 
 /**

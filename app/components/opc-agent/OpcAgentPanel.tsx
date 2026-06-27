@@ -10,9 +10,10 @@ import ActionCards from "./ActionCards";
 import { getActiveProvider } from "@/app/lib/llm-config";
 import { streamChat, getThinkingSuffix } from "@/app/lib/llm-client";
 import { buildOpcSystemPrompt } from "@/app/lib/opc-agent-context";
-import { ragRetrieve, formatRagContext } from "@/app/lib/rag-client";
+import { ragRetrieve, ragRetrieveWithReact, formatRagContext } from "@/app/lib/rag-client";
 import { shouldSearch, searchAndFormat } from "@/app/lib/web-search";
-import { getWorkflowById } from "@/app/lib/opc-workflows";
+import { getWorkflowById, getWorkflowStepsWithReflection, getPlannerPrompt, applyDynamicPlan } from "@/app/lib/opc-workflows";
+import { addMemory, searchMemory, formatMemoryContext } from "@/app/lib/opc-memory";
 import {
   loadMessages, saveMessages, upsertSession,
   getActiveSessionId, setActiveSessionId,
@@ -149,16 +150,21 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setIsLoading(true);
     try {
-      // 并行：RAG 检索 + 条件性网络搜索
-      const [ragResults, webResults] = await Promise.all([
-        ragRetrieve(content.trim()),
+      // 记录用户消息到工作记忆
+      addMemory(content.trim(), "working", 0.6, { role: "user" }, sessionId);
+
+      // 并行：RAG 检索（ReAct 多轮）+ 条件性网络搜索 + 记忆检索
+      const [ragResults, webResults, relevantMemories] = await Promise.all([
+        ragRetrieveWithReact(content.trim()),
         shouldSearch(content.trim()) ? searchAndFormat(content.trim()) : Promise.resolve(""),
+        Promise.resolve(searchMemory(content.trim(), 3)),
       ]);
       const ragContext = formatRagContext(ragResults);
-      // 合并 RAG + 网络搜索结果作为上下文
-      const extraContext = [ragContext, webResults].filter(Boolean).join("\n\n");
-      const systemPrompt = buildOpcSystemPrompt(opcContext, extraContext || undefined);
-      const finalPrompt = systemPrompt + getThinkingSuffix(provider.thinkingLevel);
+      const memoryContext = formatMemoryContext(relevantMemories);
+
+      // GSSC：注入 RAG + 搜索 + 记忆
+      const systemPrompt = buildOpcSystemPrompt(opcContext, ragContext || undefined, webResults || undefined);
+      const finalPrompt = systemPrompt + (memoryContext ? "\n\n" + memoryContext : "") + getThinkingSuffix(provider.thinkingLevel);
       const ctx = provider.contextWindow || 8192;
       const historyLimit = ctx <= 8192 ? 6 : ctx <= 32768 ? 20 : ctx <= 128000 ? 50 : ctx <= 200000 ? 80 : 200;
       const chatMessages = [
@@ -183,6 +189,15 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
       const finalText = fullText || "未收到回复，请重试";
       const ragSources = ragResults.map((r) => ({ name: r.metadata.name_cn || r.metadata.source, score: r.score, kb_type: r.metadata.kb_type }));
       setMessages((p) => p.map((m) => (m.id === assistantMsg.id ? { ...m, content: finalText, ragSources } : m)));
+
+      // 记录助手回复到情景记忆
+      addMemory(
+        `用户问: ${content.trim().slice(0, 100)} | 助手答: ${finalText.slice(0, 200)}`,
+        "episodic",
+        0.7,
+        { ragSources: ragSources.map((r) => r.name) },
+        sessionId,
+      );
     } catch (err) {
       const friendly = friendlyError(err);
       if (friendly === "__ABORTED__") setMessages((p) => p.map((m) => (m.id === assistantMsg.id ? { ...m, content: m.content + "\n\n*[已停止]*" } : m)));
@@ -190,11 +205,38 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
     } finally { setIsLoading(false); abortRef.current = null; }
   }, [provider, opcContext]);
 
-  // ── 工作流在对话区内执行 ──
+  // ── 工作流在对话区内执行（带 Reflection） ──
   const handleRunWorkflow = useCallback(async (workflowId: string, input: Record<string, string>) => {
     if (!provider) return;
     const wf = getWorkflowById(workflowId);
     if (!wf) return;
+
+    // 动态规划：如果工作流启用了动态规划，先让 LLM 决定执行哪些步骤
+    let stepsToUse = wf.steps;
+    if (wf.dynamic) {
+      try {
+        const plannerPrompt = getPlannerPrompt(wf, input);
+        const plannerMessages = [
+          { role: "system" as const, content: "你是工作流规划专家，输出 JSON 数组格式的步骤列表。" },
+          { role: "user" as const, content: plannerPrompt },
+        ];
+        let planResult = "";
+        for await (const delta of streamChat(provider, plannerMessages, new AbortController().signal)) {
+          planResult += delta;
+        }
+        // 提取 JSON 数组
+        const jsonMatch = planResult.match(/\[[\s\S]*?\]/);
+        if (jsonMatch) {
+          stepsToUse = applyDynamicPlan(wf, input, jsonMatch[0]);
+        }
+      } catch {
+        // 规划失败，使用原始步骤
+      }
+    }
+
+    // 获取带 Reflection 的完整步骤
+    const wfWithSteps = { ...wf, steps: stepsToUse };
+    const steps = getWorkflowStepsWithReflection(wfWithSteps, input);
 
     setIsLoading(true);
 
@@ -202,13 +244,16 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
     const wfMsg: OpcAgentMessage = {
       id: `wf_${Date.now()}`, role: "workflow", content: "",
       timestamp: Date.now(), workflowId: wf.id, workflowName: wf.name, workflowIcon: wf.icon,
-      totalSteps: wf.steps.length, stepIndex: 0,
+      totalSteps: steps.length, stepIndex: 0,
     };
     setMessages((prev) => [...prev, wfMsg]);
 
     let prevOutput = "";
-    for (let i = 0; i < wf.steps.length; i++) {
-      const step = wf.steps[i];
+    let originalOutput = ""; // 记录原始方案（用于 Reflection 优化步骤）
+    const originalStepCount = stepsToUse.length; // 原始步骤数（不含 Reflection）
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
 
       // 更新工作流消息进度
       setMessages((prev) => prev.map((m) => m.id === wfMsg.id ? { ...m, stepName: step.name, stepIndex: i } : m));
@@ -217,12 +262,24 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
       const stepMsg: OpcAgentMessage = {
         id: `wf_step_${Date.now()}_${i}`, role: "workflow-step", content: "",
         timestamp: Date.now(), workflowName: wf.name, workflowIcon: wf.icon,
-        stepName: step.name, stepIndex: i, totalSteps: wf.steps.length,
+        stepName: step.name, stepIndex: i, totalSteps: steps.length,
       };
       setMessages((prev) => [...prev, stepMsg]);
 
       try {
-        let prompt = step.buildPrompt(input, prevOutput);
+        // 对于优化步骤，注入原始方案
+        let prompt: string;
+        if (step.id === "refine" && originalOutput) {
+          // 优化步骤需要原始方案 + 反思反馈
+          prompt = `【原始方案】\n${originalOutput}\n\n${step.buildPrompt(input, prevOutput)}`;
+        } else {
+          prompt = step.buildPrompt(input, prevOutput);
+        }
+
+        // 记录原始方案（反思步骤之前的最后一步输出）
+        if (i === originalStepCount - 1) {
+          originalOutput = prevOutput;
+        }
 
         // 所有工作流：每步自动搜索补充上下文（搜索词根据步骤+用户输入动态生成）
         const baseQuery = input.topic || input.style_name || input.product || input.style_a || input.raw_prompt || Object.values(input).find(v => v?.trim()) || "";
@@ -272,7 +329,16 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
     }
 
     // 工作流完成 — 更新状态并添加动作卡片
-    setMessages((prev) => prev.map((m) => m.id === wfMsg.id ? { ...m, stepIndex: wf.steps.length } : m));
+    setMessages((prev) => prev.map((m) => m.id === wfMsg.id ? { ...m, stepIndex: steps.length } : m));
+
+    // 记录工作流结果到语义记忆（高重要性）
+    addMemory(
+      `工作流"${wf.name}"完成，主题: ${input.topic || input.style_name || input.product || "未知"}，结果摘要: ${prevOutput.slice(0, 300)}`,
+      "semantic",
+      0.9,
+      { workflowId: wf.id, input },
+      sessionId,
+    );
 
     const cards: ActionCard[] = [
       { id: "save-report", type: "save-report", title: "保存报告", desc: "生成 .md 报告保存到文件", icon: "📄" },

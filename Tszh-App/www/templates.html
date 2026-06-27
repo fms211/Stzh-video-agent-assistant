@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - 模板管理</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a1228; color: #dbe1ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; padding: 24px; padding-top: calc(env(safe-area-inset-top, 24px) + 24px); }
+  .neumorphic-raised { background: #171f35; box-shadow: 6px 6px 12px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+  .neumorphic-inset { background: #0a1228; box-shadow: inset 4px 4px 8px rgba(0,0,0,0.6), inset -2px -2px 6px rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.03); }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .header-title { font-size: 18px; font-weight: 700; color: #ffb870; }
+  .add-btn { background: #ffb870; color: #4a2800; padding: 6px 14px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; }
+  .filter-chip { padding: 6px 14px; border-radius: 20px; font-size: 12px; border: none; cursor: pointer; white-space: nowrap; background: #171f35; color: #d8c3b1; }
+  .filter-chip.active { background: #e89840; color: #4a2800; }
+  .card { border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .card-icon { font-size: 28px; }
+  .card-info { flex: 1; }
+  .card-name { font-size: 14px; font-weight: 600; }
+  .card-cat { font-size: 11px; color: #d8c3b1; }
+  .card-desc { font-size: 12px; color: #a08d7e; margin-bottom: 12px; }
+  .card-tags { font-size: 10px; color: #534437; font-family: monospace; margin-bottom: 12px; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-primary { background: #ffb870; color: #4a2800; padding: 8px 16px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-outline { background: transparent; color: #dbe1ff; padding: 8px 16px; border-radius: 20px; border: 1px solid #a08d7e; font-size: 12px; cursor: pointer; }
+  .empty { text-align: center; padding: 60px 0; color: #d8c3b1; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">📦 模板管理</div>
+    <button class="add-btn" onclick="createTemplate()">+ 新建</button>
+  </div>
+  <div class="filter-row">
+    <button class="filter-chip active" onclick="filter('all',this)">全部</button>
+    <button class="filter-chip" onclick="filter('product',this)">产品</button>
+    <button class="filter-chip" onclick="filter('story',this)">故事</button>
+    <button class="filter-chip" onclick="filter('emotion',this)">情绪</button>
+  </div>
+  <div id="list"></div>
+  <div id="empty" class="empty" style="display:none;">📦 暂无模板</div>
+
+<script>
+  let templates = [];
+  let currentFilter = 'all';
+
+  function render() {
+    const filtered = templates.filter(t => currentFilter === 'all' || t.category === currentFilter);
+    const list = document.getElementById('list');
+    const empty = document.getElementById('empty');
+    if (!filtered.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    list.innerHTML = filtered.map(t => `<div class="card neumorphic-raised">
+      <div class="card-header">
+        <span class="card-icon">${t.icon || '📝'}</span>
+        <div class="card-info">
+          <div class="card-name">${t.label}</div>
+          <div class="card-cat">${t.category}</div>
+        </div>
+      </div>
+      <div class="card-desc">${t.description || t.prompt}</div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="useTemplate(${t.id})">使用</button>
+        <button class="btn-outline" onclick="scheduleTemplate(${t.id})">定时发布</button>
+      </div>
+    </div>`).join('');
+  }
+
+  function filter(type, el) {
+    currentFilter = type;
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    render();
+  }
+
+  function useTemplate(id) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'use_template', id })); }
+  function scheduleTemplate(id) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'schedule_template', id })); }
+  function createTemplate() { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'create_template' })); }
+
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'templates_data') { templates = data.templates || []; render(); }
+    } catch {}
+  });
+
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'request_templates' }));
+</script>
+</body>
+</html>

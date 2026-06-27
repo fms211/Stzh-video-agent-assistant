@@ -1,13 +1,77 @@
 const Database = require("better-sqlite3");
 const path = require("path");
+const fs = require("fs");
 
-const DB_PATH = path.join(__dirname, "stzh.db");
+// Electron 打包后 __dirname 在 asar 内（只读），需要使用外部可写目录
+let DB_PATH;
+if (process.env.STZH_DATA_DIR) {
+  // Electron 模式：使用 userData 目录
+  DB_PATH = path.join(process.env.STZH_DATA_DIR, "stzh.db");
+} else if (__dirname.includes(".asar")) {
+  // 兜底：asar 内但没有设置环境变量
+  DB_PATH = path.join(path.dirname(__dirname), "stzh.db");
+} else {
+  // 开发模式：使用当前目录
+  DB_PATH = path.join(__dirname, "stzh.db");
+}
 const db = new Database(DB_PATH);
 
 // 启用 WAL 模式（提升并发性能）
 db.pragma("journal_mode = WAL");
 
-// === 建表 ===
+// === 第一步：迁移旧表（在建表之前，避免 FOREIGN KEY 引用不存在的列） ===
+const FIRST_USER_ID = 1;
+
+try {
+  const cols = db.prepare("PRAGMA table_info(opc_sessions)").all();
+  if (cols.length > 0 && !cols.some(c => c.name === "user_id")) {
+    console.log("[DB] 迁移: 给 opc_sessions 添加 user_id 列");
+    db.exec("ALTER TABLE opc_sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT " + FIRST_USER_ID);
+  }
+} catch (e) { /* 表不存在 */ }
+
+try {
+  const cols = db.prepare("PRAGMA table_info(opc_memory)").all();
+  if (cols.length > 0 && !cols.some(c => c.name === "user_id")) {
+    console.log("[DB] 迁移: 重建 opc_memory 表");
+    db.exec("ALTER TABLE opc_memory RENAME TO opc_memory_old");
+    db.exec(`CREATE TABLE opc_memory (key TEXT NOT NULL, user_id INTEGER NOT NULL DEFAULT ${FIRST_USER_ID}, value TEXT NOT NULL, category TEXT DEFAULT 'general', updated_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (key, user_id))`);
+    db.exec(`INSERT OR IGNORE INTO opc_memory (key, user_id, value, category, updated_at) SELECT key, ${FIRST_USER_ID}, value, category, updated_at FROM opc_memory_old`);
+    db.exec("DROP TABLE IF EXISTS opc_memory_old");
+  }
+} catch (e) { /* 表不存在 */ }
+
+try {
+  const cols = db.prepare("PRAGMA table_info(llm_providers)").all();
+  if (cols.length > 0 && !cols.some(c => c.name === "user_id")) {
+    console.log("[DB] 迁移: 重建 llm_providers 表");
+    db.exec("ALTER TABLE llm_providers RENAME TO llm_providers_old");
+    db.exec(`CREATE TABLE llm_providers (id TEXT NOT NULL, user_id INTEGER NOT NULL DEFAULT ${FIRST_USER_ID}, config TEXT NOT NULL, is_active INTEGER DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (id, user_id))`);
+    db.exec(`INSERT OR IGNORE INTO llm_providers (id, user_id, config, is_active, updated_at) SELECT id, ${FIRST_USER_ID}, config, is_active, updated_at FROM llm_providers_old`);
+    db.exec("DROP TABLE IF EXISTS llm_providers_old");
+  }
+} catch (e) { /* 表不存在 */ }
+
+try {
+  const cols = db.prepare("PRAGMA table_info(user_prefs)").all();
+  if (cols.length > 0 && !cols.some(c => c.name === "user_id")) {
+    console.log("[DB] 迁移: 重建 user_prefs 表");
+    db.exec("ALTER TABLE user_prefs RENAME TO user_prefs_old");
+    db.exec(`CREATE TABLE user_prefs (key TEXT NOT NULL, user_id INTEGER NOT NULL DEFAULT ${FIRST_USER_ID}, value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (key, user_id))`);
+    db.exec(`INSERT OR IGNORE INTO user_prefs (key, user_id, value, updated_at) SELECT key, ${FIRST_USER_ID}, value, updated_at FROM user_prefs_old`);
+    db.exec("DROP TABLE IF EXISTS user_prefs_old");
+  }
+} catch (e) { /* 表不存在 */ }
+
+try {
+  const cols = db.prepare("PRAGMA table_info(notifications)").all();
+  if (cols.length > 0 && !cols.some(c => c.name === "user_id")) {
+    console.log("[DB] 迁移: 给 notifications 添加 user_id 列");
+    db.exec("ALTER TABLE notifications ADD COLUMN user_id INTEGER NOT NULL DEFAULT " + FIRST_USER_ID);
+  }
+} catch (e) { /* 表不存在 */ }
+
+// === 第二步：建表（IF NOT EXISTS 保证幂等，迁移后 user_id 列已存在） ===
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,9 +146,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_gen_date ON generations(created_at);
   CREATE INDEX IF NOT EXISTS idx_tpl_user ON templates(user_id);
 
-  -- OPC 创作助手：会话表
   CREATE TABLE IF NOT EXISTS opc_sessions (
     id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL DEFAULT 0,
     title TEXT NOT NULL DEFAULT '新对话',
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -92,7 +156,6 @@ db.exec(`
     summary TEXT DEFAULT NULL
   );
 
-  -- OPC 创作助手：消息表（支持工作流、普通对话、系统消息）
   CREATE TABLE IF NOT EXISTS opc_messages (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -104,33 +167,37 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_opc_msg_session ON opc_messages(session_id, timestamp);
+  CREATE INDEX IF NOT EXISTS idx_opc_session_user ON opc_sessions(user_id);
 
-  -- OPC 创作助手：跨会话记忆
   CREATE TABLE IF NOT EXISTS opc_memory (
-    key TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    user_id INTEGER NOT NULL DEFAULT 0,
     value TEXT NOT NULL,
     category TEXT DEFAULT 'general',
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (key, user_id)
   );
 
-  -- LLM 模型配置（含 API Key）
   CREATE TABLE IF NOT EXISTS llm_providers (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
+    user_id INTEGER NOT NULL DEFAULT 0,
     config TEXT NOT NULL,
     is_active INTEGER DEFAULT 0,
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (id, user_id)
   );
 
-  -- 用户偏好
   CREATE TABLE IF NOT EXISTS user_prefs (
-    key TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    user_id INTEGER NOT NULL DEFAULT 0,
     value TEXT NOT NULL,
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (key, user_id)
   );
 
-  -- 通知
   CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL DEFAULT 0,
     title TEXT NOT NULL,
     message TEXT NOT NULL,
     type TEXT DEFAULT 'info',
@@ -138,13 +205,14 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- 主题选择
   CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 `);
+
+// === OPC 创作助手数据库操作 ===
 
 // === OPC 创作助手数据库操作 ===
 
@@ -156,13 +224,13 @@ function opcGenerateId(prefix = "opc") {
 
 // --- 会话 ---
 
-db.opcCreateSession = function (id, title) {
-  db.prepare("INSERT OR IGNORE INTO opc_sessions (id, title) VALUES (?, ?)").run(id, title || "新对话");
+db.opcCreateSession = function (id, title, userId) {
+  db.prepare("INSERT OR IGNORE INTO opc_sessions (id, user_id, title) VALUES (?, ?, ?)").run(id, userId || 0, title || "新对话");
   return id;
 };
 
-db.opcListSessions = function (limit = 50) {
-  return db.prepare("SELECT * FROM opc_sessions ORDER BY updated_at DESC LIMIT ?").all(limit);
+db.opcListSessions = function (userId, limit = 50) {
+  return db.prepare("SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?").all(userId || 0, limit);
 };
 
 db.opcUpdateSession = function (id, updates) {
@@ -176,9 +244,13 @@ db.opcUpdateSession = function (id, updates) {
   db.prepare(`UPDATE opc_sessions SET ${sets.join(", ")} WHERE id = ?`).run(...values);
 };
 
-db.opcDeleteSession = function (id) {
+db.opcDeleteSession = function (id, userId) {
+  // 验证会话属于该用户
+  const session = db.prepare("SELECT id FROM opc_sessions WHERE id = ? AND user_id = ?").get(id, userId || 0);
+  if (!session) return false;
   db.prepare("DELETE FROM opc_messages WHERE session_id = ?").run(id);
   db.prepare("DELETE FROM opc_sessions WHERE id = ?").run(id);
+  return true;
 };
 
 // --- 消息 ---
@@ -199,8 +271,11 @@ db.opcGetMessages = function (sessionId, limit = 200) {
   ).all(sessionId, limit);
 };
 
-db.opcDeleteMessage = function (id) {
-  const msg = db.prepare("SELECT session_id FROM opc_messages WHERE id = ?").get(id);
+db.opcDeleteMessage = function (id, userId) {
+  // 通过 session 验证用户所有权
+  const msg = db.prepare(
+    "SELECT m.id, m.session_id FROM opc_messages m JOIN opc_sessions s ON m.session_id = s.id WHERE m.id = ? AND s.user_id = ?"
+  ).get(id, userId || 0);
   if (msg) {
     db.prepare("DELETE FROM opc_messages WHERE id = ?").run(id);
     const count = db.prepare("SELECT COUNT(*) as c FROM opc_messages WHERE session_id = ?").get(msg.session_id).c;
@@ -225,53 +300,55 @@ db.opcCompressSession = function (sessionId, summary, keepRecent = 10) {
 
 // --- 跨会话记忆 ---
 
-db.opcGetMemory = function (key) {
-  const row = db.prepare("SELECT value FROM opc_memory WHERE key = ?").get(key);
+db.opcGetMemory = function (key, userId) {
+  const row = db.prepare("SELECT value FROM opc_memory WHERE key = ? AND user_id = ?").get(key, userId || 0);
   return row ? row.value : null;
 };
 
-db.opcSetMemory = function (key, value, category) {
-  db.prepare("INSERT OR REPLACE INTO opc_memory (key, value, category, updated_at) VALUES (?, ?, ?, unixepoch())")
-    .run(key, typeof value === "string" ? value : JSON.stringify(value), category || "general");
+db.opcSetMemory = function (key, value, category, userId) {
+  db.prepare("INSERT OR REPLACE INTO opc_memory (key, user_id, value, category, updated_at) VALUES (?, ?, ?, ?, unixepoch())")
+    .run(key, userId || 0, typeof value === "string" ? value : JSON.stringify(value), category || "general");
 };
 
-db.opcGetAllMemory = function (category) {
-  if (category) return db.prepare("SELECT * FROM opc_memory WHERE category = ? ORDER BY updated_at DESC").all(category);
-  return db.prepare("SELECT * FROM opc_memory ORDER BY updated_at DESC").all();
+db.opcGetAllMemory = function (category, userId) {
+  const uid = userId || 0;
+  if (category) return db.prepare("SELECT * FROM opc_memory WHERE category = ? AND user_id = ? ORDER BY updated_at DESC").all(category, uid);
+  return db.prepare("SELECT * FROM opc_memory WHERE user_id = ? ORDER BY updated_at DESC").all(uid);
 };
 
-db.opcDeleteMemory = function (key) {
-  db.prepare("DELETE FROM opc_memory WHERE key = ?").run(key);
+db.opcDeleteMemory = function (key, userId) {
+  db.prepare("DELETE FROM opc_memory WHERE key = ? AND user_id = ?").run(key, userId || 0);
 };
 
 // === LLM 模型配置 ===
 
-db.llmGetProviders = function () {
-  return db.prepare("SELECT * FROM llm_providers ORDER BY is_active DESC, updated_at DESC").all();
+db.llmGetProviders = function (userId) {
+  return db.prepare("SELECT * FROM llm_providers WHERE user_id = ? ORDER BY is_active DESC, updated_at DESC").all(userId || 0);
 };
 
-db.llmSaveProvider = function (id, config, isActive) {
-  db.prepare("INSERT OR REPLACE INTO llm_providers (id, config, is_active, updated_at) VALUES (?, ?, ?, unixepoch())")
-    .run(id, JSON.stringify(config), isActive ? 1 : 0);
+db.llmSaveProvider = function (id, config, isActive, userId) {
+  db.prepare("INSERT OR REPLACE INTO llm_providers (id, user_id, config, is_active, updated_at) VALUES (?, ?, ?, ?, unixepoch())")
+    .run(id, userId || 0, JSON.stringify(config), isActive ? 1 : 0);
 };
 
-db.llmDeleteProvider = function (id) {
-  db.prepare("DELETE FROM llm_providers WHERE id = ?").run(id);
+db.llmDeleteProvider = function (id, userId) {
+  db.prepare("DELETE FROM llm_providers WHERE id = ? AND user_id = ?").run(id, userId || 0);
 };
 
-db.llmSetActive = function (id) {
-  db.prepare("UPDATE llm_providers SET is_active = 0").run();
-  db.prepare("UPDATE llm_providers SET is_active = 1, updated_at = unixepoch() WHERE id = ?").run(id);
+db.llmSetActive = function (id, userId) {
+  const uid = userId || 0;
+  db.prepare("UPDATE llm_providers SET is_active = 0 WHERE user_id = ?").run(uid);
+  db.prepare("UPDATE llm_providers SET is_active = 1, updated_at = unixepoch() WHERE id = ? AND user_id = ?").run(id, uid);
 };
 
-db.llmGetActive = function () {
-  return db.prepare("SELECT * FROM llm_providers WHERE is_active = 1 LIMIT 1").get();
+db.llmGetActive = function (userId) {
+  return db.prepare("SELECT * FROM llm_providers WHERE is_active = 1 AND user_id = ? LIMIT 1").get(userId || 0);
 };
 
 // === 用户偏好 ===
 
-db.prefsGetAll = function () {
-  const rows = db.prepare("SELECT * FROM user_prefs").all();
+db.prefsGetAll = function (userId) {
+  const rows = db.prepare("SELECT * FROM user_prefs WHERE user_id = ?").all(userId || 0);
   const result = {};
   for (const row of rows) {
     try { result[row.key] = JSON.parse(row.value); } catch { result[row.key] = row.value; }
@@ -279,36 +356,36 @@ db.prefsGetAll = function () {
   return result;
 };
 
-db.prefsSet = function (key, value) {
-  db.prepare("INSERT OR REPLACE INTO user_prefs (key, value, updated_at) VALUES (?, ?, unixepoch())")
-    .run(key, typeof value === "string" ? value : JSON.stringify(value));
+db.prefsSet = function (key, value, userId) {
+  db.prepare("INSERT OR REPLACE INTO user_prefs (key, user_id, value, updated_at) VALUES (?, ?, ?, unixepoch())")
+    .run(key, userId || 0, typeof value === "string" ? value : JSON.stringify(value));
 };
 
-db.prefsDelete = function (key) {
-  db.prepare("DELETE FROM user_prefs WHERE key = ?").run(key);
+db.prefsDelete = function (key, userId) {
+  db.prepare("DELETE FROM user_prefs WHERE key = ? AND user_id = ?").run(key, userId || 0);
 };
 
 // === 通知 ===
 
-db.notifList = function (limit = 50) {
-  return db.prepare("SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?").all(limit);
+db.notifList = function (userId, limit = 50) {
+  return db.prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?").all(userId || 0, limit);
 };
 
-db.notifAdd = function (id, title, message, type) {
-  db.prepare("INSERT INTO notifications (id, title, message, type) VALUES (?, ?, ?, ?)")
-    .run(id, title, message, type || "info");
+db.notifAdd = function (id, title, message, type, userId) {
+  db.prepare("INSERT INTO notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)")
+    .run(id, userId || 0, title, message, type || "info");
 };
 
-db.notifMarkRead = function (id) {
-  db.prepare("UPDATE notifications SET read = 1 WHERE id = ?").run(id);
+db.notifMarkRead = function (id, userId) {
+  db.prepare("UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?").run(id, userId || 0);
 };
 
-db.notifMarkAllRead = function () {
-  db.prepare("UPDATE notifications SET read = 1").run();
+db.notifMarkAllRead = function (userId) {
+  db.prepare("UPDATE notifications SET read = 1 WHERE user_id = ?").run(userId || 0);
 };
 
-db.notifClearAll = function () {
-  db.prepare("DELETE FROM notifications").run();
+db.notifClearAll = function (userId) {
+  db.prepare("DELETE FROM notifications WHERE user_id = ?").run(userId || 0);
 };
 
 // === 应用设置（主题等） ===

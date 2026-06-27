@@ -1,6 +1,9 @@
 // 内嵌版 Express 服务器 —— Electron 打包用
 // 不依赖外部 node_modules，所有逻辑内联
 
+// 加载环境变量
+try { require("dotenv").config(); } catch {}
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -18,8 +21,33 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// === JWT 中间件（非阻塞：有 token 就解析，没有也放行） ===
+const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("./routes/auth.js");
+
+app.use((req, _res, next) => {
+  req.user = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.slice(7);
+      req.user = jwt.verify(token, JWT_SECRET);
+    } catch {}
+  }
+  next();
+});
+
+// === 挂载路由模块（auth / conversations / templates / generations / user-settings） ===
+app.use(require("./routes/auth.js"));
+app.use(require("./routes/conversations.js"));
+app.use(require("./routes/templates.js"));
+app.use(require("./routes/generations.js"));
+app.use(require("./routes/settings.js"));
+
 // === 静态文件服务（前端） ===
-const OUT_DIR = path.join(__dirname, "..", "out");
+// 优先使用环境变量，否则自动检测（兼容 Electron 打包和云服务器部署）
+const OUT_DIR = process.env.STZH_OUT_DIR
+  || (fs.existsSync(path.join(__dirname, "out")) ? path.join(__dirname, "out") : path.join(__dirname, "..", "out"));
 console.log("[Express] OUT_DIR:", OUT_DIR, "exists:", fs.existsSync(OUT_DIR));
 
 // === 工具函数 ===
@@ -178,22 +206,25 @@ app.post("/api/agent", async (req, res) => {
 const db = require("./db");
 
 // 会话列表
-app.get("/api/opc/sessions", (_req, res) => {
-  const sessions = db.opcListSessions();
+app.get("/api/opc/sessions", (req, res) => {
+  const userId = req.user?.userId || 0;
+  const sessions = db.opcListSessions(userId);
   res.json({ sessions });
 });
 
 // 创建会话
 app.post("/api/opc/sessions", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { id, title } = req.body;
   if (!id) return res.status(400).json({ error: "id required" });
-  db.opcCreateSession(id, title);
+  db.opcCreateSession(id, title, userId);
   res.json({ ok: true });
 });
 
 // 删除会话
 app.delete("/api/opc/sessions/:id", (req, res) => {
-  db.opcDeleteSession(req.params.id);
+  const userId = req.user?.userId || 0;
+  db.opcDeleteSession(req.params.id, userId);
   res.json({ ok: true });
 });
 
@@ -225,7 +256,8 @@ app.post("/api/opc/sessions/:id/messages/batch", (req, res) => {
 
 // 删除消息
 app.delete("/api/opc/messages/:id", (req, res) => {
-  db.opcDeleteMessage(req.params.id);
+  const userId = req.user?.userId || 0;
+  db.opcDeleteMessage(req.params.id, userId);
   res.json({ ok: true });
 });
 
@@ -239,126 +271,192 @@ app.post("/api/opc/sessions/:id/compress", (req, res) => {
 
 // 获取跨会话记忆
 app.get("/api/opc/memory", (req, res) => {
+  const userId = req.user?.userId || 0;
   const category = req.query.category;
-  const memory = category ? db.opcGetAllMemory(category) : db.opcGetAllMemory();
+  const memory = category ? db.opcGetAllMemory(category, userId) : db.opcGetAllMemory(undefined, userId);
   res.json({ memory });
 });
 
 // 设置记忆
 app.post("/api/opc/memory", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { key, value, category } = req.body;
   if (!key) return res.status(400).json({ error: "key required" });
-  db.opcSetMemory(key, value, category);
+  db.opcSetMemory(key, value, category, userId);
   res.json({ ok: true });
 });
 
 // 删除记忆
 app.delete("/api/opc/memory/:key", (req, res) => {
-  db.opcDeleteMemory(req.params.key);
+  const userId = req.user?.userId || 0;
+  db.opcDeleteMemory(req.params.key, userId);
   res.json({ ok: true });
 });
 
 // === LLM 模型配置 API ===
 
-app.get("/api/llm/providers", (_req, res) => {
-  const rows = db.llmGetProviders();
+app.get("/api/llm/providers", (req, res) => {
+  const userId = req.user?.userId || 0;
+  const rows = db.llmGetProviders(userId);
   const providers = rows.map((r) => ({ ...r, config: JSON.parse(r.config) }));
   res.json({ providers });
 });
 
 app.post("/api/llm/providers", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { id, config, isActive } = req.body;
   if (!id || !config) return res.status(400).json({ error: "id and config required" });
-  db.llmSaveProvider(id, config, isActive);
+  db.llmSaveProvider(id, config, isActive, userId);
   res.json({ ok: true });
 });
 
 app.delete("/api/llm/providers/:id", (req, res) => {
-  db.llmDeleteProvider(req.params.id);
+  const userId = req.user?.userId || 0;
+  db.llmDeleteProvider(req.params.id, userId);
   res.json({ ok: true });
 });
 
 app.post("/api/llm/providers/:id/activate", (req, res) => {
-  db.llmSetActive(req.params.id);
+  const userId = req.user?.userId || 0;
+  db.llmSetActive(req.params.id, userId);
   res.json({ ok: true });
 });
 
-app.get("/api/llm/active", (_req, res) => {
-  const row = db.llmGetActive();
+app.get("/api/llm/active", (req, res) => {
+  const userId = req.user?.userId || 0;
+  const row = db.llmGetActive(userId);
   if (row) res.json({ provider: { ...row, config: JSON.parse(row.config) } });
   else res.json({ provider: null });
 });
 
 // === 用户偏好 API ===
 
-app.get("/api/prefs", (_req, res) => {
-  res.json({ prefs: db.prefsGetAll() });
+app.get("/api/prefs", (req, res) => {
+  const userId = req.user?.userId || 0;
+  res.json({ prefs: db.prefsGetAll(userId) });
 });
 
 app.post("/api/prefs", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: "key required" });
-  db.prefsSet(key, value);
+  db.prefsSet(key, value, userId);
   res.json({ ok: true });
 });
 
 app.post("/api/prefs/batch", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { prefs } = req.body;
   if (!prefs || typeof prefs !== "object") return res.status(400).json({ error: "prefs object required" });
   for (const [key, value] of Object.entries(prefs)) {
-    db.prefsSet(key, value);
+    db.prefsSet(key, value, userId);
   }
   res.json({ ok: true });
 });
 
 // === 通知 API ===
 
-app.get("/api/notifications", (_req, res) => {
-  res.json({ notifications: db.notifList() });
+app.get("/api/notifications", (req, res) => {
+  const userId = req.user?.userId || 0;
+  res.json({ notifications: db.notifList(userId) });
 });
 
 app.post("/api/notifications", (req, res) => {
+  const userId = req.user?.userId || 0;
   const { id, title, message, type } = req.body;
   if (!title || !message) return res.status(400).json({ error: "title and message required" });
-  db.notifAdd(id || `notif_${Date.now()}`, title, message, type);
+  db.notifAdd(id || `notif_${Date.now()}`, title, message, type, userId);
   res.json({ ok: true });
 });
 
 app.post("/api/notifications/:id/read", (req, res) => {
-  db.notifMarkRead(req.params.id);
+  const userId = req.user?.userId || 0;
+  db.notifMarkRead(req.params.id, userId);
   res.json({ ok: true });
 });
 
-app.post("/api/notifications/read-all", (_req, res) => {
-  db.notifMarkAllRead();
+app.post("/api/notifications/read-all", (req, res) => {
+  const userId = req.user?.userId || 0;
+  db.notifMarkAllRead(userId);
   res.json({ ok: true });
 });
 
-app.delete("/api/notifications", (_req, res) => {
-  db.notifClearAll();
+app.delete("/api/notifications", (req, res) => {
+  const userId = req.user?.userId || 0;
+  db.notifClearAll(userId);
   res.json({ ok: true });
 });
 
-// === 应用设置 API（主题等） ===
+// === 应用级设置 API（主题等，非用户级） ===
+// 注意：用户级设置 (/api/settings) 由 routes/settings.js 提供
+// 这里是应用级 key-value 存储，路径改为 /api/app-settings 避免冲突
 
-app.get("/api/settings", (_req, res) => {
+app.get("/api/app-settings", (_req, res) => {
   res.json({ settings: db.settingsGetAll() });
 });
 
-app.post("/api/settings", (req, res) => {
+app.post("/api/app-settings", (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: "key required" });
   db.settingsSet(key, value);
   res.json({ ok: true });
 });
 
-app.post("/api/settings/batch", (req, res) => {
+app.post("/api/app-settings/batch", (req, res) => {
   const { settings } = req.body;
   if (!settings || typeof settings !== "object") return res.status(400).json({ error: "settings object required" });
   for (const [key, value] of Object.entries(settings)) {
     db.settingsSet(key, value);
   }
   res.json({ ok: true });
+});
+
+// === RAG 知识库代理（转发到 Python RAG 服务） ===
+
+const RAG_BASE = "http://localhost:5000";
+
+app.post("/api/rag/retrieve", async (req, res) => {
+  const { query, top_k, score_threshold } = req.body;
+  if (!query) return res.json({ results: [], query: "", total: 0 });
+  try {
+    const ragRes = await fetch(`${RAG_BASE}/rag/retrieve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, top_k: top_k || 5, score_threshold: score_threshold || 0.45 }),
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!ragRes.ok) return res.json({ results: [], query, total: 0 });
+    const data = await ragRes.json();
+    res.json(data);
+  } catch {
+    res.json({ results: [], query, total: 0 });
+  }
+});
+
+app.get("/api/rag/health", async (_req, res) => {
+  try {
+    const ragRes = await fetch(`${RAG_BASE}/rag/health`, { signal: AbortSignal.timeout(2000) });
+    if (!ragRes.ok) return res.json({ ok: false, entries: 0 });
+    const data = await ragRes.json();
+    res.json(data);
+  } catch {
+    res.json({ ok: false, entries: 0 });
+  }
+});
+
+// === 网络搜索代理（多引擎：Google/SerpApi → 搜狗 → Bing + GitHub） ===
+
+const { search } = require("./search-engines");
+
+app.post("/api/search", async (req, res) => {
+  const query = req.body?.query?.trim();
+  if (!query) return res.json({ results: [] });
+  try {
+    const result = await search(query, { maxResults: 5 });
+    res.json(result);
+  } catch (err) {
+    res.json({ results: [], error: err instanceof Error ? err.message : "Search failed" });
+  }
 });
 
 // === 所有非 API 请求 → 静态文件 / index.html（SPA） ===

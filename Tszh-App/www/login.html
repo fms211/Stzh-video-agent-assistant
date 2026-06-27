@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - Login</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background-color: #0a1228;
+    color: #dbe1ff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-x: hidden;
+  }
+
+  /* 新拟态样式 — 1:1 复刻 Stitch CSS */
+  .neumorphic-inset {
+    background: #0a1228;
+    box-shadow: inset 4px 4px 8px rgba(0,0,0,0.6),
+                inset -2px -2px 6px rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+  .neumorphic-raised {
+    background: #0a1228;
+    box-shadow: 6px 6px 12px rgba(0,0,0,0.5),
+                -3px -3px 8px rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .edge-glow {
+    border: 1px solid rgba(255,184,112,0.15);
+    box-shadow: 0 0 15px rgba(255,184,112,0.05);
+  }
+  .pulse-amber {
+    animation: pulse-glow 3s infinite ease-in-out;
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 10px rgba(232,152,64,0.3); }
+    50% { box-shadow: 0 0 25px rgba(232,152,64,0.6); }
+  }
+
+  /* Logo 轨道动画 */
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes spin-reverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+  .orbit-1 { animation: spin 10s linear infinite; }
+  .orbit-2 { animation: spin-reverse 15s linear infinite; }
+
+  /* 布局 */
+  .container { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 24px; }
+  .logo-section { text-align: center; margin-bottom: 16px; }
+  .logo-wrapper { position: relative; width: 120px; height: 120px; margin: 0 auto 16px; }
+  .logo-ring { position: absolute; inset: 0; border: 1px solid rgba(255,184,112,0.1); border-radius: 50%; }
+  .logo-ring-inner { position: absolute; inset: 12px; border: 1px dashed rgba(255,184,112,0.2); border-radius: 50%; }
+  .logo-core { position: absolute; inset: 24px; background: radial-gradient(circle, rgba(255,184,112,0.3) 0%, transparent 70%); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .logo-text { font-size: 28px; color: #ffb870; font-weight: 700; letter-spacing: 0.1em; }
+  .app-name { font-size: 24px; font-weight: 700; color: #ffb870; letter-spacing: 0.15em; margin-bottom: 4px; }
+  .app-tagline { font-size: 12px; color: #d8c3b1; letter-spacing: 0.3em; }
+
+  /* 表单 */
+  .form-section { display: flex; flex-direction: column; gap: 16px; }
+  .field-label { font-size: 10px; color: #d8c3b1; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .input-wrapper { display: flex; align-items: center; }
+  .input-icon { color: rgba(255,184,112,0.6); margin-right: 12px; font-size: 18px; }
+  .input-field {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px;
+    background: #0a1228;
+    border: none;
+    color: #dbe1ff;
+    font-size: 14px;
+    outline: none;
+  }
+  .input-field::placeholder { color: #534437; }
+
+  /* 按钮 */
+  .connect-btn {
+    width: 100%;
+    height: 48px;
+    background: linear-gradient(135deg, #ffb870, #e89840);
+    border: none;
+    border-radius: 24px;
+    color: #4a2800;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .connect-btn:active { transform: scale(0.97); opacity: 0.9; }
+
+  /* 服务器地址 */
+  .server-section {
+    background: #0a1228;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .server-label { font-size: 10px; color: #d8c3b1; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .server-input {
+    width: 100%;
+    height: 32px;
+    padding: 0 12px;
+    background: #050d23;
+    border: none;
+    color: #ffb870;
+    font-size: 11px;
+    font-family: monospace;
+    border-radius: 4px;
+    outline: none;
+  }
+
+  /* 底部状态指示器 */
+  .status-bar {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 16px;
+    opacity: 0.4;
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .status-label { font-size: 8px; color: #d8c3b1; }
+
+  /* 转场动画 */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.6s ease-out; }
+</style>
+</head>
+<body>
+<div class="container fade-in">
+  <!-- Logo -->
+  <div class="logo-section">
+    <div class="logo-wrapper">
+      <div class="logo-ring orbit-1"></div>
+      <div class="logo-ring-inner orbit-2"></div>
+      <div class="logo-core">
+        <span class="logo-text">◉</span>
+      </div>
+    </div>
+    <div class="app-name">TSZH REMOTE</div>
+    <div class="app-tagline">外置小脑</div>
+  </div>
+
+  <!-- 表单 -->
+  <div class="form-section">
+    <div>
+      <div class="field-label">用户名</div>
+      <div class="input-wrapper neumorphic-inset" style="border-radius:8px;">
+        <span class="input-icon">👤</span>
+        <input class="input-field" id="username" type="text" placeholder="输入用户名" autocomplete="username"/>
+      </div>
+    </div>
+
+    <div>
+      <div class="field-label">密码</div>
+      <div class="input-wrapper neumorphic-inset" style="border-radius:8px;">
+        <span class="input-icon">🔒</span>
+        <input class="input-field" id="password" type="password" placeholder="••••••••（至少6位）" autocomplete="current-password"/>
+      </div>
+    </div>
+
+    <button class="connect-btn pulse-amber" id="loginBtn" onclick="handleLogin()">
+      📡 连接 Tszh 平台
+    </button>
+
+    <div style="text-align:center;">
+      <span id="switchBtn" style="font-size:12px; color:#ffb870; cursor:pointer;" onclick="toggleMode()">没有账号？去注册</span>
+    </div>
+  </div>
+
+  <!-- 服务器地址 -->
+  <div class="server-section neumorphic-inset">
+    <div class="server-label">服务器地址</div>
+    <input class="server-input" id="server" type="text" value="http://192.168.5.105:8080" placeholder="http://192.168.5.105:8080"/>
+  </div>
+
+  <!-- 状态指示器 -->
+  <div class="status-bar">
+    <div><span class="status-dot" style="background:#4ade80;"></span><span class="status-label">SYNC</span></div>
+    <div><span class="status-dot" style="background:#6088d8;"></span><span class="status-label">LINKED</span></div>
+    <div><span class="status-dot" style="background:rgba(255,180,171,0.6);"></span><span class="status-label">ENCRYPT</span></div>
+  </div>
+</div>
+
+<script>
+  let isRegister = false;
+
+  function toggleMode() {
+    isRegister = !isRegister;
+    document.getElementById('switchBtn').textContent = isRegister ? '已有账号？去登录' : '没有账号？去注册';
+    document.getElementById('loginBtn').textContent = isRegister ? '📡 注册并连接' : '📡 连接 Tszh 平台';
+  }
+
+  async function handleLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const server = document.getElementById('server').value.trim();
+
+    if (!username || !password) {
+      alert('请输入用户名和密码');
+      return;
+    }
+
+    if (password.length < 6) {
+      alert('密码至少 6 个字符');
+      return;
+    }
+
+    // 通知原生端
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: isRegister ? 'register' : 'login',
+      username,
+      password,
+      server
+    }));
+  }
+
+  // 接收原生端数据
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'login_success') {
+        // 登录成功，原生端会处理跳转
+      }
+      if (data.type === 'login_error') {
+        alert(data.message || '登录失败');
+      }
+    } catch {}
+  });
+</script>
+</body>
+</html>

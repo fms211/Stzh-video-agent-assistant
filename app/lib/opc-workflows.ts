@@ -24,6 +24,10 @@ export type WorkflowDef = {
   fields: WorkflowField[];
   /** 链式步骤 */
   steps: WorkflowStepDef[];
+  /** 是否启用 Reflection 自我反思优化（参考教科书 chapter4） */
+  reflect?: boolean;
+  /** 是否启用动态规划器（参考教科书 Plan-and-Solve） */
+  dynamic?: boolean;
 };
 
 export type WorkflowField = {
@@ -54,6 +58,64 @@ export type WorkflowRunState = {
 
 // ── 工作流定义 ──
 
+// ── 动态规划器提示词（参考教科书 Plan-and-Solve） ──
+
+const PLANNER_PROMPT = `你是一位顶级的 AI 规划专家。你的任务是分析用户需求，决定需要执行哪些步骤。
+
+用户需求:
+{input}
+
+可用步骤:
+{available_steps}
+
+请分析用户需求，输出一个 JSON 数组，包含需要执行的步骤 ID。
+- 只包含必要的步骤，跳过不相关的
+- 步骤顺序要合理
+- 如果需要，可以重复某个步骤
+
+输出格式（必须是合法的 JSON）:
+["step_id_1", "step_id_2", ...]`;
+
+// ── Reflection 提示词模板（参考教科书 chapter4/Reflection.py） ──
+
+const REFLECT_PROMPT = `你是一位极其严格的短视频创作评审专家。你的任务是审查以下创作方案，找出主要问题和改进空间。
+
+# 原始需求:
+{input}
+
+# 待审查的方案:
+{output}
+
+请从以下维度严格审查：
+1. **创意质量**：方案是否有新意？是否落入俗套？
+2. **技术可行性**：提示词是否能被 AI 工具正确生成？
+3. **完整性**：是否遗漏了重要元素（如转场、音效、节奏变化）？
+4. **一致性**：风格、色调、运镜是否前后统一？
+5. **用户价值**：方案是否真正解决了用户的创作需求？
+
+如果发现明显问题，请指出并给出具体改进建议。
+如果方案已经很好，回答"无需改进"。
+
+请直接输出你的反馈，不要包含任何额外的解释。`;
+
+const REFINE_PROMPT = `你是一位资深的短视频创作专家。你正在根据一位评审专家的反馈来优化你的方案。
+
+# 原始需求:
+{input}
+
+# 你之前的方案:
+{output}
+
+# 评审员的反馈:
+{feedback}
+
+请根据评审员的反馈，生成一个优化后的方案。
+- 修复评审中发现的所有问题
+- 保持方案的核心优点
+- 输出完整的优化后方案（不要只输出修改部分）
+
+请直接输出优化后的方案，不要包含任何额外的解释。`;
+
 export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     id: "full-video",
@@ -61,6 +123,8 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
     desc: "主题确认 → 分镜脚本 → 提示词优化 → 最终方案",
     icon: "🎬",
     category: "create",
+    reflect: true,
+    dynamic: true,
     fields: [
       { key: "topic", label: "视频主题", placeholder: "如：产品宣传、城市航拍、美食探店", type: "text", required: true },
       { key: "goal", label: "创作目标", placeholder: "如：吸引年轻用户、展示产品功能", type: "text" },
@@ -102,6 +166,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
     desc: "分析 → 优化 → 变体生成 → 质量评估",
     icon: "✨",
     category: "optimize",
+    reflect: true,
     fields: [
       { key: "raw_prompt", label: "原始提示词", placeholder: "粘贴你的原始提示词或自然语言描述", type: "textarea", required: true },
       { key: "target_style", label: "目标风格", placeholder: "如：赛博朋克、水墨画、电影质感", type: "text" },
@@ -219,6 +284,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
     desc: "策略分析 → 脚本撰写 → 分镜 → 提示词",
     icon: "📦",
     category: "script",
+    reflect: true,
     fields: [
       { key: "product", label: "产品/品牌", placeholder: "如：某护肤品牌、某电子产品", type: "text", required: true },
       { key: "audience", label: "目标受众", placeholder: "如：18-25岁女性、科技爱好者", type: "text" },
@@ -305,6 +371,110 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
 
 export function getWorkflowById(id: string): WorkflowDef | undefined {
   return WORKFLOW_DEFS.find((w) => w.id === id);
+}
+
+/**
+ * 获取工作流的完整步骤（包括 Reflection 步骤）
+ * 参考教科书 chapter4/Reflection.py 的执行→反思→优化模式
+ *
+ * 执行流程：
+ * 1. 原始步骤（如：创意构思→分镜→提示词→方案整合）
+ * 2. 反思步骤（评审员审查原始方案）
+ * 3. 优化步骤（根据反思反馈优化方案）
+ */
+export function getWorkflowStepsWithReflection(wf: WorkflowDef, input: WorkflowInput): WorkflowStepDef[] {
+  const steps = [...wf.steps];
+
+  if (wf.reflect) {
+    // 添加反思步骤（审查原始方案）
+    steps.push({
+      id: "reflect",
+      name: "🔍 反思审查",
+      desc: "评审员严格审查方案，找出问题和改进空间",
+      buildPrompt: (_input, prevOutput) =>
+        REFLECT_PROMPT
+          .replace("{input}", JSON.stringify(input))
+          .replace("{output}", prevOutput),
+    });
+
+    // 添加优化步骤（根据反思反馈优化）
+    // 注意：这里需要同时访问原始方案和反思结果
+    // 通过闭包捕获原始步骤的输出
+    steps.push({
+      id: "refine",
+      name: "✨ 优化完善",
+      desc: "根据反思反馈优化最终方案",
+      buildPrompt: (_input, prevOutput) => {
+        // prevOutput 是反思步骤的输出
+        // 需要从工作流执行上下文获取原始方案
+        // 这里通过特殊标记让执行器知道需要原始方案
+        if (prevOutput.includes("无需改进")) {
+          return `评审员认为方案已经很好，无需修改。请直接输出原始方案的最终版本。`;
+        }
+        // 执行器会在调用时注入原始方案
+        return `【原始方案在下方】\n\n请根据评审员的反馈优化方案。
+
+评审员反馈：
+${prevOutput}
+
+请输出完整的优化后方案（不要只输出修改部分）。`;
+      },
+    });
+  }
+
+  return steps;
+}
+
+/**
+ * 动态规划器：根据用户输入调整工作流步骤
+ * 参考教科书 Plan-and-Solve 的 Planner 分解思想
+ *
+ * @param wf 工作流定义
+ * @param input 用户输入
+ * @param planResult LLM 生成的步骤 ID 列表（JSON 数组）
+ * @returns 调整后的步骤列表
+ */
+export function applyDynamicPlan(wf: WorkflowDef, input: WorkflowInput, planResult: string): WorkflowStepDef[] {
+  try {
+    // 解析 LLM 输出的步骤 ID 列表
+    const planSteps: string[] = JSON.parse(planResult);
+
+    if (!Array.isArray(planSteps) || planSteps.length === 0) {
+      // 解析失败，返回原始步骤
+      return wf.steps;
+    }
+
+    // 根据计划筛选步骤
+    const plannedSteps: WorkflowStepDef[] = [];
+    for (const stepId of planSteps) {
+      const step = wf.steps.find((s) => s.id === stepId);
+      if (step) {
+        plannedSteps.push(step);
+      }
+    }
+
+    // 如果计划中的步骤都有效，返回筛选后的步骤
+    if (plannedSteps.length > 0) {
+      return plannedSteps;
+    }
+
+    // 否则返回原始步骤
+    return wf.steps;
+  } catch {
+    // JSON 解析失败，返回原始步骤
+    return wf.steps;
+  }
+}
+
+/**
+ * 获取规划器提示词
+ */
+export function getPlannerPrompt(wf: WorkflowDef, input: WorkflowInput): string {
+  const availableSteps = wf.steps.map((s) => `- ${s.id}: ${s.name} — ${s.desc}`).join("\n");
+
+  return PLANNER_PROMPT
+    .replace("{input}", JSON.stringify(input))
+    .replace("{available_steps}", availableSteps);
 }
 
 export function getWorkflowsByCategory(): Record<string, WorkflowDef[]> {

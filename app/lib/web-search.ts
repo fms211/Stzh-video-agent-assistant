@@ -1,4 +1,5 @@
-// DuckDuckGo 网页搜索 — 通过 Next.js API 代理（绕过 CORS）
+// 多引擎网页搜索 — Google(SerpApi) → 搜狗 → Bing + GitHub
+// 通过 Next.js API 代理（绕过 CORS）
 
 export type SearchResult = {
   title: string;
@@ -25,7 +26,9 @@ export function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) return "";
   const lines = ["## 网络搜索结果（实时获取）", ""];
   results.forEach((r, i) => {
-    lines.push(`${i + 1}. **${r.title}**`);
+    const score = (r as any).score ? ` [质量分:${(r as any).score}]` : "";
+    const source = (r as any).source ? ` (${(r as any).source})` : "";
+    lines.push(`${i + 1}. **${r.title}**${score}${source}`);
     if (r.snippet) lines.push(`   ${r.snippet}`);
     lines.push(`   来源: ${r.url}`);
     lines.push("");

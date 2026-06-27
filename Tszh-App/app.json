@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Tszh Remote",
+    "slug": "tszh-remote",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "tszh-remote",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#050a14"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tszh.remote"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#050a14",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.tszh.remote",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-font",
+      "expo-splash-screen"
+    ]
+  }
+}

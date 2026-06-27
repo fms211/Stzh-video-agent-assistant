@@ -87,6 +87,11 @@ presentation.html
 # MCP server config (local tool paths, platform-specific)
 .mcp.json
 
+# ruflo / claude runtime metadata (auto-generated, not project source)
+.agents/
+.claude/scheduled_tasks.lock
+skills-lock.json
+
 # memory database
 /data/memory/
 

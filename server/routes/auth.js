@@ -106,5 +106,67 @@ router.get("/api/auth/me", (req, res) => {
   }
 });
 
+// === 修改密码（需要登录） ===
+router.post("/api/auth/change-password", (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: { message: "未登录" } });
+    }
+    const token = authHeader.slice(7);
+    let decoded;
+    try { decoded = jwt.verify(token, JWT_SECRET); } catch {
+      return res.status(401).json({ error: { message: "token 无效" } });
+    }
+
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: { message: "请输入旧密码和新密码" } });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: { message: "新密码至少 6 个字符" } });
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(decoded.userId);
+    if (!user) return res.status(404).json({ error: { message: "用户不存在" } });
+
+    if (!bcrypt.compareSync(oldPassword, user.password)) {
+      return res.status(400).json({ error: { message: "旧密码错误" } });
+    }
+
+    const hashed = bcrypt.hashSync(newPassword, 10);
+    db.prepare("UPDATE users SET password = ?, updated_at = datetime('now') WHERE id = ?").run(hashed, user.id);
+
+    res.json({ ok: true, message: "密码修改成功" });
+  } catch (error) {
+    console.error("[Auth] 修改密码失败:", error.message);
+    res.status(500).json({ error: { message: "修改密码失败" } });
+  }
+});
+
+// === 忘记密码（通过用户名重置，不需要登录） ===
+router.post("/api/auth/reset-password", (req, res) => {
+  try {
+    const { username, newPassword } = req.body;
+    if (!username || !newPassword) {
+      return res.status(400).json({ error: { message: "请输入用户名和新密码" } });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: { message: "新密码至少 6 个字符" } });
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+    if (!user) return res.status(404).json({ error: { message: "用户不存在" } });
+
+    const hashed = bcrypt.hashSync(newPassword, 10);
+    db.prepare("UPDATE users SET password = ?, updated_at = datetime('now') WHERE id = ?").run(hashed, user.id);
+
+    res.json({ ok: true, message: "密码重置成功，请使用新密码登录" });
+  } catch (error) {
+    console.error("[Auth] 重置密码失败:", error.message);
+    res.status(500).json({ error: { message: "重置密码失败" } });
+  }
+});
+
 module.exports = router;
 module.exports.JWT_SECRET = JWT_SECRET;

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - 通知中心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a1228; color: #dbe1ff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; padding: 24px; padding-top: calc(env(safe-area-inset-top, 24px) + 24px); }
+  .neumorphic-raised { background: #171f35; box-shadow: 6px 6px 12px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .header-title { font-size: 18px; font-weight: 700; color: #ffb870; }
+  .mark-read { font-size: 12px; color: #ffb870; cursor: pointer; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; }
+  .filter-chip { padding: 6px 14px; border-radius: 20px; font-size: 12px; border: none; cursor: pointer; white-space: nowrap; background: #171f35; color: #d8c3b1; }
+  .filter-chip.active { background: #e89840; color: #4a2800; }
+  .card { display: flex; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+  .card-indicator { width: 4px; flex-shrink: 0; }
+  .card-body { flex: 1; padding: 16px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .card-title { font-size: 14px; font-weight: 600; }
+  .card-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: #222940; color: #d8c3b1; }
+  .card-msg { font-size: 13px; color: #d8c3b1; margin-bottom: 4px; }
+  .card-time { font-size: 11px; color: #a08d7e; }
+  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffb870; }
+  .empty { text-align: center; padding: 60px 0; color: #d8c3b1; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">🔔 通知中心</div>
+    <span class="mark-read" onclick="markAllRead()">全部已读</span>
+  </div>
+  <div class="filter-row">
+    <button class="filter-chip active" onclick="filter('all',this)">全部</button>
+    <button class="filter-chip" onclick="filter('success',this)">已完成</button>
+    <button class="filter-chip" onclick="filter('error',this)">失败</button>
+    <button class="filter-chip" onclick="filter('system',this)">系统</button>
+  </div>
+  <div id="list"></div>
+  <div id="empty" class="empty" style="display:none;">🔔 暂无通知</div>
+
+<script>
+  let notifications = [];
+  let currentFilter = 'all';
+
+  function render() {
+    const filtered = notifications.filter(n => currentFilter === 'all' || n.type === currentFilter);
+    const list = document.getElementById('list');
+    const empty = document.getElementById('empty');
+    if (!filtered.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    list.innerHTML = filtered.map(n => {
+      const color = n.type === 'success' ? '#4ade80' : n.type === 'error' ? '#ffb4ab' : '#ffb870';
+      const badge = n.type === 'success' ? '已完成' : n.type === 'error' ? '失败' : '系统';
+      return `<div class="card neumorphic-raised">
+        <div class="card-indicator" style="background:${color}"></div>
+        <div class="card-body">
+          <div class="card-header">
+            <span class="card-title">${n.title}</span>
+            <span class="card-badge">${badge}</span>
+          </div>
+          <div class="card-msg">${n.message}</div>
+          <div class="card-time">${n.time}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function filter(type, el) {
+    currentFilter = type;
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    render();
+  }
+
+  function markAllRead() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mark_all_read' }));
+  }
+
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'notifications_data') { notifications = data.notifications || []; render(); }
+    } catch {}
+  });
+
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'request_notifications' }));
+</script>
+</body>
+</html>

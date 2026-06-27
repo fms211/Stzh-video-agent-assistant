@@ -1,6 +1,6 @@
-# 腾昇智和 · 短视频智能体 — 项目记忆
+# CLAUDE.md
 
-> 本文件为项目全局记忆，所有在本目录打开的 Claude Code 窗口均应首先读取本文件。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
@@ -18,24 +18,121 @@
 
 | 仓库 | 路径 | 角色 |
 |------|------|------|
-| **前端界面** | `D:\fms688_stzh-Agent`（当前） | Next.js 16 交互页面 |
+| **前端界面** | `D:\fms688_stzh-Agent`（当前） | Next.js 16 + Express 后端 + Electron 桌面端 |
 | **Agent 汇总** | `E:\HuaweiMoveData\Users\fms\Desktop\圳潮漫剧AIGC\腾昇智和Agent汇总` | Coze 智能体配置、知识库、系统提示词、Python 脚本 |
+
+---
+
+## 常用命令
+
+```bash
+# 开发
+npm run dev              # Next.js 开发服务器 (webpack 模式)
+npm run build            # Next.js 静态导出 (output: "export") → out/
+npm run start            # 预览构建产物
+npm run lint             # ESLint
+
+# Express 后端（独立运行）
+node server/start.js     # 启动 Express 后端（默认端口 80，读 server/.env.local）
+
+# Electron 桌面端
+npm run electron:dev     # 开发模式（自动启动 Express 后端 + Electron 窗口）
+npm run electron:build   # 生产构建 → NSIS 安装包
+npm run electron:build:portable  # 便携版
+
+# RAG 服务（Python）
+npm run rag:start        # 启动 RAG 服务 (rag-service/main.py)
+npm run rag:ingest       # 知识库灌入
+
+# Tszh-App 移动端（独立子项目）
+cd Tszh-App && npx expo start   # Expo 开发服务器
+```
 
 ---
 
 ## 技术栈
 
 ```
-Next.js 16.2.4 (App Router + force-dynamic)
+Next.js 16.2.4 (App Router, output: "export", force-dynamic)
 React 19.2.4 (全客户端组件)
 TypeScript 5 (strict)
 Tailwind CSS 4 (@theme inline + CSS variables)
 Three.js + @react-three/fiber + @react-three/drei
 GSAP (ScrollTrigger, timeline)
 anime.js
-GeistPixel-Line/Square 像素字体 (officialskills.sh)
+GeistPixel-Line/Square 像素字体
 ZCOOL QingKe HuangYou 毛笔字体
+Express 4 (后端 API + 静态文件服务)
+better-sqlite3 (本地数据库，WAL 模式)
+Electron 35 (桌面端打包)
+Expo / React Native (移动端，Tszh-App/)
 ```
+
+---
+
+## 核心架构：三运行时 + 三数据层
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Electron Shell                     │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │  Next.js (静态导出 → out/)                       │ │
+│  │  ├── 前端路由 (App Router)                       │ │
+│  │  ├── /api/agent → 转发到 Express 或 Coze         │ │
+│  │  └── /api/search → web-search.ts                │ │
+│  └───────────────┬─────────────────────────────────┘ │
+│                  │ HTTP                               │
+│  ┌───────────────▼─────────────────────────────────┐ │
+│  │  Express 后端 (server/server-express.js)         │ │
+│  │  ├── /api/auth/*     (JWT 鉴权)                 │ │
+│  │  ├── /api/conversations/* (对话 CRUD)            │ │
+│  │  ├── /api/templates/*     (模板管理)             │ │
+│  │  ├── /api/generations/*   (生成记录)             │ │
+│  │  ├── /api/settings/*      (用户设置)             │ │
+│  │  ├── /api/opc/*           (OPC 工作区)           │ │
+│  │  └── POST /api/agent     (Coze API 转发/Mock)   │ │
+│  └───────────────┬─────────────────────────────────┘ │
+│                  │                                    │
+│  ┌───────────────▼─────────────────────────────────┐ │
+│  │  SQLite (better-sqlite3, server/db.js)           │ │
+│  │  users / conversations / messages /              │ │
+│  │  templates / generations / user_settings         │ │
+│  └─────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+
+云部署模式: node server/start.js → Express 服务静态文件 + API
+```
+
+### 数据持久化三层
+
+1. **服务端 SQLite** — 主数据（对话/模板/用户），Express 路由操作
+2. **localStorage** — 前端缓存 + 离线回退（对话历史/LLM 配置/主题偏好）
+3. **sessionStorage** — 会话级状态（进入状态/API 统计）
+
+前端采用"优先服务端，离线回退 localStorage"策略，见 `app/lib/sync.ts`、`app/lib/server-sync.ts`。
+
+---
+
+## LLM 抽象层
+
+`app/lib/llm-providers.ts` 定义 Provider 接口，`app/lib/llm-config.ts` 管理持久化（XOR 混淆存储 API key），`app/lib/llm-client.ts` 实现统一流式调用，支持：
+
+- **OpenAI 协议**（GPT / DeepSeek / 通义千问等）
+- **Anthropic 协议**（Claude）
+- **thinking level**: quick / standard / deep（映射到各厂商的推理参数）
+
+---
+
+## OPC 创作助手子系统
+
+`app/components/opc-agent/` 是独立的 AI 创作工作区，有独立的：
+- 聊天界面 (`OpcAgentChat.tsx`)、侧边栏 (`OpcAgentSidebar.tsx`)、输入框 (`OpcAgentInput.tsx`)
+- 模型切换 (`ModelSwitcher.tsx`)、配置面板 (`ModelConfigPanel.tsx`)
+- 工作流步骤卡片 (`WorkflowStepCard.tsx`)
+- 独立 API 层 (`app/lib/opc-agent-api.ts`) + 持久化 (`app/lib/opc-agent-persist.ts`)
+- 独立类型定义 (`app/components/opc-agent/types.ts`)
+
+OPC 数据走 Express `/api/opc/*` 路由。
 
 ---
 
@@ -44,7 +141,7 @@ ZCOOL QingKe HuangYou 毛笔字体
 ```
 首页(SplashScreen) → 点击恒星坍缩 → 工作区(Workspace)
                                          ├── 对话工作区 (ChatFlow)
-                                         ├── OPC 工作模式 (OPCPanel)
+                                         ├── OPC 工作模式 (OPCPanel / OpcAgentChat)
                                          └── 工作统计 (StatsDashboard)
 ```
 
@@ -52,7 +149,7 @@ ZCOOL QingKe HuangYou 毛笔字体
 
 ## 设计系统
 
-### 色彩
+### 色彩（全部通过 CSS 变量，禁止硬编码）
 - 暖琥珀 `--glow-warm: #e89840`（强调、主要交互）
 - 冷靛 `--glow-cool: #6088d8`（辅助、冷色调）
 - 极光紫 `--glow-aurora: #9880d0`（点缀、过渡）
@@ -63,13 +160,15 @@ ZCOOL QingKe HuangYou 毛笔字体
 深空观测者 / 原子实验室 / 量子花园 / 星云漂流 / 太阳熔炉 /
 水晶洞穴 / 虚空信号 / 锈蚀密室 / 光子场 / 深海虚空
 
+主题切换：`document.documentElement.dataset.theme = themeName`，Canvas 组件需监听 `data-theme` 变化。
+
 ### 字体层级
 - Display 标题: GeistPixel-Line（像素风）或 ZCOOL QingKe HuangYou（毛笔）
 - Body 正文: Geist Sans (无 CJK，fallback 到系统字体)
 - Mono 代码: Geist Mono
 
 ### edge-glow 系统
-CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光，四级强度:
+CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光:
 `.edge-glow` / `.edge-glow-strong` / `.edge-glow-subtle` / `.edge-glow-pulse` / `.edge-glow-sweep`
 
 ### 禁止
@@ -84,46 +183,26 @@ CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光，四级强度
 ## 关键设计决策
 
 1. **全部客户端组件**：无 SSR 内容，页面 `force-dynamic`
-2. **sessionStorage 持久化**：进入状态、当前会话、API 统计
-3. **localStorage 持久化**：对话历史、自定义模板、主题偏好
-4. **CSS 变量主题切换**：`document.documentElement.dataset.theme` 属性驱动
-5. **API 转发模式**：`AGENT_BACKEND_URL` 环境变量 → Coze 代理，未配置时 Mock
-6. **Three.js 粒子系统**：不使用 postprocessing bloom，用 AdditiveBlending + 软光晕纹理
-7. **星环 CSS 实现**：不用 Three.js Canvas，用 CSS `rotateX` 透视 + `border-radius: 50%`
+2. **Next.js 静态导出**：`output: "export"` → `out/`，Express 服务这些静态文件
+3. **API 转发模式**：前端 `/api/agent` → Express 后端 → Coze API，未配置时返回 Mock 数据
+4. **Three.js 粒子系统**：不使用 postprocessing bloom，用 AdditiveBlending + 软光晕纹理
+5. **星环 CSS 实现**：不用 Three.js Canvas，用 CSS `rotateX` 透视 + `border-radius: 50%`
+6. **LLM key 混淆**：localStorage 中 API key 经 XOR 混淆后 Base64 存储（非加密，仅防肉眼）
+7. **JWT 非阻塞**：Express 中间件有 token 就解析，没有也放行（部分接口可选鉴权）
 
 ---
 
-## 文件结构速查
+## 环境变量
 
-```
-app/
-├── api/agent/route.ts          — POST /api/agent (转发/Mock/FormData)
-├── lib/
-│   ├── needsUnoptimized.ts     — blob: URL 检测
-│   ├── notify.ts               — Notification API + Web Audio 提示音
-│   └── tracker.ts              — API 调用追踪 (localStorage)
-├── globals.css                 — 全局样式 (~900行: 10主题+edge-glow+组件)
-├── layout.tsx                  — 根布局 (Geist+ZCOOL+GeistPixel 字体)
-├── page.tsx                    — 入口 (force-dynamic → HomeClient)
-├── manifest.ts                 — PWA manifest
-├── components/
-│   ├── SplashScreen.tsx        — Canvas 像素首页 (恒星+星云+GSAP爆炸)
-│   ├── HomeClient.tsx          — 根组件 (页面路由+状态+背景层)
-│   ├── PageSwitch.tsx          — CSS transition 页面切换
-│   ├── StarfieldBackground.tsx — Three.js 粒子 (680粒+星座连线+生命周期)
-│   ├── OrbitRings.tsx          — CSS 星环 (5层+恒星+随机参数+GSAP脉冲)
-│   ├── CursorTrail.tsx         — Canvas 鼠标拖尾+涟漪 (主题色缓存)
-│   ├── PixelTitle.tsx          — 可拖拽 GeistPixel 标题
-│   ├── ChatFlow.tsx            — 对话主组件 (消息/API/持久化/导出/通知)
-│   ├── ChatInput.tsx           — 悬浮胶囊输入 (文件/模板填充)
-│   ├── ResultCard.tsx          — 视频/图片结果卡片+Lightbox
-│   ├── SettingsDrawer.tsx      — 右侧抽屉 (10主题+参数)
-│   ├── LeftSidebar.tsx         — 左侧栏 (历史/文件/返回首页)
-│   ├── StatsDashboard.tsx      — Canvas 甘特图统计 (主题色跟随)
-│   ├── OPCPanel.tsx            — OPC 工作区 (模板管理/风格/参数)
-│   ├── LayerStack.tsx          — Z轴背景层 (env-bg+空间纹理+网格)
-│   └── ServiceWorkerRegister.tsx
-```
+| 变量 | 位置 | 用途 |
+|------|------|------|
+| `AGENT_BACKEND_URL` / `NEXT_PUBLIC_AGENT_BACKEND_URL` | Next.js | Coze 代理地址 |
+| `COZE_API_KEY` / `COZE_BOT_ID` / `COZE_BASE_URL` | server/.env.local | Coze API 直连 |
+| `API_SECRET_KEY` | server/.env.local | Express API 鉴权 |
+| `JWT_SECRET` | server/.env.local | JWT 签名密钥 |
+| `PORT` | server/.env.local | Express 监听端口（默认 80） |
+| `STZH_DATA_DIR` | Electron 注入 | SQLite 数据目录（userData） |
+| `STZH_OUT_DIR` | Electron 注入 | 静态文件目录（out/） |
 
 ---
 
@@ -139,6 +218,25 @@ app/
 8. **主题跟随**：Canvas 绘制需读 CSS 变量并监听 `data-theme` 变化
 9. **SSR 安全**：所有浏览器 API 调用包裹 `typeof window !== "undefined"`
 10. **localStorage/sessionStorage**：统一在 `app/lib/` 下封装
+
+---
+
+## Tszh-App 移动端
+
+`Tszh-App/` 是独立的 Expo/React Native 项目（Capacitor 混合），有独立的 `package.json` 和 `tsconfig.json`。
+
+- 技术栈: Expo Router + React Native + LinearGradient 新拟态风格
+- 页面: 首页 / AI 聊天 / 模板 / 画廊 / 通知 / 个人中心 / 登录
+- 与主项目共享后端 API，但 UI 完全独立
+
+---
+
+## 部署
+
+- **云服务器**: `node server/start.js`（Express 服务 out/ 静态文件 + API）
+- **Electron**: `npm run electron:build` → NSIS 安装包（内嵌 Express + out/）
+- **PM2**: `deploy/ecosystem.config.js` 配置
+- **端口**: 默认 80（云）/ 8080+（Electron 自动找空闲端口）
 
 ---
 
@@ -163,12 +261,3 @@ app/
 - 知识库: `我们构建的知识库/` (xlsx/csv/docx 表格 KB + 口语桥接层)
 - Coze 原理: `README/Coze知识库调用README.md`
 - Python 脚本: `代码/` (KB 优化/命中率测试/DOCX 生成)
-
----
-
-## 后端对接待办
-
-- [ ] 配置 `COZE_API_KEY` / `COZE_BOT_ID` / `COZE_BASE_URL`
-- [ ] Express 后端或直接 Next.js route 调用 Coze API
-- [ ] 鉴权 + 速率限制 + 日志追踪
-- [ ] SSE 流式响应支持

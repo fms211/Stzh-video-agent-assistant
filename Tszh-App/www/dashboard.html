@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Tszh Remote - Mission Control</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background-color: #0a1228;
+    color: #dbe1ff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 24px;
+    padding-top: env(safe-area-inset-top, 24px);
+    overflow-x: hidden;
+  }
+
+  .neumorphic-inset {
+    background: #0a1228;
+    box-shadow: inset 4px 4px 8px rgba(0,0,0,0.6), inset -2px -2px 6px rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+  .neumorphic-raised {
+    background: #171f35;
+    box-shadow: 6px 6px 12px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* 顶部栏 */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .app-title { font-size: 18px; font-weight: 700; color: #ffb870; letter-spacing: 0.1em; }
+  .status-badge { display: flex; align-items: center; gap: 6px; background: #171f35; padding: 6px 12px; border-radius: 20px; font-size: 12px; color: #4ade80; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; }
+  .status-dot.offline { background: #ffb4ab; }
+
+  /* 系统监控 */
+  .monitor-row { display: flex; gap: 12px; margin-bottom: 20px; }
+  .monitor-card { flex: 1; padding: 16px; border-radius: 8px; }
+  .monitor-label { font-size: 10px; color: #d8c3b1; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .monitor-value { font-size: 18px; font-weight: 700; color: #ffb870; }
+
+  /* 任务列表 */
+  .section-title { font-size: 14px; font-weight: 600; color: #dbe1ff; margin-bottom: 12px; }
+  .task-card { border-radius: 12px; padding: 16px; margin-bottom: 12px; position: relative; }
+  .task-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 3px 0 0 3px; }
+  .task-active::before { background: #ffb870; }
+  .task-completed::before { background: #4ade80; }
+  .task-failed::before { background: #ffb4ab; }
+
+  .status-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-bottom: 8px; }
+  .tag-running { background: rgba(255,184,112,0.2); color: #ffb870; }
+  .tag-completed { background: rgba(74,222,128,0.2); color: #4ade80; }
+  .tag-failed { background: rgba(255,180,171,0.2); color: #ffb4ab; }
+
+  .task-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .task-meta { font-size: 12px; color: #d8c3b1; }
+
+  /* 进度条 */
+  .progress-bar { height: 4px; background: #222940; border-radius: 2px; margin-bottom: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #ffb870; border-radius: 2px; transition: width 0.5s; }
+
+  /* 按钮 */
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-primary { background: #ffb870; color: #4a2800; padding: 8px 16px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-outline { background: transparent; color: #dbe1ff; padding: 8px 16px; border-radius: 20px; border: 1px solid #a08d7e; font-size: 12px; cursor: pointer; }
+
+  /* 空状态 */
+  .empty { text-align: center; padding: 40px 0; color: #d8c3b1; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.4s ease-out; }
+</style>
+</head>
+<body>
+  <!-- 顶部栏 -->
+  <div class="header fade-in">
+    <div class="app-title">📡 Tszh Remote</div>
+    <div class="status-badge">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">连接中...</span>
+    </div>
+  </div>
+
+  <!-- 系统监控 -->
+  <div class="monitor-row fade-in">
+    <div class="monitor-card neumorphic-inset">
+      <div class="monitor-label">CORE TEMP</div>
+      <div class="monitor-value" id="coreTemp">--°C</div>
+    </div>
+    <div class="monitor-card neumorphic-inset">
+      <div class="monitor-label">NETWORK</div>
+      <div class="monitor-value" id="network">-- Mb/s</div>
+    </div>
+  </div>
+
+  <!-- 任务列表 -->
+  <div class="section-title">活跃任务</div>
+  <div id="taskList"></div>
+
+  <!-- 空状态 -->
+  <div id="emptyState" class="empty" style="display:none;">
+    <div class="empty-icon">📡</div>
+    <div>暂无任务</div>
+    <div style="font-size:12px; margin-top:8px;">去「协同」页面开始创作吧</div>
+  </div>
+
+<script>
+  // 请求原生端加载数据
+  function requestData() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'request_tasks' }));
+  }
+
+  // 更新任务列表
+  function updateTasks(tasks) {
+    const container = document.getElementById('taskList');
+    const empty = document.getElementById('emptyState');
+
+    if (!tasks || tasks.length === 0) {
+      container.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+    container.innerHTML = tasks.map(task => {
+      const statusClass = task.status === 'running' ? 'task-active' :
+                          task.status === 'completed' ? 'task-completed' : 'task-failed';
+      const tagClass = task.status === 'running' ? 'tag-running' :
+                       task.status === 'completed' ? 'tag-completed' : 'tag-failed';
+      const tagText = task.status === 'running' ? '▶ 进行中' :
+                      task.status === 'completed' ? '✓ 已完成' : '✗ 失败';
+
+      let extra = '';
+      if (task.status === 'running' && task.progress) {
+        extra = `<div class="progress-bar"><div class="progress-fill" style="width:${task.progress}%"></div></div>
+                 <div class="task-meta">${task.stage || ''} · 预计剩余 ${task.remaining || ''}</div>`;
+      } else if (task.status === 'completed') {
+        extra = `<div class="task-meta">${task.scenes || ''}个分镜 · 总时长${task.duration || ''}</div>`;
+      } else if (task.status === 'failed') {
+        extra = `<div class="task-meta" style="color:#ffb4ab;">${task.error || ''}</div>
+                 <div class="btn-row">
+                   <button class="btn-primary" onclick="retryTask('${task.id}')">重试</button>
+                   <button class="btn-outline">详情</button>
+                 </div>`;
+      }
+
+      return `<div class="task-card neumorphic-raised ${statusClass} fade-in">
+        <span class="status-tag ${tagClass}">${tagText}</span>
+        <div class="task-title">${task.title}</div>
+        ${extra}
+      </div>`;
+    }).join('');
+  }
+
+  // 重试任务
+  function retryTask(id) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'retry_task', id }));
+  }
+
+  // 更新连接状态
+  function updateStatus(online) {
+    const dot = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+    dot.className = 'status-dot' + (online ? '' : ' offline');
+    text.textContent = online ? '在线' : '离线';
+    text.style.color = online ? '#4ade80' : '#ffb4ab';
+  }
+
+  // 接收原生端消息
+  window.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'tasks_data') {
+        updateTasks(data.tasks);
+      }
+      if (data.type === 'status_update') {
+        updateStatus(data.online);
+      }
+    } catch {}
+  });
+
+  // 页面加载后请求数据
+  requestData();
+</script>
+</body>
+</html>

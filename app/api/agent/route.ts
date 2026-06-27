@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
   if (backendUrl && bodyForForward) {
     const targetUrl = buildTargetUrl(backendUrl);
     const apiKey = process.env.AGENT_API_KEY;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
     try {
       const upstream = await fetch(targetUrl, {
         method: "POST",
@@ -82,13 +84,22 @@ export async function POST(req: NextRequest) {
           ...forwardHeaders,
         },
         body: bodyForForward,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const text = await upstream.text();
       return new NextResponse(text, {
         status: upstream.status,
         headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
       });
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: { message: "Backend request timed out (30s)" } },
+          { status: 504 },
+        );
+      }
       return NextResponse.json(
         { error: { message: error instanceof Error ? error.message : "Failed to reach backend" } },
         { status: 502 },

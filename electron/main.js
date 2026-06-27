@@ -69,6 +69,12 @@ function startBackend() {
       process.env.PORT = String(port);
       process.env.API_SECRET_KEY = "";
 
+      // 数据库写入目录（asar 内不可写，使用 userData）
+      const dataDir = app.getPath("userData");
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      process.env.STZH_DATA_DIR = dataDir;
+      console.log(`[Electron] 数据目录: ${dataDir}`);
+
       // 直接 require Express 应用
       const expressApp = require(path.join(SERVER_DIR, "server-express.js"));
       backendServer = expressApp.listen(port, () => {

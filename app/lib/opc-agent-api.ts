@@ -2,12 +2,23 @@
 // 优先使用服务端 SQLite，localStorage 作为缓存/离线回退
 
 import type { OpcAgentMessage } from "@/app/components/opc-agent/types";
+import { getToken } from "./auth";
 
 const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || "http://localhost:8080")
+  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
   : "";
 
 const isBrowser = typeof window !== "undefined";
+
+// 构建带 JWT 的请求头
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json", ...extra };
+  if (isBrowser) {
+    const token = getToken();
+    if (token) h["Authorization"] = `Bearer ${token}`;
+  }
+  return h;
+}
 
 // ── 会话管理 ──
 
@@ -15,7 +26,7 @@ export async function apiCreateSession(id: string, title?: string): Promise<void
   try {
     await fetch(`${API_BASE}/api/opc/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ id, title }),
     });
   } catch { /* 离线时忽略 */ }
@@ -23,7 +34,7 @@ export async function apiCreateSession(id: string, title?: string): Promise<void
 
 export async function apiListSessions(): Promise<{ id: string; title: string; updated_at: number; message_count: number }[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions`);
+    const res = await fetch(`${API_BASE}/api/opc/sessions`, { headers: authHeaders() });
     if (res.ok) {
       const data = await res.json();
       return data.sessions || [];
@@ -34,7 +45,7 @@ export async function apiListSessions(): Promise<{ id: string; title: string; up
 
 export async function apiDeleteSession(id: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/opc/sessions/${id}`, { method: "DELETE" });
+    await fetch(`${API_BASE}/api/opc/sessions/${id}`, { method: "DELETE", headers: authHeaders() });
   } catch { /* 离线 */ }
 }
 
@@ -42,7 +53,7 @@ export async function apiDeleteSession(id: string): Promise<void> {
 
 export async function apiGetMessages(sessionId: string, limit = 200): Promise<OpcAgentMessage[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages?limit=${limit}`);
+    const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages?limit=${limit}`, { headers: authHeaders() });
     if (res.ok) {
       const data = await res.json();
       return (data.messages || []).map((m: any) => ({
@@ -61,7 +72,7 @@ export async function apiAddMessage(sessionId: string, role: string, content: st
   try {
     const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ role, content, metadata }),
     });
     if (res.ok) {
@@ -76,7 +87,7 @@ export async function apiBatchAddMessages(sessionId: string, messages: { role: s
   try {
     const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages/batch`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ messages }),
     });
     if (res.ok) {
@@ -89,7 +100,7 @@ export async function apiBatchAddMessages(sessionId: string, messages: { role: s
 
 export async function apiDeleteMessage(id: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/opc/messages/${id}`, { method: "DELETE" });
+    await fetch(`${API_BASE}/api/opc/messages/${id}`, { method: "DELETE", headers: authHeaders() });
   } catch { /* 离线 */ }
 }
 
@@ -99,7 +110,7 @@ export async function apiCompressSession(sessionId: string, summary: string, kee
   try {
     await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/compress`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ summary, keepRecent }),
     });
   } catch { /* 离线 */ }
@@ -110,7 +121,7 @@ export async function apiCompressSession(sessionId: string, summary: string, kee
 export async function apiGetMemory(category?: string): Promise<{ key: string; value: string; category: string }[]> {
   try {
     const url = category ? `${API_BASE}/api/opc/memory?category=${category}` : `${API_BASE}/api/opc/memory`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: authHeaders() });
     if (res.ok) {
       const data = await res.json();
       return data.memory || [];
@@ -123,7 +134,7 @@ export async function apiSetMemory(key: string, value: string, category?: string
   try {
     await fetch(`${API_BASE}/api/opc/memory`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ key, value, category }),
     });
   } catch { /* 离线 */ }
