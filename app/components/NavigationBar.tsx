@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, type ReactNode } from "react"
 import { motion } from "motion/react";
 import { LogIn } from "lucide-react";
 import type { AccessMode } from "@/app/lib/entry-flow";
+import { getToken } from "@/app/lib/auth";
 import { useAuth } from "./AuthProvider";
 import { fetchWeather, getWeatherIcon, getWeatherMood, getWeatherGlowColor, type WeatherData } from "@/app/lib/weather";
 import {
@@ -262,7 +263,30 @@ export default function NavigationBar({
     loadNotifications();
     const handleNewNotif = () => loadNotifications();
     window.addEventListener("tszh_notification_added", handleNewNotif);
-    return () => window.removeEventListener("tszh_notification_added", handleNewNotif);
+
+    // WS 实时推送：服务端 notification.created 时触发本地刷新（登录才建连）
+    let ws: WebSocket | null = null;
+    const token = getToken();
+    if (token) {
+      try {
+        const backendUrl = new URL(
+          process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin
+        );
+        const protocol = backendUrl.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${backendUrl.host}/ws/desktop?token=${encodeURIComponent(token)}`);
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data) as { type?: string };
+            if (message.type === "notification.created") handleNewNotif();
+          } catch {}
+        };
+      } catch {}
+    }
+
+    return () => {
+      window.removeEventListener("tszh_notification_added", handleNewNotif);
+      ws?.close();
+    };
   }, []);
 
   // 点击外部关闭通知面板

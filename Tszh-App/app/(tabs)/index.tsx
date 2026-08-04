@@ -251,11 +251,23 @@ export default function ProcessScreen() {
   const [realtime, setRealtime] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [totalTasks, setTotalTasks] = useState(0);
+  const PAGE_SIZE = 20;
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (loadMore = false) => {
     try {
-      const [data, online] = await Promise.all([getTasks(), healthCheck()]);
-      setTasks(data.tasks || []);
+      const offset = loadMore ? page * PAGE_SIZE : 0;
+      const [data, online] = await Promise.all([getTasks({ limit: PAGE_SIZE, offset }), healthCheck()]);
+      if (loadMore) {
+        setTasks((current) => {
+          const seen = new Set(current.map((t) => t.id));
+          return [...current, ...(data.tasks || []).filter((t) => !seen.has(t.id))];
+        });
+      } else {
+        setTasks(data.tasks || []);
+      }
+      setTotalTasks(data.total);
       setIsOnline(online);
       setError(null);
     } catch (cause: unknown) {
@@ -264,7 +276,13 @@ export default function ProcessScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [page]);
+
+  const onEndReached = () => {
+    if (loading || tasks.length >= totalTasks) return;
+    setPage((p) => p + 1);
+    void loadData(true);
+  };
 
   useEffect(() => {
     const initialLoad = setTimeout(() => void loadData(), 0);
@@ -440,6 +458,14 @@ export default function ProcessScreen() {
         renderItem={({ item }) => (
           <TaskCard task={item} busy={busyId === item.id} reduceMotion={reduceMotion} onOpen={setSelectedTask} onAction={(task, action) => void control(task, action)} s={s} sp={sp} />
         )}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={!loading && tasks.length < totalTasks ? (
+          <View style={{ marginHorizontal: s(22), marginVertical: s(12), alignItems: 'center' }}>
+            <ActivityIndicator color={C.amber} size="small" />
+            <Text style={{ color: C.textMuted, fontSize: sp(9), marginTop: s(5) }}>加载更多…</Text>
+          </View>
+        ) : null}
         ListHeaderComponent={header}
         ListEmptyComponent={loading ? (
           <View style={{ marginHorizontal: s(22), gap: s(10) }}>

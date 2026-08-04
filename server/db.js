@@ -437,6 +437,7 @@ db.notifList = function (userId, limit = 50) {
 db.notifAdd = function (id, title, message, type, userId) {
   db.prepare("INSERT INTO notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)")
     .run(id, userId || 0, title, message, type || "info");
+  return db.prepare("SELECT * FROM notifications WHERE id = ? AND user_id = ?").get(id, userId || 0);
 };
 
 db.notifMarkRead = function (id, userId) {

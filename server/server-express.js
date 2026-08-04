@@ -329,6 +329,7 @@ app.post("/api/agent/stream", async (req, res) => {
 
 // === OPC 创作助手 API ===
 const db = require("./db");
+const { publish } = require("./events");
 
 // 会话列表
 app.get("/api/opc/sessions", (req, res) => {
@@ -506,7 +507,9 @@ app.post("/api/notifications", (req, res) => {
   const userId = req.user?.userId || 0;
   const { id, title, message, type } = req.body;
   if (!title || !message) return res.status(400).json({ error: "title and message required" });
-  db.notifAdd(id || `notif_${Date.now()}`, title, message, type, userId);
+  const notif = db.notifAdd(id || `notif_${Date.now()}`, title, message, type, userId);
+  // 实时推送：手机/桌面 WS 订阅 notification.created 即时刷新
+  publish(userId, "notification.created", { notification: notif });
   res.json({ ok: true });
 });
 

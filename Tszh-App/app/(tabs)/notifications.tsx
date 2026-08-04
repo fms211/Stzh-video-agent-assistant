@@ -6,6 +6,7 @@ import { getNotifications, markNotificationRead, markAllNotificationsRead, delet
 import { NeuTag, NeuFilterChip, NeuButton, PageBackground, EmptyState } from '../../src/components';
 import { useApp, C, STATUS, cardShadow } from '../../src/hooks/useApp';
 import { usePolling } from '../../src/hooks/usePolling';
+import { wsClient } from '../../src/lib/ws';
 
 const TYPE_MAP: Record<string, { variant: 'completed' | 'failed' | 'info' | 'default'; label: string }> = {
   success: { variant: 'completed', label: '已完成' }, error: { variant: 'failed', label: '失败' }, info: { variant: 'info', label: '系统' },
@@ -28,6 +29,13 @@ export default function NotificationsScreen() {
     finally { setLoading(false); setRefreshing(false); }
   };
   const onRefresh = useCallback(() => { setRefreshing(true); loadData(); }, []);
+
+  // WS 实时推送：收到 notification.created 立即刷新（30s 轮询仍作兜底）
+  useEffect(() => {
+    const onNotif = () => { void loadData(); };
+    wsClient.on('notification.created', onNotif);
+    return () => { wsClient.off('notification.created', onNotif); };
+  }, []);
   const handleMarkRead = async (id: number) => {
     try { await markNotificationRead(id); setNotifications((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n))); }
     catch { Alert.alert('操作失败', '标记已读失败，请重试'); }

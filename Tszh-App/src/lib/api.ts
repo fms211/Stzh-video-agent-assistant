@@ -240,8 +240,13 @@ export interface LinkedTask {
   updatedAt: string;
 }
 
-export async function getTasks(): Promise<{ tasks: LinkedTask[]; total: number }> {
-  return request('/api/tasks');
+export async function getTasks(options?: { status?: string; limit?: number; offset?: number }): Promise<{ tasks: LinkedTask[]; total: number }> {
+  const params = new URLSearchParams();
+  if (options?.status) params.set('status', options.status);
+  if (options?.limit) params.set('limit', String(options.limit));
+  if (options?.offset) params.set('offset', String(options.offset));
+  const qs = params.toString();
+  return request(`/api/tasks${qs ? `?${qs}` : ''}`);
 }
 
 export async function createTask(prompt: string): Promise<LinkedTask> {

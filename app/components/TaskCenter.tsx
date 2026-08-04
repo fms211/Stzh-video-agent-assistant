@@ -32,7 +32,7 @@ import QRCodeAccess from "./QRCodeAccess";
 import type { AccessMode } from "@/app/lib/entry-flow";
 
 type TaskStatus = LinkedTask["status"];
-type TaskFilter = "all" | "active" | TaskStatus;
+type TaskFilter = "all" | "active" | "queued" | "running" | "paused" | "completed" | "failed" | "cancelled" | "archive";
 type ConnectionState = "signed-out" | "connecting" | "live" | "fallback";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -50,6 +50,7 @@ const FILTERS: { key: TaskFilter; label: string }[] = [
   { key: "queued", label: "待接手" },
   { key: "completed", label: "已完成" },
   { key: "failed", label: "异常" },
+  { key: "archive", label: "历史归档" },
 ];
 
 function isActiveTask(task: LinkedTask) {
@@ -78,36 +79,51 @@ function statusIcon(status: TaskStatus) {
 export default function TaskCenter({ accessMode = "authenticated", onAuthRequired }: { accessMode?: AccessMode; onAuthRequired?: () => void }) {
   const authenticated = accessMode === "authenticated" && Boolean(getToken());
   const [tasks, setTasks] = useState<LinkedTask[]>([]);
+  const [totalTasks, setTotalTasks] = useState(0);
+  const [page, setPage] = useState(0);
   const [connection, setConnection] = useState<ConnectionState>(
     authenticated ? "connecting" : "signed-out"
   );
   const [filter, setFilter] = useState<TaskFilter>("all");
+  const filterRef = useRef<TaskFilter>("all");
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(authenticated);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
   const controllers = useRef(new Map<string, AbortController>());
 
-  const loadTasks = useCallback(async () => {
+  const PAGE_SIZE = 20;
+
+  const loadTasks = useCallback(async (statusFilter?: string, loadMore = false) => {
     if (!authenticated || !getToken()) return;
     try {
-      const data = await getTasks();
-      setTasks(data.tasks);
+      const offset = loadMore ? page * PAGE_SIZE : 0;
+      const data = await getTasks({ status: statusFilter, limit: PAGE_SIZE, offset });
+      if (loadMore) {
+        setTasks((current) => {
+          const seen = new Set(current.map((t) => t.id));
+          return [...current, ...data.tasks.filter((t) => !seen.has(t.id))];
+        });
+      } else {
+        setTasks(data.tasks);
+      }
+      setTotalTasks(data.total);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "任务加载失败");
     } finally {
       setLoading(false);
     }
-  }, [authenticated]);
+  }, [authenticated, page]);
 
   useEffect(() => {
     if (!authenticated) return;
     const token = getToken();
     if (!token) return;
 
-    const initialLoad = window.setTimeout(() => void loadTasks(), 0);
-    const fallback = window.setInterval(() => void loadTasks(), 15000);
+    const archiveStatus = filterRef.current === "archive" ? "completed,failed,cancelled" : undefined;
+    const initialLoad = window.setTimeout(() => void loadTasks(archiveStatus), 0);
+    const fallback = window.setInterval(() => void loadTasks(archiveStatus), 15000);
     const stopHeartbeat = startDesktopHeartbeat(20);
     const backendUrl = new URL(
       process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin
@@ -170,6 +186,7 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
     if (filter === "all") return true;
     if (filter === "active") return isActiveTask(task);
     if (filter === "failed") return task.status === "failed" || task.status === "cancelled";
+    if (filter === "archive") return ["completed", "failed", "cancelled"].includes(task.status);
     return task.status === filter;
   }), [filter, tasks]);
 
@@ -264,7 +281,12 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                   key={item.key}
                   className={filter === item.key ? "is-active" : ""}
                   aria-pressed={filter === item.key}
-                  onClick={() => setFilter(item.key)}
+                  onClick={() => {
+                    filterRef.current = item.key;
+                    setFilter(item.key);
+                    setPage(0);
+                    void loadTasks(item.key === "archive" ? "completed,failed,cancelled" : undefined);
+                  }}
                 >
                   {item.label}
                 </button>
@@ -321,6 +343,16 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                   <span className="task-card__status">{STATUS_LABEL[task.status]}<b>{task.progress}%</b></span>
                 </button>
               ))}
+
+              {!loading && tasks.length < totalTasks && (
+                <button
+                  type="button"
+                  className="task-center__loadmore"
+                  onClick={() => { setPage((p) => p + 1); void loadTasks(filterRef.current === "archive" ? "completed,failed,cancelled" : undefined, true); }}
+                >
+                  加载更多（{tasks.length}/{totalTasks}）
+                </button>
+              )}
             </div>
 
             <aside className="task-detail" aria-live="polite">
@@ -417,6 +449,8 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
         .task-center__toolbar { max-width:1180px; margin:0 auto 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
         .task-center__filters { display:flex; flex-wrap:wrap; gap:6px; }
         .task-center__filters button,.task-center__refresh { min-height:34px; padding:0 12px; display:inline-flex; align-items:center; gap:6px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--foreground-muted); font-size:11px; cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1); }
+        .task-center__loadmore { min-height:38px; margin-top:10px; display:flex; align-items:center; justify-content:center; border:1px dashed var(--border-subtle); border-radius:10px; background:transparent; color:var(--foreground-muted); font-size:11px; cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1); }
+        .task-center__loadmore:hover { color:var(--foreground); border-color:color-mix(in srgb,var(--glow-cool) 35%,transparent); }
         .task-center__filters button:hover,.task-center__refresh:hover { color:var(--foreground); border-color:var(--border-subtle); }
         .task-center__filters button.is-active { color:var(--glow-warm); border-color:color-mix(in srgb,var(--glow-warm) 30%,transparent); background:color-mix(in srgb,var(--glow-warm) 8%,transparent); }
         .task-center__workspace { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; align-items:start; }
