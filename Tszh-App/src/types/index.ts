@@ -1,7 +1,7 @@
 // Tszh Remote - 类型定义
 
 // 任务状态
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type TaskStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 // 任务
 export interface Task {

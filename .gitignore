@@ -18,7 +18,9 @@
 /out/
 
 # production
-/build
+/build/*
+!/build/icon.svg
+!/build/icon.ico
 
 # electron builder output
 /dist/
@@ -109,3 +111,11 @@ OPC工作区.png
 一致性增强模式.png
 智能体后台配置界面.png
 主题侧栏.png
+
+# build / export artifacts (not project source)
+/build/
+/output/
+/design-assets/
+/.playwright-cli/
+/electron-builder/
+/stitch_素材.zip

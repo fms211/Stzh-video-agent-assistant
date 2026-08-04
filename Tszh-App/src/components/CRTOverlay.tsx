@@ -41,7 +41,7 @@ export function CRTOverlay() {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(255,184,112,0.04)', 'rgba(255,184,112,0.06)', 'rgba(255,184,112,0.04)', 'transparent']}
+          colors={['transparent', 'rgba(232,152,64,0.04)', 'rgba(232,152,64,0.06)', 'rgba(232,152,64,0.04)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.beamGradient}

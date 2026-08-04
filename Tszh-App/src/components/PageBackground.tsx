@@ -2,7 +2,7 @@
 // 星空粒子跨页面共享同一个动画实例
 // CRT 扫描线仅登录页使用
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Animated, Easing, StyleSheet, useWindowDimensions } from 'react-native';
 import { useStarfield, C } from '../hooks/useApp';
 
@@ -15,7 +15,7 @@ export function PageBackground({ crt = false }: Props) {
   const stars = useStarfield(height);
 
   // CRT 扫描线（仅登录页，全屏覆盖，慢速）
-  const scanY = useRef(new Animated.Value(-200)).current;
+  const [scanY] = useState(() => new Animated.Value(-200));
   useEffect(() => {
     if (!crt) return;
     const anim = Animated.loop(
@@ -28,10 +28,10 @@ export function PageBackground({ crt = false }: Props) {
     );
     anim.start();
     return () => anim.stop();
-  }, [crt, height]);
+  }, [crt, height, scanY]);
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {/* Layer 0: 星空粒子 */}
       {stars.map((star, i) => (
         <Animated.View
@@ -53,7 +53,7 @@ export function PageBackground({ crt = false }: Props) {
       {crt && (
         <>
           {/* 全屏半透明叠加 */}
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.04)' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.04)' }]} />
           {/* 移动光带 */}
           <Animated.View
             style={{
@@ -64,19 +64,19 @@ export function PageBackground({ crt = false }: Props) {
               transform: [{ translateY: scanY }],
             }}
           >
-            <View style={[StyleSheet.absoluteFillObject, {
+            <View style={[StyleSheet.absoluteFill, {
               backgroundColor: 'transparent',
             }]}>
               {/* 光带渐变 — 从中心向两端透明 */}
               <View style={{
                 flex: 1,
-                backgroundColor: 'rgba(255,184,112,0.06)',
+                backgroundColor: 'rgba(232,152,64,0.06)',
                 opacity: 0.8,
               }} />
             </View>
           </Animated.View>
           {/* CRT 水平条纹纹理 */}
-          <View style={[StyleSheet.absoluteFillObject, {
+          <View style={[StyleSheet.absoluteFill, {
             opacity: 0.03,
             backgroundColor: 'transparent',
           }]} />

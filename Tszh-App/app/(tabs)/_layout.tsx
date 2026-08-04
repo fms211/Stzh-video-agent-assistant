@@ -1,17 +1,18 @@
 // Tab 栏 — 背景色统一 + 激活指示器包裹图标
 
 import { Tabs } from 'expo-router';
-import { View, Text, Platform } from 'react-native';
+import { View, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { C, cardShadow } from '../../src/hooks/useApp';
 import { FirstRunOverlay } from '../../src/components';
 
 const TABS = [
-  { name: 'index', label: '进程', icon: '📡' },
-  { name: 'notifications', label: '通知', icon: '🔔' },
-  { name: 'gallery', label: '作品', icon: '🌌' },
-  { name: 'ai-chat', label: '协同', icon: '🤖' },
-  { name: 'templates', label: '模板', icon: '📦' },
-  { name: 'profile', label: '我的', icon: '👤' },
+  { name: 'index', label: '进程', icon: 'radio-outline' as const },
+  { name: 'notifications', label: '通知', icon: 'notifications-outline' as const },
+  { name: 'gallery', label: '作品', icon: 'sparkles-outline' as const },
+  { name: 'ai-chat', label: '协同', icon: 'chatbubble-ellipses-outline' as const },
+  { name: 'templates', label: '模板', icon: 'albums-outline' as const },
+  { name: 'profile', label: '我的', icon: 'person-outline' as const },
 ];
 
 export default function TabLayout() {
@@ -48,7 +49,7 @@ export default function TabLayout() {
                       position: 'absolute',
                       width: 44, height: 44,
                       borderRadius: 22,
-                      backgroundColor: 'rgba(255,184,112,0.12)',
+                      backgroundColor: 'rgba(232,152,64,0.12)',
                       shadowColor: '#e89840',
                       shadowOffset: { width: 0, height: 0 },
                       shadowOpacity: 0.6,
@@ -57,11 +58,12 @@ export default function TabLayout() {
                     }} />
                   )}
                   {/* 图标 */}
-                  <Text style={{
-                    fontSize: 20,
-                    opacity: focused ? 1 : 0.5,
-                    zIndex: 1,
-                  }}>{tab.icon}</Text>
+                  <Ionicons
+                    name={tab.icon}
+                    size={22}
+                    color={focused ? C.amber : C.textMuted}
+                    style={{ zIndex: 1, opacity: focused ? 1 : 0.6 }}
+                  />
                 </View>
               ),
             }}

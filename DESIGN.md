@@ -1,230 +1,100 @@
----
-name: 腾昇智和 · OPC 微智能体
-description: 深空原子朋克风格的 AI 短视频创作助手界面
-colors:
-  space-deep: "#050a14"
-  space-panel: "#0a1228"
-  space-surface: "#0e1630"
-  foreground: "#d8dce8"
-  foreground-muted: "#8890a8"
-  border-subtle: "rgba(255,255,255,0.08)"
-  glow-warm: "#e89840"
-  glow-warm-soft: "#f8c878"
-  glow-cool: "#5888d8"
-  glow-aurora: "#9078d0"
-  error: "#e06050"
-  success: "#4ade80"
-typography:
-  display:
-    fontFamily: "GeistPixel-Line, var(--font-geist-sans), sans-serif"
-    fontSize: "15px"
-    fontWeight: 400
-    lineHeight: 1.3
-    letterSpacing: "0.04em"
-  title:
-    fontFamily: "GeistPixel-Line, var(--font-geist-sans), sans-serif"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: "0.04em"
-  body:
-    fontFamily: "var(--font-geist-sans), sans-serif"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.6
-    letterSpacing: "normal"
-  label:
-    fontFamily: "GeistPixel-Line, var(--font-geist-sans), sans-serif"
-    fontSize: "10px"
-    fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: "0.06em"
-  mono:
-    fontFamily: "var(--font-geist-mono), monospace"
-    fontSize: "11px"
-    fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: "normal"
-rounded:
-  xs: "4px"
-  sm: "6px"
-  md: "8px"
-  lg: "10px"
-  xl: "12px"
-  panel: "16px"
-  pill: "999px"
-spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "20px"
-components:
-  panel:
-    backgroundColor: "{colors.space-panel}"
-    textColor: "{colors.foreground}"
-    rounded: "{rounded.panel}"
-    padding: "10px 14px"
-  button-icon:
-    backgroundColor: "transparent"
-    textColor: "{colors.foreground-muted}"
-    rounded: "{rounded.md}"
-    size: "32px"
-  button-primary:
-    backgroundColor: "{colors.glow-warm}"
-    textColor: "{colors.space-deep}"
-    rounded: "{rounded.sm}"
-    padding: "6px 14px"
-  input-capsule:
-    backgroundColor: "{colors.space-surface}"
-    textColor: "{colors.foreground}"
-    rounded: "{rounded.xl}"
-    padding: "6px 6px 6px 12px"
-  message-user:
-    backgroundColor: "color-mix(in srgb, {colors.glow-warm} 12%, {colors.space-surface})"
-    textColor: "{colors.foreground}"
-    rounded: "{rounded.lg}"
-    padding: "8px 12px"
-  message-assistant:
-    backgroundColor: "{colors.space-surface}"
-    textColor: "{colors.foreground}"
-    rounded: "{rounded.lg}"
-    padding: "8px 12px"
-  chip:
-    backgroundColor: "color-mix(in srgb, {colors.glow-warm} 4%, transparent)"
-    textColor: "{colors.foreground-muted}"
-    rounded: "{rounded.md}"
-    padding: "5px 10px"
+# 腾昇智和 · 设计系统
+
+> 深邃像素星空 + 未来原子朋克 + 智慧艺术气息
+> 核心隐喻：一座搭建在深空中的天文台控制室——对话流是观测窗口，AI 是坐在对面的导演
+
 ---
 
-# Design System: 腾昇智和 · OPC 微智能体
+## 品牌气质
 
-## 1. Overview
+- **温暖恒星**：暖橙光晕是生命感的来源，代表 AI 的"在场"
+- **深邃空间**：深空底色 + 星尘粒子，克制而专注
+- **受控动效**：一切动画服务于状态传达，不做永续装饰循环
 
-**Creative North Star: "深空天文台的控制台"**
+## 视觉语言（2026-08 版）
 
-一个搭建在深空中的天文台控制室。对话流是观测窗口，AI 是坐在对面的导演，界面是精密的控制台。每一个交互都像是在调整望远镜的焦距：精准、有目的、带着探索未知的仪式感。
+### 字体
 
-这个系统拒绝传统企业蓝的冰冷感，也拒绝过度拟物的虚假感。它用暖琥珀色的辉光在深空底色上勾勒出功能边界，用像素风字体暗示数字世界的底层逻辑。色彩不喧哗但有温度，间距不拥挤但有密度。
+| 用途 | 字体 |
+|------|------|
+| 中文标题、按钮、表单 | **Geist Sans**（主字体） |
+| 时间、状态、技术数据 | **Geist Mono** |
+| 像素感 | 仅保留在 1–2px 网格、采样点、品牌标记细节 |
 
-**Key Characteristics:**
-- 三层深空底色（deep → panel → surface）构建视觉纵深
-- 暖琥珀辉光（8%-40% 渐变透明度）标记所有可交互元素
-- GeistPixel 像素字体承载所有标题和标签，与深空主题呼应
-- `color-mix()` 透明度分层替代传统 opacity，保持色彩纯度
-- 所有交互元素有明确的 hover/focus/active 三态反馈
+**已移除**：大颗粒像素标题（GeistPixel）、ZCOOL 毛笔展示字体、文字故障抖动、持续彩色描边旋转。
 
-## 2. Colors: The Deep Space Palette
+### 色彩（CSS 变量驱动，禁止硬编码）
 
-暖琥珀在深蓝黑底上燃烧。不是霓虹的刺眼，是天文台仪表盘上那种被玻璃罩过滤过的、带着温度的光。
+| 变量 | 值 | 用途 |
+|------|-----|------|
+| `--glow-warm` | `#e89840` | 核心、主按钮、当前状态（**唯一强调色**） |
+| `--glow-cool` | `#5888d8` | 连接、次级状态 |
+| `--glow-aurora` | `#9078d0` | 点缀、过渡 |
+| `--space-deep` | `#050a14` | 深空底 |
+| `--space-panel` | `#0a1228` | 面板 |
 
-### Primary
-- **暖琥珀 Glow Warm** (#e89840): 系统的核心强调色。标记当前激活项、可交互元素的 hover 边框、发送按钮、焦点环。用 8%-40% 的透明度梯度控制其存在感，从"隐约感知"到"明确指引"。
+### 圆角与间距
 
-### Secondary
-- **冷靛 Glow Cool** (#5888d8): AI 助手的头像底色、模型协议标签、辅助信息。与暖琥珀形成冷暖对比，但永远处于从属地位。
+- 面板：**14px**（`--radius-panel`）
+- 控件：**10px**（`--radius-control`）
+- 状态标签：**胶囊圆角**（999px）
 
-### Tertiary
-- **极光紫 Glow Aurora** (#9078d0): 极少使用，仅在需要第三层语义区分时出现（如特殊标签、过渡状态）。
+### 动效标准
 
-### Neutral
-- **深空底 Space Deep** (#050a14): 最深层背景，视口级。
-- **面板底 Space Panel** (#0a1228): 面板、卡片、下拉菜单的背景。
-- **浮层面 Space Surface** (#0e1630): 消息气泡、表单区域、配置卡片的背景。
-- **前景色 Foreground** (#d8dce8): 主要文字，接近白但带着冷蓝调。
-- **静音色 Foreground Muted** (#8890a8): 次要文字、占位符、非激活状态。
-- **边框色 Border Subtle** (rgba(255,255,255,0.08)): 所有分隔线和边框。极低对比度，仅提供结构暗示。
+| 场景 | 时长 |
+|------|------|
+| 点火 → 身份面板 | **≤ 700ms** |
+| 普通界面反馈（hover/按压/面板） | **160–240ms** |
+| 页面切换、导航展开 | Motion（LayoutGroup / layoutId） |
+| Reduced Motion | 取消恒星位移、轨道旋转、共享元素缩放，只保留 ~160ms 淡入淡出 |
 
-### Named Rules
+**动效引擎分工**：
+- **Motion**（framer-motion）→ DOM 布局动画：共享元素、页面切换、导航
+- **GSAP** → 场景参数：恒星点火、轨道亮度
+- 两者**不修改同一属性**
 
-**The 8% Rule.** 暖琥珀辉光通过 `color-mix(in srgb, var(--glow-warm) N%, transparent)` 控制可见度。hover 背景用 8%，焦点环用 30%，激活边框用 35%。这个梯度系统不允许随意选择百分比，必须在 8/12/15/20/30/35/40 这几个档位中选择。
+### 恒星系统（入口视觉核心）
 
-**The No Pure Black Rule.** 禁止使用 `#000`。最深的黑色是 `#050a14`（深空底），它带着微弱的蓝色调。纯黑在深色界面上会形成视觉空洞。
+- `splash-core`：恒星本体（径向渐变球面 + 高光 + 光晕）
+- `splash-orbit`：三条椭圆轨道，缓慢反向旋转（26s / 34s / 44s），轨道带光点
+- 光晕呼吸：`glow-pulse` 8s；表面微光扫掠：`glow-sweep` 7s；高光漂移：9s 交替
+- `layoutId="brand-core"`：恒星在 splash → 导航栏间**连续变形**（点火后缩小为品牌标记）
+- 全部遵守 `prefers-reduced-motion`
 
-## 3. Typography
+## 入口流程
 
-**Display Font:** GeistPixel-Line（像素风等宽，从 officialskills.sh 加载）
-**Body Font:** Geist Sans（Next.js 内置无衬线）
-**Mono Font:** Geist Mono（Next.js 内置等宽）
+```
+splash（点火）→ gateway（身份交接）→ workspace（创作工作区）
+```
 
-**Character:** GeistPixel 的像素网格感与深空主题的数字底层逻辑呼应。标题和标签全部使用 GeistPixel，正文使用 Geist Sans 保持可读性。两者混用时通过字号和字重拉开层级。
+- `EntryPhase = "splash" | "gateway" | "workspace"`
+- `AccessMode = "authenticated" | "guest"`
+- 新 Electron 会话播放一次点火；刷新保持入口或工作区状态；从工作区返回认证页不重播
+- `/login`、`/register` 为共享身份交接页的薄路由，只控制默认页签
 
-### Hierarchy
-- **Display** (400, 15px, 1.3, 0.04em): 面板标题、空态大标题。GeistPixel-Line。
-- **Title** (400, 13px, 1.4, 0.04em): 区域标题、表单标题。GeistPixel-Line。
-- **Body** (400, 13px, 1.6, normal): 消息正文、输入框文本。Geist Sans。最大行宽 65ch。
-- **Label** (400, 10px, 1.4, 0.06em): 分类标签、时间戳、配置标签。GeistPixel-Line。
-- **Mono** (400, 11px, 1.4, normal): 模型 ID、API 地址、配置输入框。Geist Mono。
+## 共享产品外壳（ProductShell）
 
-### Named Rules
+单一持续挂载外壳贯穿开场、认证与工作区：
 
-**The Pixel For Labels Rule.** 所有 10px 及以下的文字必须使用 GeistPixel-Line 或 GeistPixel-Square。小字号在像素字体下反而更清晰，因为每个字形都在网格上对齐。
+- **同一套星空 Canvas**（StarfieldBackground）+ 轨道环（OrbitRings）
+- **同一顶栏导航**：入口阶段以低亮度锁定状态存在，进入工作区后原位解锁
+- **同一内容宽度与背景纹理**
 
-## 4. Elevation
+## 导航栏
 
-深空不靠阴影堆叠来表达层级，而是靠三层底色的渐变：deep → panel → surface。阴影的角色不是"抬起"元素，而是"标记悬浮"。只有浮在主界面之上的元素（面板、下拉、蒙版）才使用 box-shadow。
+- 手写弹簧物理动画（展开/收起/按钮反馈）
+- 左侧：时间 + 日期 + 天气（跟随天气色）
+- 中间：旋转木马式页面切换（滚轮可切页）
+- 右侧：通知中心（角标 + 面板）
+- 品牌恒星：`layoutId="brand-core"` 共享动画
+- 访客模式显示登录按钮；账户模式显示用户名
+- 锁定态（入口阶段）：tab 禁用、低亮度
 
-### Shadow Vocabulary
-- **Floating Panel** (`0 24px 80px rgba(0,0,0,0.6), 0 0 40px color-mix(var(--glow-warm) 8%)`): 主面板的悬浮阴影。大面积黑色漫射 + 暖琥珀辉光晕染。
-- **Dropdown** (`0 8px 32px rgba(0,0,0,0.5)`): 下拉菜单。纯黑色漫射，无辉光。
-- **Focus Ring** (`0 0 0 2px color-mix(var(--glow-warm) 30%)`): 键盘导航焦点环。暖琥珀色，30% 透明度。
-- **Glow Hover** (`0 0 12px color-mix(var(--glow-warm) 40%)`): 按钮 hover 时的辉光扩散。
+## 禁止
 
-### Named Rules
-
-**The Flat-By-Default Rule.** 面板、卡片、输入框在静息状态下没有阴影。阴影只出现在两种场景：元素浮在主界面之上（面板、下拉），或元素处于交互状态（hover、focus）。
-
-## 5. Components
-
-### Panel
-- **Shape:** 圆角 16px，1px 实线边框（border-subtle）
-- **Background:** space-panel (#0a1228)
-- **Shadow:** Floating Panel 级别
-- **Layout:** 固定居中，780×580px，移动端全屏
-- **Animation:** 从 scale(0.95) + translateY(8px) 弹入，0.3s ease-out-expo
-
-### Buttons
-- **Icon Button:** 32×32px，圆角 8px，透明底，foreground-muted 色。hover 时底色变为 glow-warm 8%，边框变为 glow-warm 20%。
-- **Primary Button:** 内边距 6px 14px，圆角 6px，glow-warm 底色，space-deep 文字。hover 时 brightness(1.1)。禁用时 opacity 0.4。
-- **Quick Action Chip:** 内边距 5px 10px，圆角 8px，1px border-subtle 边框，glow-warm 4% 底色。hover 时边框升至 30%，底色升至 8%，translateY(-1px) 微浮。
-- **Danger Button:** 同 icon button 尺寸，hover 时 color 和 border 变为 error 色。
-
-### Input
-- **Capsule:** 圆角 12px，space-surface 底色，1px border-subtle 边框。focus-within 时边框变为 glow-warm 35%。
-- **Textarea:** 无边框，透明底，Geist Sans 13px。placeholder 用 foreground-muted 50% opacity。
-- **Config Input:** 圆角 6px，space-panel 底色，Geist Mono 11px。focus 时边框变为 glow-warm 40%。
-
-### Message Bubble
-- **User:** 圆角 10px，glow-warm 12% + space-surface 混合底色，glow-warm 18% 边框。头像 28×28 圆角 8px，glow-warm 15% 底色。
-- **Assistant:** 圆角 10px，space-surface 底色，border-subtle 边框。头像同尺寸，glow-cool 15% 底色。
-- **Copy Action:** 消息 hover 时显示，20×20px，opacity 0→0.6 渐显。
-
-### Chip / Badge
-- **Tier Badge:** 内边距 1px 6px，圆角 4px，GeistPixel-Square 8px 大写。三级颜色：fast 用 success 色，balanced 用 glow-cool，powerful 用 glow-warm。底色 15%，边框 25%。
-- **Protocol Badge:** 9px，glow-cool 色，glow-cool 10% 底色，圆角 3px。
-- **Radio Toggle:** 内边距 4px 10px，圆角 6px。激活时边框 glow-warm，底色 glow-warm 8%。
-
-### Navigation
-- **Sidebar Tabs:** flex 等分，列布局，GeistPixel-Line 9px。激活时 glow-warm 色 + glow-warm 6% 底色。focus-visible 时 inset ring glow-warm 30%。
-
-### Thinking Indicator
-- **Dots:** 3 个 5×5px 圆点，glow-warm 40% 底色，staggered 脉冲动画（1.4s ease-in-out infinite，延迟 0.2s/0.4s）。脉冲时 opacity 0.4→1，scale 1→1.2。
-
-## 6. Do's and Don'ts
-
-### Do:
-- **Do** 使用 `color-mix()` 透明度分层控制暖琥珀的存在感，而非直接降低 opacity。opacity 会让整个元素变灰，color-mix 保持色彩纯度。
-- **Do** 在 8/12/15/20/30/35/40 这几个档位中选择 glow-warm 的透明度百分比。这是系统级的梯度，不是随意选择的。
-- **Do** 为所有交互元素提供 hover/focus-visible/active 三态。hover 改变底色和边框，focus-visible 添加光环，active 改变 transform。
-- **Do** 使用 GeistPixel-Line 作为所有 13px 及以下标题和标签的字体。
-- **Do** 使用 `prefers-reduced-motion: reduce` 媒体查询禁用所有动画。
-- **Do** 保持三层底色的视觉层级：deep 最深，panel 中间，surface 最浅。
-
-### Don't:
-- **Don't** 使用 `#000` 或 `#fff`。PRODUCT.md 明确禁止纯黑纯白。最深是 #050a14，最浅是 #d8dce8。
-- **Don't** 使用 glassmorphism（backdrop-blur 装饰性使用）。PRODUCT.md 将其列为反面参考。backdrop-filter 仅用于蒙版层（如面板背后的遮罩）。
-- **Don't** 使用 emoji 作为功能性图标。PRODUCT.md 明确禁止。导航、操作、状态全部使用 Lucide SVG 图标。
-- **Don't** 使用 bounce/elastic 缓动（cubic-bezier 控制点 >1.0）。面板入口动画使用 ease-out-expo，不允许过冲振荡。
-- **Don't** 在深空主题上使用传统企业蓝（蓝色主题、正式严肃的企业级 UI）。PRODUCT.md 将其列为首要反面参考。
-- **Don't** 让阴影成为默认状态。卡片和面板在静息时没有阴影，阴影只用于浮层和交互反馈。
-- **Don't** 使用 gradient text（background-clip: text + 渐变背景）。装饰性强于语义性，用单一实色替代。
+- 玻璃拟态（backdrop-blur 装饰性使用）
+- emoji 作为功能性图标
+- 纯黑 `#000` 或纯白 `#fff`
+- bounce/elastic 缓动（除非品牌刻意）
+- Inter/Roboto/Arial 等通用字体
+- **入口页营销文案**（如"保持同一套界面，完成身份交接"类描述）

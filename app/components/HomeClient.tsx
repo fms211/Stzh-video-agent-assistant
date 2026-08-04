@@ -1,21 +1,31 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import SplashScreen from "./SplashScreen";
-import WelcomeScreen from "./WelcomeScreen";
-import StarfieldBackground from "./StarfieldBackground";
-import OrbitRings from "./OrbitRings";
-import CursorTrail from "./CursorTrail";
-import NebulaCursorTrail from "./NebulaCursorTrail";
 import ChatFlow from "./ChatFlow";
 import StatsDashboard from "./StatsDashboard";
-import NavigationBar from "./NavigationBar";
 import PageTransition from "./PageTransition";
 import SettingsDrawer from "./SettingsDrawer";
 import { usePreferences } from "@/app/hooks/usePreferences";
 import GalleryPanel from "./GalleryPanel";
 import OpcAgentPanel from "./opc-agent/OpcAgentPanel";
+import TaskCenter from "./TaskCenter";
+import ProductShell from "./ProductShell";
+import EntryGateway from "./EntryGateway";
+import { useAuth } from "./AuthProvider";
+import { loadSessions } from "@/app/lib/sync";
+import { dataOwnerFromUser, migrateLegacyWorkspaceData } from "@/app/lib/data-owner";
+import {
+  ENTRY_SESSION_KEY,
+  createInitialEntryState,
+  reduceEntryState,
+  serializeEntryState,
+  type AuthView,
+  type EntryEvent,
+  type EntryState,
+} from "@/app/lib/entry-flow";
+import type { WorkspacePage } from "./NavigationBar";
 
 const OPCPanel = dynamic(() => import("./OPCPanel"), {
   ssr: false,
@@ -27,56 +37,77 @@ const LibTVPanel = dynamic(() => import("./LibTVPanel"), {
   loading: () => <div className="opc-loading">加载 LibTV 面板…</div>,
 });
 
-type Page = "chat" | "opc" | "stats" | "libtv" | "gallery";
-
 export default function HomeClient() {
   const { prefs } = usePreferences();
-  const [entered, setEntered] = useState(() => {
-    if (typeof window !== "undefined") return sessionStorage.getItem("tszh_entered") === "1";
-    return false;
+  const { user, loading: authLoading } = useAuth();
+  const [hydrated, setHydrated] = useState(false);
+  const [entryState, setEntryState] = useState<EntryState>({
+    phase: "splash",
+    accessMode: null,
+    authView: "login",
   });
-  // 如果有旧会话数据，不显示开场白
-  const [showWelcome, setShowWelcome] = useState(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      const sessions = JSON.parse(localStorage.getItem("tszh_sessions") || "[]");
-      return sessions.length === 0; // 没有旧会话才显示开场白
-    } catch {
-      return true;
-    }
-  });
-  const submitPromptRef = useRef<((prompt: string) => void) | null>(null);
-  const [exiting, setExiting] = useState(false);
-  const [page, setPage] = useState<Page>(prefs.startPage as Page);
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [authPromptOpen, setAuthPromptOpen] = useState(false);
+  const [page, setPage] = useState<WorkspacePage>(prefs.startPage as WorkspacePage);
   const [thinkingMode, setThinkingMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [burstKey, setBurstKey] = useState(0);
   const [templateFill, setTemplateFill] = useState("");
   const [stylePrefix, setStylePrefix] = useState("");
-  const homeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitPromptRef = useRef<((prompt: string) => void) | null>(null);
 
-  // OPC 微智能体
   const [opcAgentOpen, setOpcAgentOpen] = useState(false);
   const [opcStyle, setOpcStyle] = useState<string | null>(null);
   const [opcCameraMove, setOpcCameraMove] = useState("");
   const [opcSelectedParams, setOpcSelectedParams] = useState<string[]>([]);
   const [opcDuration, setOpcDuration] = useState(8);
   const [opcAspect, setOpcAspect] = useState("16:9");
+  const effectiveEntryState = entryState.accessMode === "authenticated" && !user
+    ? reduceEntryState(entryState, { type: "RETURN_TO_GATEWAY", authenticated: false })
+    : entryState;
+
+  useEffect(() => {
+    if (authLoading || hydrated) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const owner = dataOwnerFromUser(user);
+      migrateLegacyWorkspaceData(localStorage, owner);
+      setEntryState(createInitialEntryState(sessionStorage.getItem(ENTRY_SESSION_KEY), Boolean(user)));
+      setShowWelcome(loadSessions().length === 0);
+      setHydrated(true);
+    });
+    return () => { cancelled = true; };
+  }, [authLoading, hydrated, user]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    sessionStorage.setItem(ENTRY_SESSION_KEY, serializeEntryState(effectiveEntryState));
+  }, [effectiveEntryState, hydrated]);
+
+  useEffect(() => {
+    document.documentElement.dataset.reducedMotion = prefs.reducedMotion ? "true" : "false";
+    document.documentElement.dataset.cursorTrail = prefs.cursorTrail ? "true" : "false";
+    document.documentElement.dataset.particleEffects = prefs.particleEffects ? "true" : "false";
+  }, [prefs.cursorTrail, prefs.particleEffects, prefs.reducedMotion]);
+
+  const sendEntryEvent = useCallback((event: EntryEvent) => {
+    setEntryState((current) => reduceEntryState(current, event));
+  }, []);
+
+  const setAuthView = useCallback((view: AuthView) => {
+    sendEntryEvent({ type: "SET_AUTH_VIEW", view });
+  }, [sendEntryEvent]);
 
   const handleReset = useCallback(() => {
-    setResetKey((k) => k + 1);
+    setResetKey((key) => key + 1);
     setThinkingMode(false);
   }, []);
 
   const goHome = useCallback(() => {
-    setExiting(true);
-    homeTimerRef.current = setTimeout(() => {
-      sessionStorage.removeItem("tszh_entered");
-      setEntered(false);
-      setShowWelcome(true);
-      setExiting(false);
-    }, 500);
-  }, []);
+    setAuthPromptOpen(false);
+    sendEntryEvent({ type: "RETURN_TO_GATEWAY", authenticated: Boolean(user) });
+  }, [sendEntryEvent, user]);
 
   const handleWelcomeStart = useCallback((prompt?: string) => {
     setShowWelcome(false);
@@ -85,123 +116,138 @@ export default function HomeClient() {
     }
   }, []);
 
-  const handleNewChat = useCallback(() => {
-    setShowWelcome(true);
-  }, []);
+  const handleAuthenticated = useCallback(() => {
+    sendEntryEvent({ type: "ENTER_WORKSPACE" });
+    setAuthPromptOpen(false);
+  }, [sendEntryEvent]);
 
-  // 清理 goHome 定时器
-  useEffect(() => {
-    return () => { if (homeTimerRef.current) clearTimeout(homeTimerRef.current); };
-  }, []);
+  const handleGuest = useCallback(() => {
+    sendEntryEvent({ type: "ENTER_GUEST" });
+    setAuthPromptOpen(false);
+  }, [sendEntryEvent]);
 
-  // 同步 reducedMotion 偏好到 DOM 属性
-  useEffect(() => {
-    document.documentElement.dataset.reducedMotion = prefs.reducedMotion ? "true" : "false";
-  }, [prefs.reducedMotion]);
-
-  // 同步 cursorTrail 偏好
-  useEffect(() => {
-    document.documentElement.dataset.cursorTrail = prefs.cursorTrail ? "true" : "false";
-  }, [prefs.cursorTrail]);
-
-  // 同步 particleEffects 偏好
-  useEffect(() => {
-    document.documentElement.dataset.particleEffects = prefs.particleEffects ? "true" : "false";
-  }, [prefs.particleEffects]);
-
-  if (!entered) {
-    return <SplashScreen onEnter={() => { sessionStorage.setItem("tszh_entered", "1"); setEntered(true); }} />;
+  if (!hydrated) {
+    return <div className="product-shell product-shell--loading" aria-busy="true" />;
   }
 
-  const PAGE_TABS: { key: Page; label: string }[] = [
-    { key: "chat", label: "对话工作区" },
-    { key: "opc", label: "OPC 工作模式" },
-    { key: "stats", label: "工作统计" },
-    { key: "libtv", label: "LibTV 生图" },
-    { key: "gallery", label: "创作画廊" },
-  ];
+  const workspaceMode = effectiveEntryState.accessMode || "guest";
 
   return (
-    <div className={`workspace-wrapper ${exiting ? "exiting" : ""}`}>
-      {/* Fixed UI Elements */}
-      <NavigationBar page={page} onPageChange={setPage} />
-      <SettingsDrawer />
-      <OpcAgentPanel
-        open={opcAgentOpen}
-        onClose={() => setOpcAgentOpen(false)}
-        opcContext={{
-          activeStyle: opcStyle,
-          cameraMove: opcCameraMove,
-          selectedParams: opcSelectedParams,
-          duration: opcDuration,
-          aspect: opcAspect,
-          stylePrefix: stylePrefix || "",
-        }}
-      />
-
-      {/* Shared background — respects particleEffects & cursorTrail prefs */}
-      {prefs.particleEffects && (
-        <>
-          <StarfieldBackground key={`stars-${resetKey}`} thinkingMode={thinkingMode} />
-          <OrbitRings resetKey={resetKey} burstKey={burstKey} />
-        </>
-      )}
-      {prefs.cursorTrail && (
-        <>
-          <NebulaCursorTrail />
-          <CursorTrail />
-        </>
-      )}
-
-      {/* Page Transition */}
-      <PageTransition page={page}>
-        <ChatFlow
-          onThinkingChange={setThinkingMode}
-          onReset={handleReset}
-          onMessageSent={() => setBurstKey(k => k + 1)}
-          templateFill={stylePrefix + templateFill}
-          onGoHome={goHome}
-          onSubmitRef={submitPromptRef}
-          onNewChat={handleNewChat}
-          showWelcome={showWelcome}
-          onWelcomeStart={handleWelcomeStart}
+    <ProductShell
+      phase={effectiveEntryState.phase}
+      accessMode={effectiveEntryState.accessMode}
+      page={page}
+      onPageChange={setPage}
+      onAuthOpen={() => setAuthPromptOpen(true)}
+      reducedMotion={prefs.reducedMotion}
+      particleEffects={prefs.particleEffects}
+      cursorTrail={prefs.cursorTrail}
+      thinkingMode={thinkingMode}
+      resetKey={resetKey}
+      burstKey={burstKey}
+    >
+      {effectiveEntryState.phase === "splash" && (
+        <SplashScreen
+          onEnter={() => sendEntryEvent({
+            type: "SPLASH_COMPLETE",
+            authenticated: Boolean(user),
+          })}
         />
-        <section className="opc-section">
-          <div className="opc-section-divider" />
-          <h2 className="opc-section-title">OPC 工作模式</h2>
-          <p className="opc-section-sub">在线个人创作配置</p>
-          <OPCPanel
-            onTemplateClick={(prompt) => setTemplateFill(prompt)}
-            onStyleClick={(prefix) => {
-              setStylePrefix(prefix);
-              setOpcStyle(prefix ? prefix.split("，")[0] : null);
-            }}
-            onParamsChange={(params) => {
-              setOpcCameraMove(params.cameraMove);
-              setOpcSelectedParams(params.selectedParams);
-              setOpcDuration(params.duration);
-              setOpcAspect(params.aspect);
-            }}
-            onOpenAgent={() => setOpcAgentOpen(true)}
+      )}
+
+      {effectiveEntryState.phase === "gateway" && (
+        <div className="entry-stage entry-stage--gateway">
+          <EntryGateway
+            authView={effectiveEntryState.authView}
+            onAuthViewChange={setAuthView}
+            onAuthenticated={handleAuthenticated}
+            onGuest={handleGuest}
           />
-        </section>
-        <section className="opc-section">
-          <div className="opc-section-divider" />
-          <StatsDashboard />
-        </section>
-        <section className="opc-section">
-          <div className="opc-section-divider" />
-          <h2 className="opc-section-title">LibTV · AI 生图/生视频</h2>
-          <p className="opc-section-sub">接入 LibLib.tv 的 AIGC 能力</p>
-          <LibTVPanel />
-        </section>
-        <section className="opc-section">
-          <div className="opc-section-divider" />
-          <h2 className="opc-section-title">创作画廊</h2>
-          <p className="opc-section-sub">所有生成的视频和图片</p>
-          <GalleryPanel />
-        </section>
-      </PageTransition>
-    </div>
+        </div>
+      )}
+
+      {effectiveEntryState.phase === "workspace" && (
+        <div className="workspace-wrapper">
+          <SettingsDrawer />
+          <OpcAgentPanel
+            open={opcAgentOpen}
+            onClose={() => setOpcAgentOpen(false)}
+            opcContext={{
+              activeStyle: opcStyle,
+              cameraMove: opcCameraMove,
+              selectedParams: opcSelectedParams,
+              duration: opcDuration,
+              aspect: opcAspect,
+              stylePrefix: stylePrefix || "",
+            }}
+          />
+
+          <PageTransition page={page}>
+            <ChatFlow
+              accessMode={workspaceMode}
+              onAuthRequired={() => setAuthPromptOpen(true)}
+              onThinkingChange={setThinkingMode}
+              onReset={handleReset}
+              onMessageSent={() => setBurstKey((key) => key + 1)}
+              templateFill={stylePrefix + templateFill}
+              onGoHome={goHome}
+              onSubmitRef={submitPromptRef}
+              onNewChat={() => setShowWelcome(true)}
+              showWelcome={showWelcome}
+              onWelcomeStart={handleWelcomeStart}
+            />
+            <section className="opc-section">
+              <div className="opc-section-divider" />
+              <h2 className="opc-section-title">OPC 工作模式</h2>
+              <p className="opc-section-sub">在线个人创作配置</p>
+              <OPCPanel
+                onTemplateClick={setTemplateFill}
+                onStyleClick={(prefix) => {
+                  setStylePrefix(prefix);
+                  setOpcStyle(prefix ? prefix.split("，")[0] : null);
+                }}
+                onParamsChange={(params) => {
+                  setOpcCameraMove(params.cameraMove);
+                  setOpcSelectedParams(params.selectedParams);
+                  setOpcDuration(params.duration);
+                  setOpcAspect(params.aspect);
+                }}
+                onOpenAgent={() => setOpcAgentOpen(true)}
+              />
+            </section>
+            <TaskCenter accessMode={workspaceMode} onAuthRequired={() => setAuthPromptOpen(true)} />
+            <section className="opc-section"><div className="opc-section-divider" /><StatsDashboard /></section>
+            <section className="opc-section">
+              <div className="opc-section-divider" />
+              <h2 className="opc-section-title">LibTV · AI 生图/生视频</h2>
+              <p className="opc-section-sub">接入 LibLib.tv 的 AIGC 能力</p>
+              <LibTVPanel />
+            </section>
+            <section className="opc-section">
+              <div className="opc-section-divider" />
+              <h2 className="opc-section-title">创作画廊</h2>
+              <p className="opc-section-sub">当前数据仓中的视频和图片</p>
+              <GalleryPanel />
+            </section>
+          </PageTransition>
+
+          {authPromptOpen && (
+            <div className="workspace-auth-overlay" role="dialog" aria-modal="true" aria-label="登录后继续创作">
+              <button type="button" className="workspace-auth-overlay__backdrop" onClick={() => setAuthPromptOpen(false)} aria-label="关闭登录面板" />
+              <div className="workspace-auth-overlay__panel">
+                <EntryGateway
+                  compact
+                  authView={effectiveEntryState.authView === "account" && !user ? "login" : effectiveEntryState.authView}
+                  onAuthViewChange={setAuthView}
+                  onAuthenticated={handleAuthenticated}
+                  onGuest={() => setAuthPromptOpen(false)}
+                  onCancel={() => setAuthPromptOpen(false)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </ProductShell>
   );
 }

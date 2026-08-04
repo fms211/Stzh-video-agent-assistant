@@ -23,9 +23,9 @@ export const Colors = {
   onSurfaceVariant: '#a0b4d0',
   textMuted: '#5a6a8a',
 
-  // 主色 - 暖琥珀
-  primary: '#ffb870',
-  primaryContainer: '#e89840',
+  // 主色 - 暖琥珀（对齐桌面 --glow-warm: #e89840）
+  primary: '#e89840',
+  primaryContainer: '#d0842e',
   onPrimary: '#4a2800',
   onPrimaryContainer: '#5e3400',
 
@@ -41,8 +41,8 @@ export const Colors = {
   onTertiary: '#39216b',
   onTertiaryContainer: '#47307a',
 
-  // 状态色
-  success: '#4ade80',
+  // 状态色（对齐桌面）
+  success: '#7cc79a',
   successContainer: '#166534',
   error: '#ffb4ab',
   errorContainer: '#93000a',

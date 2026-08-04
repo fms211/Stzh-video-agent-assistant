@@ -2,8 +2,10 @@ const { Router } = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../db.js");
+const { loadJwtSecret } = require("../security.js");
 
-const JWT_SECRET = process.env.JWT_SECRET || "stzh-secret-key-change-in-production";
+const JWT_SECRET = loadJwtSecret();
+const JWT_EXPIRES_IN = "7d";
 const router = Router();
 
 // === 注册 ===
@@ -37,7 +39,7 @@ router.post("/api/auth/register", (req, res) => {
     const userId = result.lastInsertRowid;
 
     // 生成 token
-    const token = jwt.sign({ userId, username }, JWT_SECRET, { expiresIn: "10y" });
+    const token = jwt.sign({ userId, username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     res.json({
       token,
@@ -70,7 +72,7 @@ router.post("/api/auth/login", (req, res) => {
     }
 
     // 生成 token
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: "10y" });
+    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     res.json({
       token,
@@ -141,30 +143,6 @@ router.post("/api/auth/change-password", (req, res) => {
   } catch (error) {
     console.error("[Auth] 修改密码失败:", error.message);
     res.status(500).json({ error: { message: "修改密码失败" } });
-  }
-});
-
-// === 忘记密码（通过用户名重置，不需要登录） ===
-router.post("/api/auth/reset-password", (req, res) => {
-  try {
-    const { username, newPassword } = req.body;
-    if (!username || !newPassword) {
-      return res.status(400).json({ error: { message: "请输入用户名和新密码" } });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: { message: "新密码至少 6 个字符" } });
-    }
-
-    const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-    if (!user) return res.status(404).json({ error: { message: "用户不存在" } });
-
-    const hashed = bcrypt.hashSync(newPassword, 10);
-    db.prepare("UPDATE users SET password = ?, updated_at = datetime('now') WHERE id = ?").run(hashed, user.id);
-
-    res.json({ ok: true, message: "密码重置成功，请使用新密码登录" });
-  } catch (error) {
-    console.error("[Auth] 重置密码失败:", error.message);
-    res.status(500).json({ error: { message: "重置密码失败" } });
   }
 });
 

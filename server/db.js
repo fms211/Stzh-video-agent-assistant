@@ -210,6 +210,65 @@ db.exec(`
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued'
+      CHECK(status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+    origin TEXT NOT NULL DEFAULT 'desktop'
+      CHECK(origin IN ('desktop', 'mobile', 'server', 'migration')),
+    input TEXT NOT NULL DEFAULT '{}',
+    output TEXT,
+    progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),
+    stage TEXT DEFAULT '',
+    error TEXT,
+    idempotency_key TEXT,
+    source_generation_id INTEGER UNIQUE,
+    worker_device_id TEXT,
+    scheduled_at INTEGER,
+    started_at INTEGER,
+    completed_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    revision INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_task_idempotency
+    ON tasks(user_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_task_queue
+    ON tasks(status, scheduled_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_task_user
+    ON tasks(user_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('desktop', 'mobile', 'web')),
+    status TEXT NOT NULL DEFAULT 'online'
+      CHECK(status IN ('online', 'offline', 'revoked')),
+    paired_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_seen INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_device_user
+    ON devices(user_id, last_seen DESC);
+
+  CREATE TABLE IF NOT EXISTS pairing_codes (
+    code_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    desktop_name TEXT NOT NULL DEFAULT '桌面创作中心',
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 // === OPC 创作助手数据库操作 ===
@@ -231,6 +290,10 @@ db.opcCreateSession = function (id, title, userId) {
 
 db.opcListSessions = function (userId, limit = 50) {
   return db.prepare("SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?").all(userId || 0, limit);
+};
+
+db.opcGetSession = function (id, userId) {
+  return db.prepare("SELECT * FROM opc_sessions WHERE id = ? AND user_id = ?").get(id, userId || 0);
 };
 
 db.opcUpdateSession = function (id, updates) {
@@ -405,6 +468,296 @@ db.settingsGetAll = function () {
   const result = {};
   for (const row of rows) { result[row.key] = row.value; }
   return result;
+};
+
+// === 两端联动任务 ===
+
+db.taskCreate = function (data) {
+  const id = data.id || opcGenerateId("task");
+  const input = JSON.stringify(data.input || {});
+  try {
+    db.prepare(
+      `INSERT INTO tasks
+       (id, user_id, kind, title, status, origin, input, idempotency_key, scheduled_at)
+       VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`
+    ).run(
+      id,
+      data.userId,
+      data.kind,
+      data.title,
+      data.origin || "desktop",
+      input,
+      data.idempotencyKey || null,
+      data.scheduledAt || null
+    );
+    return { task: db.taskGet(id, data.userId), created: true };
+  } catch (error) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE" && data.idempotencyKey) {
+      const task = db.prepare(
+        "SELECT * FROM tasks WHERE user_id = ? AND idempotency_key = ?"
+      ).get(data.userId, data.idempotencyKey);
+      return { task, created: false };
+    }
+    throw error;
+  }
+};
+
+db.taskGet = function (id, userId) {
+  return db.prepare("SELECT * FROM tasks WHERE id = ? AND user_id = ?").get(id, userId);
+};
+
+db.taskList = function (userId, options = {}) {
+  const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 200);
+  const offset = Math.max(Number(options.offset) || 0, 0);
+  if (options.status) {
+    return db.prepare(
+      "SELECT * FROM tasks WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+    ).all(userId, options.status, limit, offset);
+  }
+  return db.prepare(
+    "SELECT * FROM tasks WHERE user_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+  ).all(userId, limit, offset);
+};
+
+db.taskClaim = function (id, userId, deviceId) {
+  const result = db.prepare(
+    `UPDATE tasks
+     SET status = 'running', worker_device_id = ?, started_at = COALESCE(started_at, unixepoch()),
+         updated_at = unixepoch(), revision = revision + 1
+     WHERE id = ? AND user_id = ? AND status = 'queued'
+       AND (scheduled_at IS NULL OR scheduled_at <= unixepoch())`
+  ).run(deviceId, id, userId);
+  return result.changes ? db.taskGet(id, userId) : null;
+};
+
+db.taskProgress = function (id, userId, updates) {
+  const current = db.taskGet(id, userId);
+  if (!current || !["running", "paused"].includes(current.status)) return null;
+  const progress = Math.min(100, Math.max(0, Number(updates.progress) || 0));
+  db.prepare(
+    `UPDATE tasks
+     SET progress = ?, stage = ?, output = COALESCE(?, output),
+         updated_at = unixepoch(), revision = revision + 1
+     WHERE id = ? AND user_id = ?`
+  ).run(
+    progress,
+    updates.stage || "",
+    updates.output === undefined ? null : JSON.stringify(updates.output),
+    id,
+    userId
+  );
+  return db.taskGet(id, userId);
+};
+
+db.taskAction = function (id, userId, action, payload = {}) {
+  const current = db.taskGet(id, userId);
+  if (!current) return { reason: "not_found" };
+  const transitions = {
+    pause: { from: ["running"], to: "paused" },
+    resume: { from: ["paused"], to: "queued", clearWorker: true },
+    cancel: { from: ["queued", "running", "paused"], to: "cancelled", terminal: true },
+    retry: { from: ["failed", "cancelled"], to: "queued", reset: true, clearWorker: true },
+    complete: { from: ["running"], to: "completed", terminal: true },
+    fail: { from: ["running"], to: "failed", terminal: true },
+  };
+  const transition = transitions[action];
+  if (!transition || !transition.from.includes(current.status)) {
+    return { reason: "invalid_transition", task: current };
+  }
+
+  const output = payload.output === undefined ? current.output : JSON.stringify(payload.output);
+  const progress = action === "complete" ? 100 : transition.reset ? 0 : current.progress;
+  const stage = transition.reset ? "" : (payload.stage ?? current.stage);
+  const error = action === "fail"
+    ? (payload.error || "任务执行失败")
+    : transition.reset
+      ? null
+      : current.error;
+  const worker = transition.clearWorker ? null : current.worker_device_id;
+  const completedAt = transition.terminal ? Math.floor(Date.now() / 1000) : null;
+
+  db.prepare(
+    `UPDATE tasks
+     SET status = ?, progress = ?, stage = ?, error = ?, output = ?,
+         worker_device_id = ?, completed_at = ?, updated_at = unixepoch(),
+         revision = revision + 1
+     WHERE id = ? AND user_id = ?`
+  ).run(
+    transition.to,
+    progress,
+    stage,
+    error,
+    output,
+    worker,
+    completedAt,
+    id,
+    userId
+  );
+  return { task: db.taskGet(id, userId) };
+};
+
+db.migrateGenerationsToTasks = function () {
+  const result = db.prepare(
+    `INSERT OR IGNORE INTO tasks
+     (id, user_id, kind, title, status, origin, input, output, progress,
+      source_generation_id, completed_at, created_at, updated_at)
+     SELECT
+       'generation_' || id,
+       user_id,
+       'video.generate',
+       CASE WHEN length(prompt) > 36 THEN substr(prompt, 1, 36) || '…' ELSE prompt END,
+       CASE WHEN status = 'failed' THEN 'failed' ELSE 'completed' END,
+       'migration',
+       json_object('prompt', prompt, 'conversationId', conversation_id),
+       json_object('videoUrl', video_url, 'imageUrls', json(image_urls), 'rawText', raw_text),
+       CASE WHEN status = 'failed' THEN 0 ELSE 100 END,
+       id,
+       unixepoch(created_at),
+       unixepoch(created_at),
+       unixepoch(created_at)
+     FROM generations`
+  ).run();
+  return result.changes;
+};
+
+// === 设备配对 ===
+
+db.pairingCreate = function (codeHash, userId, desktopName, expiresAt) {
+  db.prepare(
+    `INSERT INTO pairing_codes (code_hash, user_id, desktop_name, expires_at)
+     VALUES (?, ?, ?, ?)`
+  ).run(codeHash, userId, desktopName || "桌面创作中心", expiresAt);
+};
+
+db.pairingConsume = db.transaction(function (codeHash, userId, device) {
+  const pairing = db.prepare(
+    `SELECT * FROM pairing_codes
+     WHERE code_hash = ? AND user_id = ? AND used_at IS NULL AND expires_at > unixepoch()`
+  ).get(codeHash, userId);
+  if (!pairing) return null;
+  db.prepare("UPDATE pairing_codes SET used_at = unixepoch() WHERE code_hash = ?").run(codeHash);
+  db.prepare(
+    `INSERT INTO devices (id, user_id, name, type)
+     VALUES (?, ?, ?, ?)`
+  ).run(device.id, userId, device.name, device.type);
+  return db.prepare("SELECT * FROM devices WHERE id = ?").get(device.id);
+});
+
+db.deviceList = function (userId) {
+  return db.prepare(
+    "SELECT * FROM devices WHERE user_id = ? AND status != 'revoked' ORDER BY last_seen DESC"
+  ).all(userId);
+};
+
+db.deviceGet = function (id, userId) {
+  return db.prepare("SELECT * FROM devices WHERE id = ? AND user_id = ? AND status != 'revoked'").get(id, userId);
+};
+
+db.deviceTouch = function (id, userId, status = "online") {
+  db.prepare(
+    "UPDATE devices SET status = ?, last_seen = unixepoch() WHERE id = ? AND user_id = ?"
+  ).run(status, id, userId);
+};
+
+db.deviceRevoke = function (id, userId) {
+  return db.prepare(
+    "UPDATE devices SET status = 'revoked', last_seen = unixepoch() WHERE id = ? AND user_id = ?"
+  ).run(id, userId).changes > 0;
+};
+
+// 旧 conversations/messages 数据迁移到 opc_sessions/opc_messages（双端对话统一到 opc 表）
+// datetime('now') 文本 → unixepoch 整数；role user/agent 保留；payload/is_error/error_text 打包进 metadata
+db.migrateConversationsToOpc = function () {
+  try {
+    const marker = db.prepare("SELECT value FROM app_settings WHERE key = 'conversations_migrated'").get();
+    if (marker) return;
+  } catch (e) { /* 表不存在则跳过 */ }
+
+  try {
+    const convs = db.prepare("SELECT * FROM conversations").all();
+    if (convs.length === 0) {
+      // 即使无数据也标记，避免每次启动扫描
+      try { db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('conversations_migrated', '1')").run(); } catch (e) {}
+      return;
+    }
+
+    const insertSession = db.prepare(
+      "INSERT OR IGNORE INTO opc_sessions (id, user_id, title, created_at, updated_at, message_count) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    const insertMsg = db.prepare(
+      "INSERT OR IGNORE INTO opc_messages (id, session_id, role, content, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+
+    const migrate = db.transaction(() => {
+      for (const conv of convs) {
+        // datetime('now') 文本 → unixepoch
+        const createdTs = Date.parse(conv.created_at + (conv.created_at.includes("T") ? "" : "Z")) / 1000 || 0;
+        const updatedTs = Date.parse(conv.updated_at + (conv.updated_at.includes("T") ? "" : "Z")) / 1000 || 0;
+
+        // 检查目标是否已存在同 id 的 opc 会话
+        const existing = db.prepare("SELECT id FROM opc_sessions WHERE id = ?").get(conv.id);
+        if (existing) continue;
+
+        const msgs = db.prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC").all(conv.id);
+        insertSession.run(conv.id, conv.user_id, conv.title, createdTs, updatedTs, msgs.length);
+
+        for (const msg of msgs) {
+          const meta = {};
+          if (msg.payload) meta.payload = JSON.parse(msg.payload);
+          if (msg.is_error) meta.isError = true;
+          if (msg.error_text) meta.errorText = msg.error_text;
+          const msgTs = Date.parse(msg.created_at + (msg.created_at.includes("T") ? "" : "Z")) / 1000 || 0;
+          insertMsg.run(
+            msg.id, conv.id, msg.role, msg.content,
+            Object.keys(meta).length > 0 ? JSON.stringify(meta) : null,
+            msgTs
+          );
+        }
+      }
+    });
+
+    migrate();
+    console.log(`[DB] 迁移: ${convs.length} 个旧会话已复制到 opc_sessions`);
+    try { db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('conversations_migrated', '1')").run(); } catch (e) {}
+  } catch (e) {
+    console.error("[DB] conversations→opc 迁移失败:", e.message);
+  }
+};
+
+db.migrateGenerationsToTasks();
+db.migrateConversationsToOpc();
+
+// 僵尸任务回收：worker 设备心跳超时（默认 60s）的 running 任务 requeue 回 queued
+// 避免桌面窗口关闭后任务永久卡在 running
+db.taskRequeueStale = function (thresholdSec = 60) {
+  const staleTasks = db.prepare(
+    `SELECT t.id, t.user_id FROM tasks t
+     JOIN devices d ON d.id = t.worker_device_id
+     WHERE t.status = 'running'
+       AND d.status = 'online'
+       AND d.last_seen < unixepoch() - ?`
+  ).all(thresholdSec);
+  const requeue = db.prepare(
+    `UPDATE tasks
+     SET status = 'queued', worker_device_id = NULL, stage = '', progress = 0,
+         updated_at = unixepoch(), revision = revision + 1
+     WHERE id = ? AND user_id = ? AND status = 'running'`
+  );
+  let count = 0;
+  for (const t of staleTasks) {
+    count += requeue.run(t.id, t.user_id).changes;
+  }
+  if (count > 0) console.log(`[DB] 僵尸回收: ${count} 个任务已 requeue（worker 心跳超时）`);
+  return count;
+};
+
+// 定期心跳检查：30s 一次（配合 60s 阈值）
+db.startStaleReaper = function (intervalSec = 30, thresholdSec = 60) {
+  if (db.__reaperStarted) return;
+  db.__reaperStarted = true;
+  setInterval(() => {
+    try { db.taskRequeueStale(thresholdSec); } catch (e) { /* 不打断循环 */ }
+  }, intervalSec * 1000);
 };
 
 module.exports = db;

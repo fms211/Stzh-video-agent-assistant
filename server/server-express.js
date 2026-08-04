@@ -22,27 +22,18 @@ app.get("/health", (_req, res) => {
 });
 
 // === JWT 中间件（非阻塞：有 token 就解析，没有也放行） ===
-const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("./routes/auth.js");
-
-app.use((req, _res, next) => {
-  req.user = null;
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    try {
-      const token = authHeader.slice(7);
-      req.user = jwt.verify(token, JWT_SECRET);
-    } catch {}
-  }
-  next();
-});
+const { attachUser, requireUser } = require("./middleware/auth.js");
+app.use(attachUser);
 
 // === 挂载路由模块（auth / conversations / templates / generations / user-settings） ===
 app.use(require("./routes/auth.js"));
+app.use("/api", requireUser);
 app.use(require("./routes/conversations.js"));
 app.use(require("./routes/templates.js"));
 app.use(require("./routes/generations.js"));
 app.use(require("./routes/settings.js"));
+app.use(require("./routes/tasks.js"));
+app.use(require("./routes/devices.js"));
 
 // === 静态文件服务（前端） ===
 // 优先使用环境变量，否则自动检测（兼容 Electron 打包和云服务器部署）
@@ -202,6 +193,140 @@ app.post("/api/agent", async (req, res) => {
   }
 });
 
+// === POST /api/agent/stream ===
+app.post("/api/agent/stream", async (req, res) => {
+  if (activeRequests >= MAX_CONCURRENT) {
+    return res.status(429).json({ error: { message: "服务器繁忙，请稍后再试" } });
+  }
+  activeRequests++;
+
+  try {
+    const { prompt, history, conversation_id: conversationId } = req.body;
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ error: { message: "prompt 不能为空" } });
+    }
+    if (prompt.length > 5000) {
+      return res.status(400).json({ error: { message: "prompt 过长（最大 5000 字符）" } });
+    }
+
+    const token = process.env.COZE_API_TOKEN;
+    const botId = process.env.COZE_BOT_ID;
+    const userId = process.env.COZE_USER_ID || "stzh_user";
+    const baseUrl = process.env.COZE_BASE_URL || "https://api.coze.cn";
+    const requestBody = {
+      bot_id: botId,
+      user_id: userId,
+      stream: true,
+      auto_save_history: true,
+      additional_messages: buildMessages(prompt.trim(), history),
+    };
+    if (conversationId) requestBody.conversation_id = conversationId;
+
+    const upstream = await fetch(`${baseUrl}/v3/chat`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(10 * 60 * 1000),
+    });
+
+    if (!upstream.ok) {
+      return res.status(502).json({ error: { message: `Coze API error: ${upstream.status}` } });
+    }
+    if (!upstream.body) {
+      return res.status(502).json({ error: { message: "Coze API: no response body" } });
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastCompletedContent = "";
+    let doneSent = false;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          let eventName = "";
+          let eventData = "";
+          for (const line of event.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("event:")) eventName = trimmed.slice(6).trim();
+            else if (trimmed.startsWith("data:")) eventData = trimmed.slice(5).trim();
+          }
+          if (!eventData) continue;
+
+          try {
+            const data = JSON.parse(eventData);
+            if (
+              eventName === "conversation.message.delta" &&
+              data.role === "assistant" &&
+              data.type === "answer" &&
+              data.content
+            ) {
+              res.write(`event: delta\ndata: ${JSON.stringify({ content: data.content })}\n\n`);
+            }
+            if (eventName === "conversation.message.completed" && data.type === "answer") {
+              lastCompletedContent = data.content || "";
+            }
+            if (
+              eventName === "conversation.message.completed" &&
+              data.type === "follow_up" &&
+              data.content
+            ) {
+              res.write(`event: follow_up\ndata: ${JSON.stringify({ suggestions: [data.content] })}\n\n`);
+            }
+            if (eventName === "conversation.chat.completed") {
+              const media = extractMediaUrls(lastCompletedContent);
+              res.write(`event: done\ndata: ${JSON.stringify({
+                ...media,
+                text: lastCompletedContent,
+                done: true,
+              })}\n\n`);
+              doneSent = true;
+            }
+          } catch {}
+        }
+      }
+
+      if (!doneSent && lastCompletedContent) {
+        const media = extractMediaUrls(lastCompletedContent);
+        res.write(`event: done\ndata: ${JSON.stringify({
+          ...media,
+          text: lastCompletedContent,
+          done: true,
+        })}\n\n`);
+      }
+    } finally {
+      reader.releaseLock();
+      res.end();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Internal server error";
+    if (!res.headersSent) {
+      return res.status(502).json({ error: { message } });
+    }
+    res.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`);
+    res.end();
+  } finally {
+    activeRequests--;
+  }
+});
+
 // === OPC 创作助手 API ===
 const db = require("./db");
 
@@ -230,6 +355,10 @@ app.delete("/api/opc/sessions/:id", (req, res) => {
 
 // 获取消息
 app.get("/api/opc/sessions/:id/messages", (req, res) => {
+  const userId = req.user.userId;
+  if (!db.opcGetSession(req.params.id, userId)) {
+    return res.status(404).json({ error: "session not found" });
+  }
   const limit = parseInt(req.query.limit) || 200;
   const messages = db.opcGetMessages(req.params.id, limit);
   res.json({ messages });
@@ -237,6 +366,10 @@ app.get("/api/opc/sessions/:id/messages", (req, res) => {
 
 // 添加消息
 app.post("/api/opc/sessions/:id/messages", (req, res) => {
+  const userId = req.user.userId;
+  if (!db.opcGetSession(req.params.id, userId)) {
+    return res.status(404).json({ error: "session not found" });
+  }
   const { role, content, metadata } = req.body;
   if (!role || content === undefined) return res.status(400).json({ error: "role and content required" });
   const msgId = db.opcAddMessage(req.params.id, role, content, metadata);
@@ -245,6 +378,10 @@ app.post("/api/opc/sessions/:id/messages", (req, res) => {
 
 // 批量添加消息（用于同步本地消息到服务端）
 app.post("/api/opc/sessions/:id/messages/batch", (req, res) => {
+  const userId = req.user.userId;
+  if (!db.opcGetSession(req.params.id, userId)) {
+    return res.status(404).json({ error: "session not found" });
+  }
   const { messages } = req.body;
   if (!Array.isArray(messages)) return res.status(400).json({ error: "messages array required" });
   const ids = [];
@@ -263,6 +400,10 @@ app.delete("/api/opc/messages/:id", (req, res) => {
 
 // 压缩对话
 app.post("/api/opc/sessions/:id/compress", (req, res) => {
+  const userId = req.user.userId;
+  if (!db.opcGetSession(req.params.id, userId)) {
+    return res.status(404).json({ error: "session not found" });
+  }
   const { summary, keepRecent } = req.body;
   if (!summary) return res.status(400).json({ error: "summary required" });
   db.opcCompressSession(req.params.id, summary, keepRecent || 10);

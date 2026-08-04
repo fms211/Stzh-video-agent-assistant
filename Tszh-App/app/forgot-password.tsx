@@ -1,16 +1,16 @@
-// 忘记密码 — 通过用户名重置密码
+// 修改密码 — 仅允许已登录用户使用旧密码修改
 
 import { useState } from 'react';
 import { View, Text, Alert, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { NeuButton, NeuInput, NeuTag, PageBackground } from '../src/components';
 import { useApp, C } from '../src/hooks/useApp';
-import { resetPassword } from '../src/lib/api';
+import { changePassword } from '../src/lib/api';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { insets, s, sp } = useApp();
-  const [username, setUsername] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,14 +19,14 @@ export default function ForgotPasswordScreen() {
 
   const handleReset = async () => {
     setError('');
-    if (!username.trim()) { setError('请输入用户名'); return; }
+    if (!oldPassword) { setError('请输入当前密码'); return; }
     if (!newPassword) { setError('请输入新密码'); return; }
     if (newPassword.length < 6) { setError('新密码至少 6 个字符'); return; }
     if (newPassword !== confirmPassword) { setError('两次密码不一致'); return; }
 
     setLoading(true);
     try {
-      await resetPassword(username.trim(), newPassword);
+      await changePassword(oldPassword, newPassword);
       setSuccess(true);
     } catch (e: any) {
       setError(e.message || '重置失败');
@@ -38,25 +38,25 @@ export default function ForgotPasswordScreen() {
       <PageBackground />
 
       <View style={{ alignItems: 'center', marginBottom: s(32) }}>
-        <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2 }}>重置密码</Text>
-        <Text style={{ fontSize: sp(12), color: C.textMuted, marginTop: s(8) }}>输入用户名和新密码</Text>
+        <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2 }}>修改密码</Text>
+        <Text style={{ fontSize: sp(12), color: C.textMuted, marginTop: s(8) }}>验证当前密码后设置新密码</Text>
       </View>
 
       {success ? (
         <View style={{ alignItems: 'center', gap: s(16) }}>
           <Text style={{ fontSize: sp(32) }}>✅</Text>
-          <Text style={{ fontSize: sp(16), fontWeight: '600', color: C.text }}>密码重置成功</Text>
-          <Text style={{ fontSize: sp(13), color: C.textMuted, textAlign: 'center' }}>请使用新密码登录</Text>
-          <NeuButton title="去登录" variant="primary" onPress={() => router.replace('/login')} style={{ marginTop: s(16) }} />
+          <Text style={{ fontSize: sp(16), fontWeight: '600', color: C.text }}>密码修改成功</Text>
+          <Text style={{ fontSize: sp(13), color: C.textMuted, textAlign: 'center' }}>下次登录请使用新密码</Text>
+          <NeuButton title="返回个人中心" variant="primary" onPress={() => router.back()} style={{ marginTop: s(16) }} />
         </View>
       ) : (
         <View style={{ gap: s(12) }}>
           <NeuInput
-            label="用户名"
-            value={username}
-            onChangeText={(t) => { setUsername(t); setError(''); }}
-            placeholder="输入注册时的用户名"
-            autoCapitalize="none"
+            label="当前密码"
+            value={oldPassword}
+            onChangeText={(t) => { setOldPassword(t); setError(''); }}
+            placeholder="输入当前密码"
+            secureTextEntry
           />
           <NeuInput
             label="新密码"
@@ -76,7 +76,7 @@ export default function ForgotPasswordScreen() {
           {error ? <NeuTag variant="failed" label={error} /> : null}
 
           <NeuButton
-            title="重置密码"
+            title="确认修改"
             variant="primary"
             size="lg"
             loading={loading}
@@ -86,7 +86,7 @@ export default function ForgotPasswordScreen() {
           />
 
           <TouchableOpacity onPress={() => router.back()} style={{ alignItems: 'center', paddingVertical: s(12) }}>
-            <Text style={{ fontSize: sp(13), color: C.textMuted }}>返回登录</Text>
+            <Text style={{ fontSize: sp(13), color: C.textMuted }}>返回个人中心</Text>
           </TouchableOpacity>
         </View>
       )}

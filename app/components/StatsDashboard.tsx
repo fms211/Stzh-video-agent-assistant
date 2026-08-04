@@ -272,7 +272,7 @@ export default function StatsDashboard() {
           margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
         }
         .stats-title {
-          font-family: "GeistPixel-Line", var(--font-display), var(--font-sans);
+          font-family: var(--font-display), "GeistPixel-Line", var(--font-sans);
           font-size: 28px; font-weight: 400; letter-spacing: 0.06em; margin: 0 0 4px;
           background: linear-gradient(90deg, var(--glow-warm-soft), var(--glow-aurora), var(--glow-cool), var(--glow-warm-soft));
           background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;

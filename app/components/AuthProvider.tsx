@@ -1,14 +1,32 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { type User, getToken, getCachedUser, getMe, logout as authLogout } from "@/app/lib/auth";
+import {
+  type AuthResponse,
+  type User,
+  commitAuthSession,
+  getCachedUser,
+  getMe,
+  getToken,
+  logout as authLogout,
+  removeToken,
+  setCachedUser,
+  setToken,
+} from "@/app/lib/auth";
 import { mergeLocalToServer, syncServerToLocal } from "@/app/lib/sync";
+import {
+  copyWorkspaceData,
+  dataOwnerFromUser,
+  migrateLegacyWorkspaceData,
+} from "@/app/lib/data-owner";
+import type { GuestImportDecision } from "@/app/lib/entry-flow";
 
 type AuthContextType = {
   user: User | null;
   loading: boolean;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  acceptAuth: (response: AuthResponse, decision: GuestImportDecision) => Promise<{ ok: boolean; failed: number }>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,7 +34,12 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: () => {},
   refreshUser: async () => {},
+  acceptAuth: async () => ({ ok: true, failed: 0 }),
 });
+
+function notifyDataOwnerChanged() {
+  window.dispatchEvent(new CustomEvent("tszh_data_owner_changed"));
+}
 
 export function useAuth() {
   return useContext(AuthContext);
@@ -47,9 +70,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.user);
       localStorage.setItem("stzh_user", JSON.stringify(data.user));
 
+      migrateLegacyWorkspaceData(localStorage, dataOwnerFromUser(data.user));
+
       // 登录后合并本地数据到服务端，再从服务端拉取最新数据
       await mergeLocalToServer();
       await syncServerToLocal();
+      notifyDataOwnerChanged();
     } catch {
       setUser(null);
       localStorage.removeItem("stzh_token");
@@ -59,24 +85,49 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshUser();
+    queueMicrotask(() => void refreshUser());
   }, [refreshUser]);
 
   const logout = useCallback(() => {
     authLogout();
     setUser(null);
-    // 清除本地存储的会话数据
-    localStorage.removeItem("tszh_sessions");
-    localStorage.removeItem("tszh_active");
-    // 清除所有消息缓存
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith("tszh_msgs_"));
-    keys.forEach((k) => localStorage.removeItem(k));
-    // 刷新页面确保 UI 更新
-    window.location.reload();
+    migrateLegacyWorkspaceData(localStorage, { kind: "guest" });
+    notifyDataOwnerChanged();
+  }, []);
+
+  const acceptAuth = useCallback(async (response: AuthResponse, decision: GuestImportDecision) => {
+    const previousToken = getToken();
+    const previousUser = getCachedUser();
+
+    try {
+      commitAuthSession(response);
+      const verified = await getMe();
+      const accountOwner = dataOwnerFromUser(verified.user);
+      migrateLegacyWorkspaceData(localStorage, accountOwner);
+      if (decision === "import") {
+        copyWorkspaceData(localStorage, { kind: "guest" }, accountOwner);
+      }
+      setUser(verified.user);
+      setCachedUser(verified.user);
+      const merged = decision === "import" ? await mergeLocalToServer() : { ok: true, failed: 0 };
+      await syncServerToLocal();
+      notifyDataOwnerChanged();
+      return merged;
+    } catch (cause) {
+      if (previousToken && previousUser) {
+        setToken(previousToken);
+        setCachedUser(previousUser);
+        setUser(previousUser);
+      } else {
+        removeToken();
+        setUser(null);
+      }
+      throw cause;
+    }
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshUser, acceptAuth }}>
       {children}
     </AuthContext.Provider>
   );

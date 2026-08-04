@@ -78,7 +78,7 @@ export function NeuModalItem({ label, description, icon, onPress, active }: Item
       {/* 凸起效果 */}
       <LinearGradient
         colors={active
-          ? ['rgba(255,184,112,0.15)', 'rgba(255,184,112,0.05)']
+          ? ['rgba(232,152,64,0.15)', 'rgba(232,152,64,0.05)']
           : ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

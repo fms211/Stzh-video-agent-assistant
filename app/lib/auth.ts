@@ -15,6 +15,16 @@ export type AuthResponse = {
   user: User;
 };
 
+type JsonRecord = Record<string, unknown>;
+
+function apiErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const error = (data as JsonRecord).error;
+  if (!error || typeof error !== "object") return null;
+  const message = (error as JsonRecord).message;
+  return typeof message === "string" ? message : null;
+}
+
 // === Token 管理 ===
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -44,8 +54,13 @@ export function setCachedUser(user: User) {
   localStorage.setItem("stzh_user", JSON.stringify(user));
 }
 
+export function commitAuthSession(data: AuthResponse) {
+  setToken(data.token);
+  setCachedUser(data.user);
+}
+
 // === API 请求封装 ===
-async function authFetch(url: string, options: RequestInit = {}): Promise<any> {
+export async function authFetch<T = JsonRecord>(url: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -54,32 +69,38 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<any> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${url}`, { ...options, headers });
-  const data = await res.json();
+  const data: unknown = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.error?.message || `请求失败 (${res.status})`);
+    throw new Error(apiErrorMessage(data) || `请求失败 (${res.status})`);
   }
-  return data;
+  return data as T;
 }
 
 // === 认证 API ===
-export async function register(username: string, password: string, displayName?: string): Promise<AuthResponse> {
-  const data = await authFetch("/api/auth/register", {
+export async function authenticateRegister(username: string, password: string, displayName?: string): Promise<AuthResponse> {
+  return authFetch<AuthResponse>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ username, password, displayName }),
   });
-  setToken(data.token);
-  setCachedUser(data.user);
+}
+
+export async function register(username: string, password: string, displayName?: string): Promise<AuthResponse> {
+  const data = await authenticateRegister(username, password, displayName);
+  commitAuthSession(data);
   return data;
 }
 
-export async function login(username: string, password: string): Promise<AuthResponse> {
-  const data = await authFetch("/api/auth/login", {
+export async function authenticateLogin(username: string, password: string): Promise<AuthResponse> {
+  return authFetch<AuthResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
-  setToken(data.token);
-  setCachedUser(data.user);
+}
+
+export async function login(username: string, password: string): Promise<AuthResponse> {
+  const data = await authenticateLogin(username, password);
+  commitAuthSession(data);
   return data;
 }
 
@@ -118,7 +139,7 @@ export async function deleteConversation(id: string) {
   return authFetch(`/api/conversations/${id}`, { method: "DELETE" });
 }
 
-export async function saveMessages(conversationId: string, messages: any[]) {
+export async function saveMessages(conversationId: string, messages: unknown[]) {
   return authFetch(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({ messages }),
@@ -147,5 +168,143 @@ export async function getGenerations(limit = 50, offset = 0) {
 }
 
 export async function getGenerationStats() {
-  return authFetch("/api/generations/stats");
+  return authFetch<{ total: number; today: number; totalVideos: number }>("/api/generations/stats");
+}
+
+// === 两端联动任务 ===
+export type LinkedTask = {
+  id: string;
+  kind: string;
+  title: string;
+  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
+  origin: "desktop" | "mobile" | "server" | "migration";
+  input: Record<string, unknown>;
+  output?: Record<string, unknown> | null;
+  progress: number;
+  stage: string;
+  error?: string | null;
+  workerDeviceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getTasks() {
+  return authFetch("/api/tasks") as Promise<{ tasks: LinkedTask[]; total: number }>;
+}
+
+export async function createTask(input: {
+  kind: string;
+  title: string;
+  origin?: "desktop" | "mobile";
+  input?: Record<string, unknown>;
+  idempotencyKey?: string;
+}) {
+  return authFetch("/api/tasks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }) as Promise<{ task: LinkedTask; created: boolean }>;
+}
+
+export async function claimTask(id: string, deviceId = "desktop-creation-center") {
+  return authFetch(`/api/tasks/${id}/claim`, {
+    method: "POST",
+    body: JSON.stringify({ deviceId }),
+  }) as Promise<{ task: LinkedTask }>;
+}
+
+// 桌面端稳定的设备 id（localStorage 持久化，用于任务认领与心跳）
+export function getDesktopDeviceId(): string {
+  if (typeof window === "undefined") return "desktop-creation-center";
+  let id = window.localStorage.getItem("tszh_desktop_device_id");
+  if (!id) {
+    id = `desktop_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    window.localStorage.setItem("tszh_desktop_device_id", id);
+  }
+  return id;
+}
+
+// 桌面端心跳：定期向服务器报告在线，僵尸任务回收依赖它
+export function startDesktopHeartbeat(intervalSec = 20): () => void {
+  if (typeof window === "undefined") return () => {};
+  const deviceId = getDesktopDeviceId();
+  const beat = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      await fetch(`${API_BASE}/api/devices/${deviceId}/heartbeat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* 网络抖动忽略 */ }
+  };
+  // 立即打一次 + 定时
+  void beat();
+  const timer = window.setInterval(beat, intervalSec * 1000);
+  return () => window.clearInterval(timer);
+}
+
+export async function taskAction(
+  id: string,
+  action: "pause" | "resume" | "cancel" | "retry" | "complete" | "fail",
+  payload: Record<string, unknown> = {}
+) {
+  return authFetch(`/api/tasks/${id}/actions`, {
+    method: "POST",
+    body: JSON.stringify({ action, ...payload }),
+  }) as Promise<{ task: LinkedTask }>;
+}
+
+export async function updateTaskProgress(id: string, progress: number, stage: string) {
+  return authFetch(`/api/tasks/${id}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify({ progress, stage }),
+  }) as Promise<{ task: LinkedTask }>;
+}
+
+export async function executeTask(task: LinkedTask, signal?: AbortSignal): Promise<LinkedTask | null> {
+  const prompt = String(task.input?.prompt || "").trim();
+  if (!prompt) {
+    const failed = await taskAction(task.id, "fail", { error: "任务缺少创作提示词" });
+    return failed.task;
+  }
+  try {
+    await updateTaskProgress(task.id, 12, "桌面创作中心已接收，正在调用创作智能体");
+    const output = await authFetch<{ result?: unknown } & JsonRecord>("/api/agent", {
+      method: "POST",
+      body: JSON.stringify({ prompt, history: [] }),
+      signal,
+    });
+    await updateTaskProgress(task.id, 88, "生成完成，正在整理作品与元数据");
+    const completed = await taskAction(task.id, "complete", {
+      output: output.result || output,
+      stage: "创作任务已完成",
+    });
+    return completed.task;
+  } catch (cause) {
+    if (signal?.aborted) return null;
+    const message = cause instanceof Error ? cause.message : "创作智能体执行失败";
+    try {
+      const failed = await taskAction(task.id, "fail", { error: message });
+      return failed.task;
+    } catch {
+      throw cause;
+    }
+  }
+}
+
+export async function createPairingCode(deviceName = "桌面创作中心") {
+  return authFetch("/api/devices/pairing-codes", {
+    method: "POST",
+    body: JSON.stringify({ deviceName }),
+  }) as Promise<{ code: string; expiresAt: string }>;
+}
+
+export type NetworkTarget = {
+  label: string;
+  address: string;
+  url: string;
+};
+
+export async function getPairingNetworkTargets() {
+  return authFetch("/api/devices/network-targets") as Promise<{ targets: NetworkTarget[] }>;
 }

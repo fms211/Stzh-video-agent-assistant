@@ -1,7 +1,7 @@
 // 共享 App Hook — 响应式 + 安全区 + 主题色 + 共享星空粒子
 
-import { useRef, useEffect } from 'react';
-import { useWindowDimensions, Animated, Easing, ViewStyle, TextStyle } from 'react-native';
+import { useState, useEffect } from 'react';
+import { AccessibilityInfo, useWindowDimensions, Animated, Easing, ViewStyle, TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ============ 主题色 ============
@@ -12,11 +12,11 @@ export const C = {
   surfaceSolid: '#0f1a35',
   sheetBg: '#0f1a35',
 
-  // 琥珀色系
-  amber: '#ffb870',
-  amberDark: '#e89840',
-  amberGlow: 'rgba(255,184,112,0.15)',
-  amberGlowStrong: 'rgba(255,184,112,0.25)',
+  // 琥珀色系（对齐桌面 --glow-warm: #e89840）
+  amber: '#e89840',
+  amberDark: '#d0842e',
+  amberGlow: 'rgba(232,152,64,0.15)',
+  amberGlowStrong: 'rgba(232,152,64,0.25)',
 
   // 文字
   text: '#dbe1ff',
@@ -25,10 +25,10 @@ export const C = {
   textPlaceholder: '#3a4a6a',
   textDim: '#2d344c',
 
-  // 状态色
-  green: '#66bb6a',
-  greenBg: 'rgba(102,187,106,0.15)',
-  greenBorder: 'rgba(102,187,106,0.25)',
+  // 状态色（对齐桌面）
+  green: '#7cc79a',
+  greenBg: 'rgba(124,199,154,0.15)',
+  greenBorder: 'rgba(124,199,154,0.25)',
   red: '#ef5350',
   redBg: 'rgba(239,83,80,0.1)',
   redBorder: 'rgba(239,83,80,0.2)',
@@ -44,8 +44,8 @@ export const C = {
 
   // 边框
   borderLight: 'rgba(255,255,255,0.05)',
-  borderPanel: 'rgba(255,184,112,0.1)',
-  borderFocus: 'rgba(255,184,112,0.4)',
+  borderPanel: 'rgba(232,152,64,0.1)',
+  borderFocus: 'rgba(232,152,64,0.4)',
   borderDark: 'rgba(0,0,0,0.6)',
   cardBorder: 'rgba(255,255,255,0.06)',
 
@@ -136,8 +136,8 @@ export function useApp() {
 }
 
 // ============ 共享星空粒子 Hook ============
-// 40 个琥珀色粒子向上漂浮，跨页面共享同一个动画实例
-const STAR_COUNT = 40;
+// 控制粒子数量，避免低端手机同时运行过多原生动画。
+const STAR_COUNT = 18;
 const starAnims = Array.from({ length: STAR_COUNT }, () => ({
   x: Math.random(),
   speed: Math.random() * 20000 + 15000, // 15-35s（比之前慢）
@@ -146,7 +146,7 @@ const starAnims = Array.from({ length: STAR_COUNT }, () => ({
 }));
 
 export function useStarfield(screenHeight: number) {
-  const stars = useRef(
+  const [stars] = useState(() =>
     starAnims.map((s) => ({
       x: s.x,
       y: new Animated.Value(Math.random() * (screenHeight || 900)),
@@ -154,13 +154,21 @@ export function useStarfield(screenHeight: number) {
       speed: s.speed,
       opacity: s.opacity,
     }))
-  ).current;
+  );
 
   useEffect(() => {
     if (!screenHeight) return;
-    const loops: Animated.CompositeAnimation[] = [];
-    stars.forEach((star) => {
+    let disposed = false;
+    const running: Array<Animated.CompositeAnimation | undefined> = [];
+
+    const stop = () => {
+      running.forEach((animation) => animation?.stop());
+      running.length = 0;
+    };
+
+    const start = () => stars.forEach((star, index) => {
       const loop = () => {
+        if (disposed) return;
         star.y.setValue(screenHeight);
         const anim = Animated.timing(star.y, {
           toValue: -10,
@@ -168,13 +176,27 @@ export function useStarfield(screenHeight: number) {
           easing: Easing.linear,
           useNativeDriver: true,
         });
-        anim.start(() => loop());
-        loops.push(anim);
+        running[index] = anim;
+        anim.start(({ finished }) => {
+          if (finished && !disposed) loop();
+        });
       };
       loop();
     });
-    return () => loops.forEach((a) => a.stop());
-  }, [screenHeight]);
+
+    const handleMotionPreference = (reduced: boolean) => {
+      stop();
+      if (!reduced && !disposed) start();
+    };
+    void AccessibilityInfo.isReduceMotionEnabled().then(handleMotionPreference);
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', handleMotionPreference);
+
+    return () => {
+      disposed = true;
+      stop();
+      subscription.remove();
+    };
+  }, [screenHeight, stars]);
 
   return stars;
 }
@@ -185,7 +207,7 @@ export const headerTitleStyle: TextStyle = {
   fontWeight: '700',
   color: C.amber,
   letterSpacing: 2,
-  textShadowColor: 'rgba(255,184,112,0.3)',
+  textShadowColor: 'rgba(232,152,64,0.3)',
   textShadowOffset: { width: 0, height: 0 },
   textShadowRadius: 8,
 };

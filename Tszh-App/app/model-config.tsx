@@ -149,7 +149,7 @@ export default function ModelConfigScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(12), paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(16) }}>
           <NeuIconButton icon="←" onPress={() => router.back()} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>模型配置</Text>
+            <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>模型配置</Text>
             <Text style={{ fontSize: sp(11), color: C.textMuted, marginTop: s(2) }}>{providers.length} 个模型 · 当前: {getActive()?.name || '未选择'}</Text>
           </View>
         </View>
@@ -162,7 +162,7 @@ export default function ModelConfigScreen() {
 
         {/* Provider 列表 */}
         {providers.map((p) => (
-          <View key={p.id} style={{ marginHorizontal: s(24), marginBottom: s(10), padding: s(14), borderRadius: s(12), backgroundColor: activeId === p.id ? 'rgba(255,184,112,0.06)' : C.surface, borderWidth: 1, borderColor: activeId === p.id ? 'rgba(255,184,112,0.2)' : C.cardBorder, ...cardShadow }}>
+          <View key={p.id} style={{ marginHorizontal: s(24), marginBottom: s(10), padding: s(14), borderRadius: s(12), backgroundColor: activeId === p.id ? 'rgba(232,152,64,0.06)' : C.surface, borderWidth: 1, borderColor: activeId === p.id ? 'rgba(232,152,64,0.2)' : C.cardBorder, ...cardShadow }}>
             <View style={{ flexDirection: 'row' }}>
               <View style={{ flex: 1, gap: s(4) }}>
                 {/* 名称 + 协议 */}
@@ -173,7 +173,7 @@ export default function ModelConfigScreen() {
                 {/* 模型 + 协议 + 参数 */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(6), flexWrap: 'wrap' }}>
                   <NeuTag variant="info" label={p.protocol} />
-                  <Text style={{ fontSize: sp(10), color: C.textMuted, fontFamily: 'monospace' }}>{p.model}</Text>
+                  <Text style={{ fontSize: sp(10), color: C.textMuted, fontFamily: 'GeistMono' }}>{p.model}</Text>
                   {p.thinkingLevel !== 'standard' && <NeuTag variant="default" label={p.thinkingLevel} />}
                   {p.searchEnabled && <NeuTag variant="completed" label="搜索" />}
                   {p.contextWindow > 8192 && (
@@ -182,7 +182,7 @@ export default function ModelConfigScreen() {
                 </View>
                 {/* API Key */}
                 <TouchableOpacity onPress={() => setShowKeys((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
-                  <Text style={{ fontSize: sp(10), color: C.textPlaceholder, fontFamily: 'monospace' }}>
+                  <Text style={{ fontSize: sp(10), color: C.textPlaceholder, fontFamily: 'GeistMono' }}>
                     {showKeys[p.id] ? p.apiKey : p.apiKey ? '•••••••• (点击显示)' : '未设置 Key'}
                   </Text>
                 </TouchableOpacity>
@@ -196,7 +196,7 @@ export default function ModelConfigScreen() {
                 <TouchableOpacity onPress={() => handleTest(p)} disabled={testing === p.id} style={{ width: s(32), height: s(32), borderRadius: s(16), ...insetBorder, justifyContent: 'center', alignItems: 'center' }} accessibilityLabel={`测试连接 ${p.name}`}>
                   <Text style={{ fontSize: sp(14) }}>{testing === p.id ? '⏳' : '🧪'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleActivate(p.id)} style={{ width: s(32), height: s(32), borderRadius: s(16), backgroundColor: activeId === p.id ? 'rgba(255,184,112,0.2)' : 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel={`选择 ${p.name}`}>
+                <TouchableOpacity onPress={() => handleActivate(p.id)} style={{ width: s(32), height: s(32), borderRadius: s(16), backgroundColor: activeId === p.id ? 'rgba(232,152,64,0.2)' : 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel={`选择 ${p.name}`}>
                   <Text style={{ fontSize: sp(14) }}>✓</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => handleDelete(p.id)} style={{ width: s(32), height: s(32), borderRadius: s(16), backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel={`删除 ${p.name}`}>
@@ -224,7 +224,7 @@ export default function ModelConfigScreen() {
             <Text style={fieldLabel}>协议</Text>
             <View style={{ flexDirection: 'row', gap: s(8), marginBottom: s(12) }}>
               {(['openai', 'anthropic'] as const).map((proto) => (
-                <TouchableOpacity key={proto} onPress={() => setFormProtocol(proto)} style={{ flex: 1, padding: s(10), borderRadius: s(8), alignItems: 'center', backgroundColor: formProtocol === proto ? 'rgba(255,184,112,0.08)' : 'transparent', borderWidth: 1, borderColor: formProtocol === proto ? 'rgba(255,184,112,0.3)' : 'rgba(255,255,255,0.06)' }}>
+                <TouchableOpacity key={proto} onPress={() => setFormProtocol(proto)} style={{ flex: 1, padding: s(10), borderRadius: s(8), alignItems: 'center', backgroundColor: formProtocol === proto ? 'rgba(232,152,64,0.08)' : 'transparent', borderWidth: 1, borderColor: formProtocol === proto ? 'rgba(232,152,64,0.3)' : 'rgba(255,255,255,0.06)' }}>
                   <Text style={{ fontSize: sp(13), color: formProtocol === proto ? C.amber : C.textMuted }}>{proto === 'openai' ? 'OpenAI 兼容' : 'Anthropic'}</Text>
                 </TouchableOpacity>
               ))}
@@ -247,7 +247,7 @@ export default function ModelConfigScreen() {
             <Text style={fieldLabel}>思考程度</Text>
             <View style={{ flexDirection: 'row', gap: s(8), marginBottom: s(12) }}>
               {THINKING_LEVELS.map((lvl) => (
-                <TouchableOpacity key={lvl.key} onPress={() => setFormThinkingLevel(lvl.key)} style={{ flex: 1, padding: s(8), borderRadius: s(8), alignItems: 'center', backgroundColor: formThinkingLevel === lvl.key ? 'rgba(255,184,112,0.08)' : 'transparent', borderWidth: 1, borderColor: formThinkingLevel === lvl.key ? 'rgba(255,184,112,0.3)' : 'rgba(255,255,255,0.06)' }}>
+                <TouchableOpacity key={lvl.key} onPress={() => setFormThinkingLevel(lvl.key)} style={{ flex: 1, padding: s(8), borderRadius: s(8), alignItems: 'center', backgroundColor: formThinkingLevel === lvl.key ? 'rgba(232,152,64,0.08)' : 'transparent', borderWidth: 1, borderColor: formThinkingLevel === lvl.key ? 'rgba(232,152,64,0.3)' : 'rgba(255,255,255,0.06)' }}>
                   <Text style={{ fontSize: sp(12), fontWeight: '600', color: formThinkingLevel === lvl.key ? C.amber : C.textMuted }}>{lvl.label}</Text>
                   <Text style={{ fontSize: sp(9), color: C.textPlaceholder, marginTop: s(2) }}>{lvl.desc}</Text>
                 </TouchableOpacity>
@@ -288,7 +288,7 @@ export default function ModelConfigScreen() {
             </View>
           </View>
         ) : (
-          <TouchableOpacity onPress={() => setShowAdd(true)} style={{ marginHorizontal: s(24), padding: s(14), borderRadius: s(12), alignItems: 'center', backgroundColor: C.cardBg, borderWidth: 1, borderColor: 'rgba(255,184,112,0.06)', ...cardShadow }}>
+          <TouchableOpacity onPress={() => setShowAdd(true)} style={{ marginHorizontal: s(24), padding: s(14), borderRadius: s(12), alignItems: 'center', backgroundColor: C.cardBg, borderWidth: 1, borderColor: 'rgba(232,152,64,0.06)', ...cardShadow }}>
             <Text style={{ fontSize: sp(13), color: C.textMuted }}>+ 添加模型</Text>
           </TouchableOpacity>
         )}

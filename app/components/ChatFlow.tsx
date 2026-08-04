@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import ChatInput from "./ChatInput";
 import ResultCard from "./ResultCard";
 import LeftSidebar, { type StagedFile, type HistorySession } from "./LeftSidebar";
-import PixelTitle from "./PixelTitle";
 import MarkdownRenderer from "./MarkdownRenderer";
 import WelcomeScreen from "./WelcomeScreen";
 import { notify } from "@/app/lib/notify";
@@ -13,6 +12,8 @@ import { logCall, logGeneration } from "@/app/lib/tracker";
 import { useAuth } from "./AuthProvider";
 import { getToken } from "@/app/lib/auth";
 import { usePreferences } from "@/app/hooks/usePreferences";
+import { canUseWorkspaceCapability } from "@/app/lib/access-policy";
+import type { AccessMode } from "@/app/lib/entry-flow";
 
 type AgentPayload = {
   requestId: string; createdAt?: string;
@@ -29,9 +30,6 @@ type ChatMessage = {
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
-
-const SESSIONS_KEY = "tszh_sessions";
-const ACTIVE_KEY = "tszh_active";
 
 const isBrowser = typeof window !== "undefined";
 
@@ -77,7 +75,7 @@ function normalizePayload(data: unknown): { payload: AgentPayload; text?: string
   return { payload: { requestId, createdAt, raw: data } };
 }
 
-export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, templateFill: fillText, onGoHome, onSubmitRef, onNewChat, showWelcome, onWelcomeStart }: { onThinkingChange?: (v: boolean) => void; onReset?: () => void; onMessageSent?: () => void; templateFill?: string; onGoHome?: () => void; onSubmitRef?: React.MutableRefObject<((prompt: string) => void) | null>; onNewChat?: () => void; showWelcome?: boolean; onWelcomeStart?: (prompt?: string) => void }) {
+export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, templateFill: fillText, onGoHome, onSubmitRef, onNewChat, showWelcome, onWelcomeStart, accessMode, onAuthRequired }: { onThinkingChange?: (v: boolean) => void; onReset?: () => void; onMessageSent?: () => void; templateFill?: string; onGoHome?: () => void; onSubmitRef?: React.MutableRefObject<((prompt: string) => void) | null>; onNewChat?: () => void; showWelcome?: boolean; onWelcomeStart?: (prompt?: string) => void; accessMode: AccessMode; onAuthRequired: (draft?: string) => void }) {
   const { user } = useAuth();
   const { prefs } = usePreferences();
   const API_BASE = typeof window !== "undefined"
@@ -101,12 +99,24 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
     setSessions(loadSessions());
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    const reloadOwnerData = () => {
+      const id = getActiveId() || createId();
+      setSessionId(id);
+      setMessages(loadMessages(id));
+      setSessions(loadSessions());
+    };
+    window.addEventListener("tszh_data_owner_changed", reloadOwnerData);
+    return () => window.removeEventListener("tszh_data_owner_changed", reloadOwnerData);
+  }, []);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingStage, setThinkingStage] = useState(0);
   const thinkingStages = ["正在理解需求…", "检索知识库…", "构建分镜脚本…", "生成画面中…"];
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [sidebarFiles, setSidebarFiles] = useState<File[] | undefined>();
+  const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // 同步 messages/sessions 到 ref，避免闭包 stale 问题
@@ -117,7 +127,7 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
 
   // 暴露 submitPrompt 给父组件（用于开场白快捷入口）
   useEffect(() => {
-    if (onSubmitRef) onSubmitRef.current = (prompt: string) => submitPrompt(prompt, []);
+    if (onSubmitRef) onSubmitRef.current = (prompt: string) => { requestPrompt(prompt, []); };
   });
 
   // 登录后从服务端拉取会话列表
@@ -177,7 +187,7 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
     setMessages(trimmed);
   }, [messages, hydrated, prefs.maxMessages]);
 
-  const submitPrompt = async (prompt: string, files: File[]) => {
+  async function submitPrompt(prompt: string, files: File[]) {
     setSuggestions([]);
     const userMsg: ChatMessage = { id: createId(), role: "user", text: prompt };
     const thinkingMsg: ChatMessage = { id: createId(), role: "agent", isError: false };
@@ -314,11 +324,21 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
         ? { ...m, isError: true, errorText: err instanceof Error ? err.message : "请求失败" }
         : m));
     }
-  };
+  }
+
+  function requestPrompt(prompt: string, files: File[]) {
+    if (!canUseWorkspaceCapability(accessMode, "generate")) {
+      setDraft(prompt);
+      onAuthRequired(prompt);
+      return false;
+    }
+    void submitPrompt(prompt, files);
+    return true;
+  }
 
   const retry = async () => {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser?.text) await submitPrompt(lastUser.text, []);
+    if (lastUser?.text) requestPrompt(lastUser.text, []);
   };
 
   const loadSession = (id: string) => {
@@ -441,7 +461,7 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
       <div className="chat-messages">
         {messages.length === 0 && !showWelcome && (
           <div className="chat-welcome">
-            <PixelTitle />
+            <h2 className="welcome-title">腾昇智和 · AI 短视频导演</h2>
             <p>告诉我你的想法，我们一起把它变成画面。</p>
           </div>
         )}
@@ -480,7 +500,7 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
                   <ResultCard
                     payload={msg.payload}
                     originalPrompt={originalPrompt}
-                    onRegenerate={(prompt) => submitPrompt(prompt, [])}
+                    onRegenerate={(prompt) => { requestPrompt(prompt, []); }}
                   />
                 </>
               ) : msg.text ? (
@@ -510,7 +530,7 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
               key={i}
               type="button"
               className="suggestion-btn"
-              onClick={() => { setSuggestions([]); submitPrompt(s, []); }}
+              onClick={() => { setSuggestions([]); requestPrompt(s, []); }}
             >
               {s}
             </button>
@@ -520,10 +540,10 @@ export default function ChatFlow({ onThinkingChange, onReset, onMessageSent, tem
 
       <div ref={bottomRef} />
       <ChatInput
-        onSubmit={submitPrompt} disabled={isThinking}
+        onSubmit={requestPrompt} disabled={isThinking}
         onFilesAdded={(files) => setStagedFiles((prev) => [...prev, ...files.map((f) => ({ id: createId(), name: f.name, file: f }))])}
         externalFiles={sidebarFiles}
-        fillText={fillText}
+        fillText={draft || fillText}
       />
       {typeof document !== "undefined" && createPortal(
         <LeftSidebar

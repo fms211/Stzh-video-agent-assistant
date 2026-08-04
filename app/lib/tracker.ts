@@ -1,6 +1,14 @@
+import { currentDataOwner, workspaceDataKey } from "./data-owner";
+
 const isBrowser = typeof window !== "undefined";
-const KEY = "tszh_stats";
-const GEN_KEY = "tszh_gen_stats";
+
+function callKey() {
+  return workspaceDataKey(currentDataOwner(localStorage), "stats");
+}
+
+function generationKey() {
+  return workspaceDataKey(currentDataOwner(localStorage), "generation-stats");
+}
 
 type CallRecord = { ts: number; prompt: string };
 type GenRecord = { ts: number; type: "video" | "image"; prompt: string };
@@ -10,7 +18,7 @@ export function logCall(prompt: string) {
   const data = load();
   data.push({ ts: Date.now(), prompt: prompt.slice(0, 80) });
   if (data.length > 500) data.splice(0, data.length - 500);
-  localStorage.setItem(KEY, JSON.stringify(data));
+  localStorage.setItem(callKey(), JSON.stringify(data));
 }
 
 export function logGeneration(type: "video" | "image", prompt: string) {
@@ -18,17 +26,17 @@ export function logGeneration(type: "video" | "image", prompt: string) {
   const data = loadGenerations();
   data.push({ ts: Date.now(), type, prompt: prompt.slice(0, 80) });
   if (data.length > 500) data.splice(0, data.length - 500);
-  localStorage.setItem(GEN_KEY, JSON.stringify(data));
+  localStorage.setItem(generationKey(), JSON.stringify(data));
 }
 
 export function load(): CallRecord[] {
   if (!isBrowser) return [];
-  try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(callKey()) || "[]"); } catch { return []; }
 }
 
 export function loadGenerations(): GenRecord[] {
   if (!isBrowser) return [];
-  try { return JSON.parse(localStorage.getItem(GEN_KEY) || "[]"); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(generationKey()) || "[]"); } catch { return []; }
 }
 
 function aggregateByPeriod(data: { ts: number }[]) {

@@ -519,15 +519,30 @@ async function streamChatAnthropic(
 
 // ============ 会话管理 ============
 
-const STORAGE_KEY_ACTIVE = 'tszh_opc_agent_active';
-const STORAGE_KEY_SESSIONS = 'tszh_opc_agent_sessions';
+// 数据归属分仓：有 token 归账户（user:<id>），否则归访客（guest）
+// 与服务端按用户隔离对齐，避免访客/账户 OPC 会话互相串扰
+async function getOwnerScope(): Promise<string> {
+  try {
+    const token = await getToken();
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (typeof payload.userId === 'number') return `user:${payload.userId}`;
+    }
+  } catch {}
+  return 'guest';
+}
+
+async function opcStorageKey(kind: 'active' | 'sessions'): Promise<string> {
+  const scope = await getOwnerScope();
+  return `tszh:v2:opc:${scope}:${kind}`;
+}
 
 export async function getActiveSessionId(): Promise<string | null> {
-  return AsyncStorage.getItem(STORAGE_KEY_ACTIVE);
+  return AsyncStorage.getItem(await opcStorageKey('active'));
 }
 
 export async function setActiveSessionId(id: string): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY_ACTIVE, id);
+  await AsyncStorage.setItem(await opcStorageKey('active'), id);
 }
 
 export function createSessionId(): string {
@@ -714,8 +729,8 @@ function serverMessageToOpc(raw: any): OpcMessage {
   // role 映射：根据 metadata 内容判断
   let role = raw.role || 'assistant';
   if (metadata.stepName) role = 'workflow-step';
-  else if (metadata.workflowName && !metadata.stepName) role = 'workflow';
   else if (metadata.cards) role = 'action-cards';
+  else if (metadata.workflowName) role = 'workflow';
 
   return {
     id: raw.id || `msg_${Date.now()}`,

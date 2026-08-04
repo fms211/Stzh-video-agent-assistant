@@ -25,12 +25,19 @@ function genRings(): Ring[] {
   }));
 }
 
-export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: number; burstKey?: number }) {
+export default function OrbitRings({
+  resetKey = 0, burstKey = 0, reducedMotion = false, phase = "splash", morphKey = 0,
+}: {
+  resetKey?: number; burstKey?: number; reducedMotion?: boolean; phase?: string; morphKey?: number;
+}) {
   const [rings, setRings] = useState<Ring[]>([]);
   const [mounted, setMounted] = useState(false);
   const prevKey = useRef(resetKey);
   const ringsRef = useRef<HTMLDivElement[]>([]);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const isWorkspace = phase === "workspace";
 
   useEffect(() => {
     setRings(genRings());
@@ -45,9 +52,9 @@ export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: 
     }
   }, [resetKey]);
 
-  // GSAP burst on message sent
+  // GSAP burst on message sent（reduced motion 时跳过，只保留静态环）
   useEffect(() => {
-    if (burstKey === 0 || !mounted) return;
+    if (burstKey === 0 || !mounted || reducedMotion || !isWorkspace) return;
     const els = ringsRef.current.filter(Boolean);
     if (els.length === 0) return;
 
@@ -63,10 +70,39 @@ export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: 
       duration: 0.7, ease: "elastic.out(1, 0.5)",
       stagger: 0.04,
     });
-  }, [burstKey, mounted]);
+  }, [burstKey, mounted, reducedMotion, isWorkspace]);
+
+  // 幻变绽放：进入工作区时尘埃先退让（0.15s），星环放大淡入
+  useEffect(() => {
+    if (morphKey === 0 || !mounted) return;
+    const els = ringsRef.current.filter(Boolean);
+    if (els.length === 0) return;
+    const root = wrapRef.current;
+
+    if (reducedMotion) {
+      gsap.set(root, { opacity: 1, scale: 1 });
+      gsap.set(els, { opacity: 1, scale: 1 });
+      return;
+    }
+
+    const tl = gsap.timeline();
+    tlRef.current = tl;
+    tl.set(root, { opacity: 1, scale: 1 })
+      .fromTo(els, { opacity: 0, scale: 0.6 }, {
+        opacity: 1, scale: 1,
+        duration: 0.4, ease: "power2.out",
+        stagger: 0.05,
+      }, 0.15);
+  }, [morphKey, mounted, reducedMotion]);
 
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-15">
+    <div
+      ref={wrapRef}
+      aria-hidden="true"
+      className="pointer-events-none fixed inset-0 z-15 orbit-rings"
+      data-bg-phase={phase}
+      style={isWorkspace ? undefined : { opacity: 0, transform: "scale(0.6)" }}
+    >
       <style>{`
         @keyframes star-pulse {
           0%,100% { transform: translate(-50%,-50%) scale(1); opacity: 0.55; }
@@ -86,18 +122,29 @@ export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: 
             50% { opacity: ${r.breathePhase ? 0.2 : 1}; }
           }
         `).join("") : ""}
+        /* 入口阶段：环隐藏且动画暂停，省 GPU；工作区恢复 */
+        .orbit-rings[data-bg-phase="splash"] .orbit-ring-inner,
+        .orbit-rings[data-bg-phase="gateway"] .orbit-ring-inner {
+          animation-play-state: paused !important;
+        }
+        .orbit-rings[data-bg-phase="splash"] .orbit-star,
+        .orbit-rings[data-bg-phase="gateway"] .orbit-star {
+          animation: none !important;
+        }
       `}</style>
 
       {/* Central star */}
-      <div style={{
-        position: "absolute", left: "50%", top: "50%",
-        width: 90, height: 90, borderRadius: "50%",
-        background: "radial-gradient(circle at 35% 35%, var(--glow-warm-soft) 0%, var(--glow-warm) 30%, transparent 70%)",
-        boxShadow:
-          "0 0 40px var(--glow-warm), 0 0 80px color-mix(in srgb, var(--glow-warm) 60%, transparent), 0 0 150px color-mix(in srgb, var(--glow-warm) 35%, transparent), 0 0 250px color-mix(in srgb, var(--glow-warm) 15%, transparent)",
-        animation: mounted ? "star-enter 0.7s cubic-bezier(0.16,1,0.3,1) forwards, star-pulse 4s ease-in-out 0.7s infinite" : "none",
-        transition: "box-shadow 1.2s cubic-bezier(0.16,1,0.3,1)",
-      }} />
+      <div
+        className="orbit-star"
+        style={{
+          position: "absolute", left: "50%", top: "50%",
+          width: 90, height: 90, borderRadius: "50%",
+          background: "radial-gradient(circle at 35% 35%, var(--glow-warm-soft) 0%, var(--glow-warm) 30%, transparent 70%)",
+          boxShadow:
+            "0 0 40px var(--glow-warm), 0 0 80px color-mix(in srgb, var(--glow-warm) 60%, transparent), 0 0 150px color-mix(in srgb, var(--glow-warm) 35%, transparent), 0 0 250px color-mix(in srgb, var(--glow-warm) 15%, transparent)",
+          animation: mounted && isWorkspace ? "star-enter 0.7s cubic-bezier(0.16,1,0.3,1) forwards, star-pulse 4s ease-in-out 0.7s infinite" : "none",
+          transition: "box-shadow 1.2s cubic-bezier(0.16,1,0.3,1)",
+        }} />
 
       {rings.map((r, i) => (
         <div
@@ -115,6 +162,7 @@ export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: 
           }}
         >
           <div
+            className="orbit-ring-inner"
             style={{
               width: "100%", height: "100%", borderRadius: "50%",
               border: `${r.borderW.toFixed(1)}px solid color-mix(in srgb, var(${r.color}) ${rng(70, 88).toFixed(0)}%, transparent)`,
@@ -128,8 +176,8 @@ export default function OrbitRings({ resetKey = 0, burstKey = 0 }: { resetKey?: 
                 box-shadow 1.2s cubic-bezier(0.16,1,0.3,1)
               `,
               animation: `
-                ${mounted ? `ring-appear 0.5s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.1}s both,` : ""}
-                rotate-orbit ${r.speed}s linear infinite,
+                ${mounted && isWorkspace ? `ring-appear 0.5s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.1}s both,` : ""}
+                ${reducedMotion ? "" : `rotate-orbit ${r.speed}s linear infinite,`}
                 breathe-${i}-${resetKey} ${r.breathe}s ease-in-out infinite
               `,
             }}

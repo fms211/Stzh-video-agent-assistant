@@ -6,8 +6,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { NeuTag, NeuButton, NeuInsetView, PageBackground, EmptyState, WorkflowStepCard, ActionCards } from '../../src/components';
 import { LLMProvider, PRESET_WORKFLOWS, Workflow, OpcMessage, ActionCard, createSessionId, getActiveSessionId, setActiveSessionId, streamChat, buildSystemPrompt, saveMessage, loadMessages, deleteMessage, getActiveProviderFromServer, loadSessionsFromServer, createSessionOnServer } from '../../src/lib/opc-agent';
-import { ragRetrieve, formatRagContext } from '../../src/lib/rag-client';
+import { ragRetrieve, formatRagContext, type RagResult } from '../../src/lib/rag-client';
 import { shouldSearch, searchAndFormat } from '../../src/lib/web-search';
+import { createTaskOrQueue } from '../../src/lib/api';
 import { useApp, C, STATUS, insetBorder, cardShadow } from '../../src/hooks/useApp';
 
 export default function AiChatScreen() {
@@ -88,15 +89,16 @@ export default function AiChatScreen() {
     const userContent = inputText.trim(); setInputText('');
     const userMsg: OpcMessage = { id: `user_${Date.now()}`, role: 'user', content: userContent, timestamp: new Date().toISOString() };
     setMessages((p) => [...p, userMsg]); await saveMessage(sessionId, userMsg); scrollToBottom();
-    setSending(true); setStreamingText(''); setError(null);
-    try {
+    setSending(true); setStreamingText(''); setError(null);    try {
       // 并行：RAG 检索 + 条件性网络搜索（容错）
       let extraContext = '';
+      let ragResults: RagResult[] = [];
       try {
-        const [ragResults, webResults] = await Promise.all([
+        const [retrievedRagResults, webResults] = await Promise.all([
           ragRetrieve(userContent),
           shouldSearch(userContent) ? searchAndFormat(userContent) : Promise.resolve(''),
         ]);
+        ragResults = retrievedRagResults;
         const ragContext = formatRagContext(ragResults);
         extraContext = [ragContext, webResults].filter(Boolean).join('\n\n');
       } catch {}
@@ -117,6 +119,24 @@ export default function AiChatScreen() {
     } catch (e: any) {
       if (e.name !== 'AbortError') setError(e.message || 'AI 回复失败，请检查 API Key 和网络');
     } finally { setSending(false); setStreamingText(''); scrollToBottom(); }
+  };
+
+  // 一键转为桌面任务（手机发起 → 桌面执行；断网自动入离线队列）
+  const handleSendTask = async () => {
+    const prompt = inputText.trim();
+    if (!prompt) return;
+    setInputText('');
+    try {
+      const { task, queued } = await createTaskOrQueue(prompt);
+      if (queued) {
+        Alert.alert('已加入离线队列', '当前无法连接服务器，任务已暂存，联网后将自动下发。', [{ text: '好的' }]);
+      } else if (task) {
+        Alert.alert('已下发', `任务「${task.title}」已加入队列，桌面端将接手执行。`, [{ text: '好的' }]);
+      }
+    } catch (e: any) {
+      Alert.alert('下发失败', e.message || '无法连接服务器', [{ text: '好的' }]);
+      setInputText(prompt);
+    }
   };
 
   // 工作流执行
@@ -258,7 +278,7 @@ export default function AiChatScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: s(24), paddingTop: insets.top + s(12), paddingBottom: s(8) }}>
           <View>
-            <Text style={{ fontSize: sp(18), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>OPC AI</Text>
+            <Text style={{ fontSize: sp(18), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>OPC AI</Text>
             <Text style={{ fontSize: sp(10), color: C.textMuted, letterSpacing: 1 }}>创作协同</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: s(8) }}>
@@ -330,7 +350,7 @@ export default function AiChatScreen() {
             // 普通消息（长按删除）
             const isUser = msg.role === 'user';
             return (
-              <TouchableOpacity key={msg.id} onLongPress={() => handleDeleteMessage(msg)} activeOpacity={0.8} style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '85%', marginBottom: s(10), padding: s(12), borderRadius: s(12), borderBottomRightRadius: isUser ? s(4) : s(12), borderBottomLeftRadius: isUser ? s(12) : s(4), backgroundColor: isUser ? 'rgba(255,184,112,0.15)' : 'rgba(5,13,35,0.8)', borderWidth: 1, borderColor: isUser ? 'rgba(255,184,112,0.2)' : 'rgba(255,255,255,0.06)' }}>
+              <TouchableOpacity key={msg.id} onLongPress={() => handleDeleteMessage(msg)} activeOpacity={0.8} style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '85%', marginBottom: s(10), padding: s(12), borderRadius: s(12), borderBottomRightRadius: isUser ? s(4) : s(12), borderBottomLeftRadius: isUser ? s(12) : s(4), backgroundColor: isUser ? 'rgba(232,152,64,0.15)' : 'rgba(5,13,35,0.8)', borderWidth: 1, borderColor: isUser ? 'rgba(232,152,64,0.2)' : 'rgba(255,255,255,0.06)' }}>
                 <Text style={{ fontSize: sp(14), color: isUser ? C.amber : C.text, lineHeight: sp(20) }}>{msg.content}</Text>
               </TouchableOpacity>
             );
@@ -358,6 +378,9 @@ export default function AiChatScreen() {
               </View>
             </NeuInsetView>
           </View>
+          <TouchableOpacity onPress={handleSendTask} disabled={!inputText.trim() || sending} style={{ width: s(40), height: s(40), borderRadius: s(20), justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: inputText.trim() && !sending ? C.borderFocus : C.borderLight, backgroundColor: 'rgba(232,152,64,0.06)' }} accessibilityLabel="转为任务" accessibilityRole="button" accessibilityState={{ disabled: !inputText.trim() || sending }}>
+            <Text style={{ fontSize: sp(11), color: inputText.trim() && !sending ? C.amber : C.textMuted, fontWeight: '600' }}>任务</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleSend} disabled={!inputText.trim() || sending} style={{ width: s(44), height: s(44), borderRadius: s(22), overflow: 'visible', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel="发送消息" accessibilityRole="button" accessibilityState={{ disabled: !inputText.trim() || sending }}>
             {/* 外层光晕 */}
             <View style={{
@@ -371,7 +394,7 @@ export default function AiChatScreen() {
             }} />
             {/* 渐变主体 */}
             <LinearGradient
-              colors={inputText.trim() && !sending ? ['#ffcb8e', '#e89840', '#c07020'] : ['rgba(255,184,112,0.2)', 'rgba(232,152,64,0.1)', 'rgba(192,112,32,0.05)']}
+              colors={inputText.trim() && !sending ? ['#ffcb8e', '#e89840', '#c07020'] : ['rgba(232,152,64,0.2)', 'rgba(232,152,64,0.1)', 'rgba(192,112,32,0.05)']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={{ width: s(44), height: s(44), borderRadius: s(22), justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: inputText.trim() && !sending ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)' }}
             >
@@ -443,7 +466,7 @@ function WorkflowSheet({
               <Text style={{ fontSize: sp(11), color: C.textMuted, letterSpacing: 1, marginBottom: s(8) }}>执行步骤</Text>
               {selectedWorkflow.steps.map((step, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: s(6), gap: s(8) }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,184,112,0.15)', justifyContent: 'center', alignItems: 'center' }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(232,152,64,0.15)', justifyContent: 'center', alignItems: 'center' }}>
                     <Text style={{ fontSize: sp(10), color: C.amber, fontWeight: '600' }}>{i + 1}</Text>
                   </View>
                   <Text style={{ fontSize: sp(13), color: C.text }}>{step.name}</Text>

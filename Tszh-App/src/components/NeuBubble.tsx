@@ -17,7 +17,7 @@ export function NeuBubble({ role, children, style }: Props) {
     return (
       <View style={[styles.base, styles.userWrapper, style]}>
         <LinearGradient
-          colors={['rgba(255,184,112,0.2)', 'rgba(232,152,64,0.12)']}
+          colors={['rgba(232,152,64,0.2)', 'rgba(232,152,64,0.12)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.fill}

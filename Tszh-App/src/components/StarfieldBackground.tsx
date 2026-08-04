@@ -107,6 +107,6 @@ const styles = StyleSheet.create({
   },
   star: {
     position: 'absolute',
-    backgroundColor: '#ffb870',
+    backgroundColor: '#e89840',
   },
 });

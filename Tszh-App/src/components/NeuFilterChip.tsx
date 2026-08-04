@@ -45,8 +45,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   activeChip: {
-    backgroundColor: 'rgba(255,184,112,0.12)',
-    borderColor: 'rgba(255,184,112,0.3)',
+    backgroundColor: 'rgba(232,152,64,0.12)',
+    borderColor: 'rgba(232,152,64,0.3)',
   },
   inactiveText: {
     fontSize: 12,
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
   },
   activeText: {
     fontSize: 12,
-    color: '#ffb870',
+    color: '#e89840',
     fontWeight: '600',
   },
 });

@@ -18,6 +18,7 @@ import {
   loadMessages, saveMessages, upsertSession,
   getActiveSessionId, setActiveSessionId,
   createSessionId, clearSessionMessages,
+  migrateLegacyOpcData,
 } from "@/app/lib/opc-agent-persist";
 import { apiCompressSession, apiSetMemory } from "@/app/lib/opc-agent-api";
 import type { LLMProvider } from "@/app/lib/llm-providers";
@@ -64,6 +65,7 @@ export default function OpcAgentPanel({ open, onClose, opcContext }: Props) {
     if (!p) setShowConfig(true);
 
     const init = async () => {
+      migrateLegacyOpcData(localStorage);
       const existingId = getActiveSessionId();
       if (existingId) {
         setSessionId(existingId);

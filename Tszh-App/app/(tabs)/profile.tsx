@@ -59,7 +59,7 @@ export default function ProfileScreen() {
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8) }}>
                 <NeuTag variant={isOnline ? 'completed' : 'failed'} label={isOnline ? '已连接' : '未连接'} />
-                <Text style={{ fontSize: sp(10), color: C.textMuted, fontFamily: 'monospace' }}>
+                <Text style={{ fontSize: sp(10), color: C.textMuted, fontFamily: 'GeistMono' }}>
                   {serverUrlDisplay.replace('http://', '')}
                 </Text>
               </View>
@@ -98,7 +98,7 @@ export default function ProfileScreen() {
           {[
             { icon: '🎨', label: '主题切换', value: '深空观测者', action: () => showComingSoon('主题切换') },
             { icon: '🔔', label: '通知设置', value: '已开启', action: () => showComingSoon('通知设置') },
-            { icon: '🔗', label: '连接管理', value: isOnline ? '在线' : '离线', action: () => showComingSoon('连接管理') },
+            { icon: '🔗', label: '连接管理', value: isOnline ? '在线' : '离线', action: () => router.push('/connection') },
             { icon: '🔑', label: '修改密码', value: '', action: handleChangePassword },
           { icon: '📤', label: '导出数据', value: '', action: () => showComingSoon('导出数据') },
             { icon: 'ℹ️', label: '关于', value: 'v1.0.0', action: () => Alert.alert('关于 Tszh Remote', '版本: v1.0.0\n代号: 外置小脑\n\n腾昇智和 · AI 短视频全链路自动生成') },
@@ -137,7 +137,7 @@ function NeuSectionLabel({ label, s, sp }: { label: string; s: (n: number) => nu
   return (
     <View style={{ paddingHorizontal: s(24), marginTop: s(24), marginBottom: s(12) }}>
       <Text style={{ fontSize: sp(14), fontWeight: '600', color: C.text, letterSpacing: 0.5 }}>{label}</Text>
-      <View style={{ height: 1, backgroundColor: 'rgba(255,184,112,0.15)', marginTop: s(8) }} />
+      <View style={{ height: 1, backgroundColor: 'rgba(232,152,64,0.15)', marginTop: s(8) }} />
     </View>
   );
 }

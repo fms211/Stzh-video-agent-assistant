@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage } = require("electron");
 const path = require("path");
 const net = require("net");
 const http = require("http");
@@ -6,8 +6,16 @@ const fs = require("fs");
 
 const ROOT = path.join(__dirname, "..");
 const SERVER_DIR = path.join(ROOT, "server");
+const APP_ICON_PATH = path.join(ROOT, "public", "icon.png");
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.stzh.video-workspace");
+}
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
+let frontendUrl = "";
 
 // ── 端口检测 ──
 function isPortFree(port) {
@@ -43,6 +51,7 @@ function waitForPort(port, timeout = 30000) {
 
 // ── 内嵌 Express 后端 ──
 let backendServer = null;
+let realtimeServer = null;
 
 function startBackend() {
   return new Promise(async (resolve, reject) => {
@@ -76,8 +85,10 @@ function startBackend() {
       console.log(`[Electron] 数据目录: ${dataDir}`);
 
       // 直接 require Express 应用
-      const expressApp = require(path.join(SERVER_DIR, "server-express.js"));
+      const expressApp = require(path.join(SERVER_DIR, "app.js"));
       backendServer = expressApp.listen(port, () => {
+        const { attachRealtime } = require(path.join(SERVER_DIR, "realtime.js"));
+        realtimeServer = attachRealtime(backendServer);
         console.log(`[Electron] 后端已启动: http://localhost:${port}`);
         resolve(port);
       });
@@ -101,6 +112,7 @@ function createWindow(frontendUrl) {
     minHeight: 600,
     title: "腾昇智和 · Video Workspace",
     backgroundColor: "#050a14",
+    icon: APP_ICON_PATH,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -111,11 +123,60 @@ function createWindow(frontendUrl) {
 
   mainWindow.loadURL(frontendUrl);
   mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+    // 最小化到托盘：后台服务和手机实时联动继续运行。
+    if (process.platform === "win32" && tray) {
+      tray.displayBalloon({
+        title: "腾昇智和仍在运行",
+        content: "桌面创作中心已转入后台，手机远程任务会继续接收。",
+      });
+    }
+  });
   mainWindow.on("closed", () => { mainWindow = null; });
+}
+
+function createTray() {
+  if (tray) return;
+  const trayImage = nativeImage.createFromPath(APP_ICON_PATH);
+  if (trayImage.isEmpty()) {
+    throw new Error(`托盘图标加载失败: ${APP_ICON_PATH}`);
+  }
+  tray = new Tray(trayImage.resize({ width: 20, height: 20 }));
+  tray.setToolTip("腾昇智和 · 桌面创作中心");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: "打开创作中心",
+      click: () => {
+        if (!mainWindow) createWindow(frontendUrl);
+        mainWindow.show();
+        mainWindow.focus();
+      },
+    },
+    { type: "separator" },
+    { label: "联动服务：运行中", enabled: false },
+    {
+      label: "退出",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]));
+  tray.on("double-click", () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
 }
 
 // ── 清理 ──
 function cleanup() {
+  if (realtimeServer) {
+    try { realtimeServer.close(); } catch {}
+    realtimeServer = null;
+  }
   if (backendServer) {
     try { backendServer.close(); } catch {}
   }
@@ -128,9 +189,10 @@ app.whenReady().then(async () => {
     const backendPort = await startBackend();
 
     // 前端由 Express 内嵌的静态文件服务提供
-    const frontendUrl = `http://localhost:${backendPort}`;
+    frontendUrl = `http://localhost:${backendPort}`;
     console.log("[Electron] 打开窗口...");
     createWindow(frontendUrl);
+    createTray();
   } catch (e) {
     console.error("[Electron] 启动失败:", e.message);
     app.quit();
@@ -138,16 +200,18 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  cleanup();
-  if (process.platform !== "darwin") app.quit();
+  // 保持托盘和实时联动服务运行。
 });
 
 app.on("activate", () => {
   if (mainWindow === null) {
-    createWindow(`http://localhost:8080`);
-  }
+    createWindow(frontendUrl);
+  } else mainWindow.show();
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   cleanup();
+  tray?.destroy();
+  tray = null;
 });

@@ -10,6 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "icons:generate": "node scripts/generate-app-icons.mjs",
+    "test:p0": "node --test test/*.test.js && npm --prefix server test",
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder --win",
     "electron:build:portable": "npm run build && electron-builder --win portable",
@@ -17,18 +19,21 @@
     "rag:ingest": "cd rag-service && python ingest.py"
   },
   "dependencies": {
+    "@gsap/react": "^2.1.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "better-sqlite3": "^12.10.0",
     "docx": "^9.7.0",
     "gsap": "^3.15.0",
     "lucide-react": "^1.17.0",
+    "motion": "^12.43.0",
     "next": "16.2.4",
     "playwright": "^1.60.0",
     "pptx-automizer": "^0.8.1",
     "pptxgenjs": "^4.0.1",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
+    "react-aria-components": "^1.20.0",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
@@ -59,6 +64,7 @@
       "electron/**/*",
       "server/**/*",
       "out/**/*",
+      "public/icon.png",
       "!node_modules"
     ],
     "asarUnpack": [
@@ -74,7 +80,7 @@
           ]
         }
       ],
-      "icon": "public/icon.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

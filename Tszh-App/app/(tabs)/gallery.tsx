@@ -30,8 +30,8 @@ export default function GalleryScreen() {
       <PageBackground />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + s(80) }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.amber} />}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(12) }}>
-          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>作品画廊</Text>
-          <View style={{ backgroundColor: 'rgba(255,184,112,0.1)', paddingHorizontal: s(10), paddingVertical: s(3), borderRadius: s(12), borderWidth: 1, borderColor: 'rgba(255,184,112,0.15)' }}>
+          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>作品画廊</Text>
+          <View style={{ backgroundColor: 'rgba(232,152,64,0.1)', paddingHorizontal: s(10), paddingVertical: s(3), borderRadius: s(12), borderWidth: 1, borderColor: 'rgba(232,152,64,0.15)' }}>
             <Text style={{ fontSize: sp(11), color: C.amber }}>{generations.length} 个作品</Text>
           </View>
         </View>

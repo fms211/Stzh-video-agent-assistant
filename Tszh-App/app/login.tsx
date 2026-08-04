@@ -22,7 +22,7 @@ function NeuInputField({ icon, placeholder, secureTextEntry, value, onChangeText
     <View style={{ marginBottom: 12, overflow: 'visible' }}>
       <NeuInsetView borderRadius={8} glow={focused}>
         <View style={{ flexDirection: 'row', alignItems: 'center', height: h }}>
-          <Text style={{ position: 'absolute', left: 12, fontSize: compact ? 16 : 18, zIndex: 2, color: focused ? C.amber : 'rgba(255,184,112,0.5)' }}>{icon}</Text>
+          <Text style={{ position: 'absolute', left: 12, fontSize: compact ? 16 : 18, zIndex: 2, color: focused ? C.amber : 'rgba(232,152,64,0.5)' }}>{icon}</Text>
           <TextInput
             style={{ flex: 1, height: '100%', paddingLeft: 44, paddingRight: 16, color: C.text, fontSize: compact ? 13 : 14 }}
             placeholder={placeholder} placeholderTextColor={C.textDim}
@@ -134,13 +134,13 @@ export default function LoginScreen() {
           <View style={{ alignItems: 'center', marginBottom: s(24) }}>
             <TouchableOpacity onLongPress={handleLogoLongPress} delayLongPress={3000} accessibilityLabel="应用 Logo，长按清除数据" accessibilityRole="button">
               <View style={{ width: logoSize, height: logoSize, justifyContent: 'center', alignItems: 'center', marginBottom: s(10) }}>
-                <Animated.View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: C.amberGlow, borderRadius: logoSize / 2, opacity: glowAnim, transform: [{ scale: 1.5 }] }} />
+                <Animated.View style={{ ...StyleSheet.absoluteFill, backgroundColor: C.amberGlow, borderRadius: logoSize / 2, opacity: glowAnim, transform: [{ scale: 1.5 }] }} />
                 <Animated.View style={{ transform: [{ rotate: logoRotation }] }}>
                   <Logo size={logoSize * 0.8} color={C.amberDark} pulse />
                 </Animated.View>
               </View>
             </TouchableOpacity>
-            <Text style={{ fontSize: sp(24), color: C.amber, fontWeight: 'bold', letterSpacing: 4, textShadowColor: 'rgba(255,184,112,0.5)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 16, marginBottom: 8 }}>TSZH REMOTE</Text>
+            <Text style={{ fontSize: sp(24), color: C.amber, fontWeight: 'bold', letterSpacing: 4, textShadowColor: 'rgba(232,152,64,0.5)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 16, marginBottom: 8 }}>TSZH REMOTE</Text>
             <Text style={{ fontSize: sp(12), color: C.textSecondary, letterSpacing: 6, fontWeight: '300' }}>外置小脑</Text>
           </View>
 
@@ -151,7 +151,7 @@ export default function LoginScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={labelStyle}>SECURITY CIPHER</Text>
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} accessibilityLabel={showPassword ? '隐藏密码' : '显示密码'} accessibilityRole="button">
-                <Text style={{ fontSize: sp(10), color: 'rgba(255,184,112,0.6)', marginBottom: 8, marginRight: 4 }}>{showPassword ? '隐藏' : '显示'}</Text>
+                <Text style={{ fontSize: sp(10), color: 'rgba(232,152,64,0.6)', marginBottom: 8, marginRight: 4 }}>{showPassword ? '隐藏' : '显示'}</Text>
               </TouchableOpacity>
             </View>
             <NeuInputField icon="🔒" placeholder="••••••••" secureTextEntry={!showPassword} compact={width < 375} value={password} onChangeText={(t) => { setPassword(t); if (errors.password) setErrors((p) => ({ ...p, password: undefined })); }} error={errors.password} />
@@ -165,7 +165,7 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity style={{ alignItems: 'center', marginTop: s(16), paddingVertical: 8 }} onPress={() => { setIsRegister(!isRegister); setErrors({}); }} accessibilityLabel={isRegister ? '切换到登录' : '切换到注册'} accessibilityRole="button">
-              <Text style={{ fontSize: sp(12), color: 'rgba(255,184,112,0.7)' }}>{isRegister ? '已有账号？去登录' : '没有账号？去注册'}</Text>
+              <Text style={{ fontSize: sp(12), color: 'rgba(232,152,64,0.7)' }}>{isRegister ? '已有账号？去登录' : '没有账号？去注册'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -176,10 +176,10 @@ export default function LoginScreen() {
               </View>
               <Text style={{ fontSize: sp(11), color: C.textSecondary }}>记住登录</Text>
             </TouchableOpacity>
-            <TouchableOpacity accessibilityLabel="忘记密码" accessibilityRole="button" onPress={() => router.push('/forgot-password')}><Text style={{ fontSize: sp(11), color: 'rgba(255,184,112,0.5)' }}>忘记密钥?</Text></TouchableOpacity>
+            <Text style={{ fontSize: sp(11), color: 'rgba(232,152,64,0.5)' }}>密码可在登录后的“我的”中修改</Text>
           </View>
 
-          <View style={{ width: '100%', maxWidth: maxPanelW, backgroundColor: C.cardBg, padding: s(16), borderRadius: s(12), borderWidth: 1, borderColor: 'rgba(255,184,112,0.06)', marginBottom: s(16) }}>
+          <View style={{ width: '100%', maxWidth: maxPanelW, backgroundColor: C.cardBg, padding: s(16), borderRadius: s(12), borderWidth: 1, borderColor: 'rgba(232,152,64,0.06)', marginBottom: s(16) }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontSize: sp(9), color: C.textSecondary, letterSpacing: 2, opacity: 0.6 }}>SUBSPACE GATEWAY</Text>
               <TouchableOpacity onPress={checkServer} disabled={serverStatus === 'checking'} accessibilityLabel={`检测服务器连接，当前${serverTag().l}`} accessibilityRole="button">

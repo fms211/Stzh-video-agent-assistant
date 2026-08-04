@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import { motion } from "motion/react";
+import { LogIn } from "lucide-react";
+import type { AccessMode } from "@/app/lib/entry-flow";
+import { useAuth } from "./AuthProvider";
 import { fetchWeather, getWeatherIcon, getWeatherMood, getWeatherGlowColor, type WeatherData } from "@/app/lib/weather";
 import {
   MessageSquare,
@@ -12,13 +16,16 @@ import {
   Check,
   X,
   Info,
+  ListTodo,
 } from "lucide-react";
 
-type Page = "chat" | "opc" | "stats" | "libtv" | "gallery";
+export type Page = "chat" | "opc" | "tasks" | "stats" | "libtv" | "gallery";
+export type WorkspacePage = Page;
 
 const PAGE_TABS: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "chat", label: "对话工作区", icon: <MessageSquare size={15} strokeWidth={1.8} /> },
   { key: "opc", label: "OPC 工作模式", icon: <Film size={15} strokeWidth={1.8} /> },
+  { key: "tasks", label: "任务中心", icon: <ListTodo size={15} strokeWidth={1.8} /> },
   { key: "stats", label: "工作统计", icon: <BarChart3 size={15} strokeWidth={1.8} /> },
   { key: "libtv", label: "LibTV 生图", icon: <ImageIcon size={15} strokeWidth={1.8} /> },
   { key: "gallery", label: "创作画廊", icon: <Palette size={15} strokeWidth={1.8} /> },
@@ -36,6 +43,10 @@ type Notification = {
 type Props = {
   page: Page;
   onPageChange: (page: Page) => void;
+  locked?: boolean;
+  accessMode?: AccessMode | null;
+  showBrandCore?: boolean;
+  onAuthOpen?: () => void;
 };
 
 // 弹簧物理参数
@@ -82,7 +93,15 @@ class SpringValue {
 
 const WINDOW_SIZE = 4; // 导航栏一次显示的标签数
 
-export default function NavigationBar({ page, onPageChange }: Props) {
+export default function NavigationBar({
+  page,
+  onPageChange,
+  locked = false,
+  accessMode = null,
+  showBrandCore = true,
+  onAuthOpen,
+}: Props) {
+  const { user } = useAuth();
   const [hovered, setHovered] = useState<Page | null>(null);
   const [scrollPulse, setScrollPulse] = useState<Page | null>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,11 +182,12 @@ export default function NavigationBar({ page, onPageChange }: Props) {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
-  // 导航栏鼠标事件
+  // 导航栏鼠标事件（锁定态不响应 hover，避免入口阶段展开）
   const handleNavMouseEnter = useCallback(() => {
+    if (locked) return;
     setIsExpanded(true);
     expandProgress.current.setTarget(1);
-  }, []);
+  }, [locked]);
 
   const handleNavMouseLeave = useCallback(() => {
     setIsExpanded(false);
@@ -286,6 +306,7 @@ export default function NavigationBar({ page, onPageChange }: Props) {
     const maxWindowStart = PAGE_TABS.length - WINDOW_SIZE; // 1
 
     const handleWheel = (e: WheelEvent) => {
+      if (locked) return;
       e.preventDefault();
       const currentIndex = PAGE_TABS.findIndex((t) => t.key === page);
 
@@ -338,12 +359,25 @@ export default function NavigationBar({ page, onPageChange }: Props) {
     <>
       <nav
         ref={navRef}
-        className={`nav-bar ${isExpanded ? "expanded" : "collapsed"}`}
+        className={`nav-bar ${isExpanded ? "expanded" : "collapsed"} ${locked ? "is-locked" : ""}`}
         style={{ "--weather-glow": glowColor } as React.CSSProperties}
         onMouseEnter={handleNavMouseEnter}
         onMouseLeave={handleNavMouseLeave}
       >
         <div className="nav-bar-inner">
+          {/* 品牌恒星标记（与 splash 共享 layoutId 动画） */}
+          <div className="nav-brand-core">
+            {showBrandCore ? (
+              <motion.span
+                layoutId="brand-core"
+                className="product-nav__core"
+                transition={{ type: "spring", stiffness: 180, damping: 24 }}
+              >
+                <i />
+              </motion.span>
+            ) : <span className="product-nav__core-placeholder" />}
+          </div>
+
           {/* 左侧：时间 + 天气 */}
           <div
             className="nav-info-left"
@@ -398,6 +432,7 @@ export default function NavigationBar({ page, onPageChange }: Props) {
                         ? `0 ${4 * state.scale}px ${12 * state.scale}px rgba(0,0,0,0.3), 0 0 ${20 + state.glow * 2}px color-mix(in srgb, var(--glow-warm) ${15 + state.glow}%, transparent)`
                         : undefined,
                     }}
+                    disabled={locked}
                     onClick={() => handleTabClick(tab.key)}
                     onMouseEnter={() => handleButtonEnter(tab.key)}
                     onMouseLeave={() => handleButtonLeave(tab.key)}
@@ -434,6 +469,22 @@ export default function NavigationBar({ page, onPageChange }: Props) {
               pointerEvents: expandValue > 0.01 || showNotifications ? "auto" : "none",
             }}
           >
+            {!locked && accessMode === "guest" && (
+              <button
+                type="button"
+                className="nav-login-btn"
+                onClick={onAuthOpen}
+                aria-label="登录"
+              >
+                <LogIn size={13} strokeWidth={1.8} /> 登录
+              </button>
+            )}
+            {!locked && accessMode === "authenticated" && user && (
+              <span className="nav-user-chip" title={user.displayName || user.username}>
+                {user.displayName || user.username}
+              </span>
+            )}
+
             <button
               type="button"
               className={`nav-notif-btn pixel-corners ${showNotifications ? "active" : ""}`}
@@ -507,7 +558,7 @@ export default function NavigationBar({ page, onPageChange }: Props) {
           pointer-events: none;
           will-change: width;
           width: fit-content;
-          max-width: 90%;
+          max-width: 96%;
         }
 
         .nav-bar:hover {
@@ -521,6 +572,65 @@ export default function NavigationBar({ page, onPageChange }: Props) {
 
         @keyframes nav-glow-rotate {
           to { --glow-angle: 360deg; }
+        }
+
+        /* 品牌恒星标记 */
+        .nav-brand-core { display: flex; align-items: center; flex-shrink: 0; flex: 0 0 34px; margin-right: 2px; }
+        .nav-brand-core .product-nav__core {
+          position: relative;
+          width: 30px;
+          height: 30px;
+          flex: 0 0 30px;
+          border-radius: 50%;
+          background: radial-gradient(circle at 35% 30%, #ffe0a2 0 5%, var(--glow-warm-soft) 18%, var(--glow-warm) 52%, #7b3d14 100%);
+          border: 1px solid color-mix(in srgb, var(--glow-warm-soft) 44%, transparent);
+          box-shadow: 0 0 0 5px color-mix(in srgb, var(--glow-warm) 8%, transparent), 0 0 20px color-mix(in srgb, var(--glow-warm) 28%, transparent);
+        }
+        .nav-brand-core .product-nav__core i { position: absolute; inset: -6px; border: 1px solid color-mix(in srgb, var(--glow-cool) 34%, transparent); border-radius: 50%; }
+        .nav-brand-core .product-nav__core-placeholder { width: 30px; height: 30px; flex: 0 0 30px; }
+
+        /* 访客登录按钮 + 账户名 */
+        .nav-login-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          min-height: 34px;
+          padding: 0 11px;
+          margin-right: 4px;
+          border: 1px solid color-mix(in srgb, var(--glow-warm) 35%, transparent);
+          border-radius: 9px;
+          background: color-mix(in srgb, var(--glow-warm) 7%, transparent);
+          color: var(--glow-warm-soft);
+          font-size: 10px;
+          cursor: pointer;
+          transition: background var(--motion-fast), color var(--motion-fast);
+          outline: none;
+        }
+        .nav-login-btn:hover { background: color-mix(in srgb, var(--glow-warm) 14%, transparent); color: var(--glow-warm); }
+        .nav-login-btn:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 40%, transparent); }
+        .nav-user-chip {
+          display: inline-flex;
+          align-items: center;
+          min-height: 30px;
+          padding: 0 10px;
+          margin-right: 4px;
+          border: 1px solid color-mix(in srgb, #8bcda4 25%, transparent);
+          border-radius: 999px;
+          color: #8bcda4;
+          font-size: 10px;
+          white-space: nowrap;
+        }
+
+        /* locked（身份交接/入口阶段）—— 低亮度锁定 */
+        .nav-bar.is-locked { opacity: .72; }
+        .nav-bar.is-locked .nav-tab { cursor: default; }
+        .nav-bar.is-locked .nav-tab:hover {
+          color: var(--foreground-muted);
+          border-color: transparent;
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--space-surface) 50%, transparent) 0%,
+            color-mix(in srgb, var(--space-panel) 70%, transparent) 100%
+          );
         }
 
         .nav-bar-inner {
@@ -712,6 +822,7 @@ export default function NavigationBar({ page, onPageChange }: Props) {
           .nav-time-block, .nav-weather-block, .nav-notif-btn, .nav-notif-badge {
             animation: none !important;
           }
+          .nav-brand-core .product-nav__core { animation: none !important; transition-duration: 0.01ms !important; }
         }
 
         @keyframes tab-pulse {

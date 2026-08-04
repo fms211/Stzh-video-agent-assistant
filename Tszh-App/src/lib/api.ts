@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const DEFAULT_SERVER = 'http://192.168.5.105:8080';
 const STORAGE_KEY_SERVER = 'tszh_server_url';
 const STORAGE_KEY_TOKEN = 'tszh_token';
+const STORAGE_KEY_DEVICE_ID = 'tszh_device_id';
 
 // 确保 URL 有协议前缀
 function ensureProtocol(url: string): string {
@@ -42,6 +43,14 @@ export async function removeToken(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY_TOKEN);
 }
 
+export async function getDeviceId(): Promise<string | null> {
+  return AsyncStorage.getItem(STORAGE_KEY_DEVICE_ID);
+}
+
+export async function setDeviceId(deviceId: string): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEY_DEVICE_ID, deviceId);
+}
+
 // 通用请求函数
 async function request<T>(
   endpoint: string,
@@ -66,7 +75,7 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: '请求失败' }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+    throw new Error(error?.error?.message || error?.message || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -86,7 +95,7 @@ export async function login(username: string, password: string) {
 export async function register(username: string, password: string, displayName?: string) {
   const data = await request<{ token: string; user: any }>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ username, password, display_name: displayName }),
+    body: JSON.stringify({ username, password, displayName }),
   });
   await setToken(data.token);
   return data;
@@ -104,13 +113,6 @@ export async function changePassword(oldPassword: string, newPassword: string) {
   return request('/api/auth/change-password', {
     method: 'POST',
     body: JSON.stringify({ oldPassword, newPassword }),
-  });
-}
-
-export async function resetPassword(username: string, newPassword: string) {
-  return request('/api/auth/reset-password', {
-    method: 'POST',
-    body: JSON.stringify({ username, newPassword }),
   });
 }
 
@@ -143,11 +145,10 @@ export async function getConversation(id: string): Promise<{ conversation: Conve
 }
 
 export async function createConversation(title: string): Promise<Conversation> {
-  const data = await request<{ conversation: Conversation }>('/api/conversations', {
+  return request<Conversation>('/api/conversations', {
     method: 'POST',
     body: JSON.stringify({ title }),
   });
-  return data.conversation;
 }
 
 export async function saveMessages(conversationId: string, messages: Partial<Message>[]) {
@@ -174,11 +175,10 @@ export async function getTemplates(): Promise<Template[]> {
 }
 
 export async function createTemplate(template: Omit<Template, 'id' | 'user_id'>): Promise<Template> {
-  const data = await request<{ template: Template }>('/api/templates', {
+  return request<Template>('/api/templates', {
     method: 'POST',
     body: JSON.stringify(template),
   });
-  return data.template;
 }
 
 export async function deleteTemplate(id: number) {
@@ -197,11 +197,170 @@ export interface Generation {
 }
 
 export async function getGenerations(page = 1, limit = 20): Promise<{ generations: Generation[]; total: number }> {
-  return request(`/api/generations?page=${page}&limit=${limit}`);
+  const offset = Math.max(0, page - 1) * limit;
+  const data = await request<{
+    generations: Array<Generation & { imageUrls?: string[] }>;
+    total: number;
+  }>(`/api/generations?limit=${limit}&offset=${offset}`);
+  return {
+    total: data.total,
+    generations: (data.generations || []).map((generation) => ({
+      ...generation,
+      image_urls: generation.image_urls || generation.imageUrls,
+    })),
+  };
 }
 
-export async function getGenerationStats() {
-  return request<{ total: number; today: number; videos: number }>('/api/generations/stats');
+export async function getGenerationStats(): Promise<{ total: number; today: number; videos: number }> {
+  const data = await request<{ total: number; today: number; totalVideos: number }>('/api/generations/stats');
+  return {
+    total: data.total,
+    today: data.today,
+    videos: data.totalVideos,
+  };
+}
+
+// ============ 统一联动任务 API ============
+
+export type TaskStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+
+export interface LinkedTask {
+  id: string;
+  kind: string;
+  title: string;
+  status: TaskStatus;
+  origin: 'desktop' | 'mobile' | 'server' | 'migration';
+  input: Record<string, any>;
+  output?: Record<string, any> | null;
+  progress: number;
+  stage: string;
+  error?: string | null;
+  workerDeviceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getTasks(): Promise<{ tasks: LinkedTask[]; total: number }> {
+  return request('/api/tasks');
+}
+
+export async function createTask(prompt: string): Promise<LinkedTask> {
+  const data = await request<{ task: LinkedTask }>('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: 'video.generate',
+      title: prompt.slice(0, 36),
+      origin: 'mobile',
+      input: { prompt },
+      idempotencyKey: `mobile_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    }),
+  });
+  return data.task;
+}
+
+// ============ 离线任务队列（幂等补发） ============
+// 断网时 createTask 失败 → 入本地队列；联网后 flushPendingTasks 按幂等 key 补发。
+// 服务端 taskCreate 对同 idempotency_key 返回已有任务（不重复创建），保证幂等。
+
+const STORAGE_KEY_PENDING_TASKS = 'tszh_pending_tasks';
+
+interface PendingTask {
+  prompt: string;
+  idempotencyKey: string;
+  queuedAt: number;
+}
+
+export async function getPendingTasks(): Promise<PendingTask[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_TASKS);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+// 创建任务：失败自动入离线队列
+export async function createTaskOrQueue(prompt: string): Promise<{ task: LinkedTask | null; queued: boolean }> {
+  const idempotencyKey = `mobile_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  try {
+    const data = await request<{ task: LinkedTask }>('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: 'video.generate',
+        title: prompt.slice(0, 36),
+        origin: 'mobile',
+        input: { prompt },
+        idempotencyKey,
+      }),
+    });
+    return { task: data.task, queued: false };
+  } catch {
+    // 离线：入队，稍后补发
+    const pending = await getPendingTasks();
+    pending.push({ prompt, idempotencyKey, queuedAt: Date.now() });
+    await AsyncStorage.setItem(STORAGE_KEY_PENDING_TASKS, JSON.stringify(pending));
+    return { task: null, queued: true };
+  }
+}
+
+// 联网后补发队列中的任务
+export async function flushPendingTasks(): Promise<{ flushed: number; failed: number }> {
+  const pending = await getPendingTasks();
+  if (pending.length === 0) return { flushed: 0, failed: 0 };
+  let flushed = 0, failed = 0;
+  const remaining: PendingTask[] = [];
+  for (const p of pending) {
+    try {
+      await request<{ task: LinkedTask }>('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'video.generate',
+          title: p.prompt.slice(0, 36),
+          origin: 'mobile',
+          input: { prompt: p.prompt },
+          idempotencyKey: p.idempotencyKey,
+        }),
+      });
+      flushed += 1;
+    } catch {
+      remaining.push(p); // 仍离线，保留
+      failed += 1;
+    }
+  }
+  await AsyncStorage.setItem(STORAGE_KEY_PENDING_TASKS, JSON.stringify(remaining));
+  return { flushed, failed };
+}
+
+export async function taskAction(
+  taskId: string,
+  action: 'pause' | 'resume' | 'cancel' | 'retry'
+): Promise<LinkedTask> {
+  const data = await request<{ task: LinkedTask }>(`/api/tasks/${taskId}/actions`, {
+    method: 'POST',
+    body: JSON.stringify({ action }),
+  });
+  return data.task;
+}
+
+export interface PairedDevice {
+  id: string;
+  name: string;
+  type: 'desktop' | 'mobile' | 'web';
+  status: 'online' | 'offline';
+  pairedAt: string;
+  lastSeen: string;
+}
+
+export async function pairDevice(code: string, name = '我的手机'): Promise<PairedDevice> {
+  const data = await request<{ device: PairedDevice }>('/api/devices/pair', {
+    method: 'POST',
+    body: JSON.stringify({ code, name, type: 'mobile' }),
+  });
+  await setDeviceId(data.device.id);
+  return data.device;
+}
+
+export async function getDevices(): Promise<PairedDevice[]> {
+  const data = await request<{ devices: PairedDevice[] }>('/api/devices');
+  return data.devices || [];
 }
 
 // ============ 通知 API ============

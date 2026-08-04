@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 8,
-    fontFamily: 'monospace',
+    fontFamily: 'GeistMono',
     color: '#5a6a8a',
     letterSpacing: 1,
   },

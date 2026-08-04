@@ -20,7 +20,7 @@ export function NeuProgress({
   label,
   showPercent = false,
   height = 6,
-  color = ['#ffb870', '#e89840'],
+  color = ['#e89840', '#e89840'],
   style,
 }: Props) {
   const clamped = Math.max(0, Math.min(100, value));
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.primary,
     fontWeight: FontWeight.medium,
-    fontFamily: 'monospace',
+    fontFamily: 'GeistMono',
   },
   track: {
     width: '100%',

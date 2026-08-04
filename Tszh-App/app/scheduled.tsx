@@ -55,7 +55,7 @@ export default function ScheduledScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + s(24) }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(12), paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(16) }}>
           <TouchableOpacity onPress={() => router.back()} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel="返回" accessibilityRole="button"><Text style={{ fontSize: sp(18), color: C.text }}>←</Text></TouchableOpacity>
-          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>定时发布</Text>
+          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>定时发布</Text>
         </View>
 
         <Text style={{ fontSize: sp(10), color: C.textSecondary, letterSpacing: 1, opacity: 0.8, paddingHorizontal: s(24), marginBottom: s(8) }}>PROMPT 内容</Text>
@@ -70,7 +70,7 @@ export default function ScheduledScreen() {
         <Text style={{ fontSize: sp(10), color: C.textSecondary, letterSpacing: 1, opacity: 0.8, paddingHorizontal: s(24), marginBottom: s(8) }}>工作模式</Text>
         <View style={{ flexDirection: 'row', paddingHorizontal: s(24), gap: s(12), marginBottom: s(20) }}>
           {(['remix', 'continuous'] as const).map((m) => (
-            <TouchableOpacity key={m} onPress={() => setMode(m)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: s(8), padding: s(12), borderRadius: s(8), backgroundColor: mode === m ? 'rgba(255,184,112,0.08)' : C.cardBg, borderWidth: 1, borderColor: mode === m ? 'rgba(255,184,112,0.3)' : 'rgba(255,255,255,0.04)' }}>
+            <TouchableOpacity key={m} onPress={() => setMode(m)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: s(8), padding: s(12), borderRadius: s(8), backgroundColor: mode === m ? 'rgba(232,152,64,0.08)' : C.cardBg, borderWidth: 1, borderColor: mode === m ? 'rgba(232,152,64,0.3)' : 'rgba(255,255,255,0.04)' }}>
               <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: mode === m ? C.amber : C.textMuted, backgroundColor: mode === m ? C.amber : 'transparent' }} />
               <Text style={{ fontSize: sp(13), color: mode === m ? C.amber : C.textMuted, fontWeight: mode === m ? '600' : '400' }}>{m === 'remix' ? '混剪模式' : '连贯模式'}</Text>
             </TouchableOpacity>

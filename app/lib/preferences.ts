@@ -1,10 +1,14 @@
 // 用户偏好设置管理 — 服务端 SQLite + localStorage 缓存
 
 import { savePrefToServer, savePrefsBatchToServer } from "./server-sync";
+import { currentDataOwner, workspaceDataKey } from "./data-owner";
 
-const PREFS_KEY = "tszh_preferences";
+function preferencesKey() {
+  if (typeof window === "undefined") return "tszh:v2:guest:preferences";
+  return workspaceDataKey(currentDataOwner(localStorage), "preferences");
+}
 
-export type StartPage = "chat" | "opc" | "stats" | "libtv" | "gallery";
+export type StartPage = "chat" | "opc" | "tasks" | "stats" | "libtv" | "gallery";
 
 export interface UserPreferences {
   // 通知偏好
@@ -52,7 +56,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 export function getPreferences(): UserPreferences {
   if (typeof window === "undefined") return DEFAULT_PREFERENCES;
   try {
-    const stored = localStorage.getItem(PREFS_KEY);
+    const stored = localStorage.getItem(preferencesKey());
     if (!stored) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(stored);
     // 合并默认值，防止新增字段缺失
@@ -67,7 +71,7 @@ export function savePreferences(prefs: Partial<UserPreferences>): void {
   if (typeof window === "undefined") return;
   const current = getPreferences();
   const updated = { ...current, ...prefs };
-  localStorage.setItem(PREFS_KEY, JSON.stringify(updated));
+  localStorage.setItem(preferencesKey(), JSON.stringify(updated));
   // 异步同步到服务端
   savePrefsBatchToServer(prefs as Record<string, unknown>).catch(() => {});
 }
@@ -75,7 +79,7 @@ export function savePreferences(prefs: Partial<UserPreferences>): void {
 // 重置偏好
 export function resetPreferences(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(PREFS_KEY);
+  localStorage.removeItem(preferencesKey());
 }
 
 // 获取单个偏好

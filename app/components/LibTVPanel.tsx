@@ -25,7 +25,7 @@ function injectStyle() {
       margin-bottom: 2.5rem;
     }
     .libtv-header h2 {
-      font-family: "GeistPixel-Line", monospace;
+      font-family: var(--font-display), "GeistPixel-Line", monospace;
       font-size: 1.5rem;
       color: var(--glow-warm);
       margin: 0 0 0.5rem;

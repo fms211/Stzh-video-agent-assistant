@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#0f1a35',
     borderWidth: 1,
-    borderColor: 'rgba(255,184,112,0.12)',
+    borderColor: 'rgba(232,152,64,0.12)',
     width: '100%',
   },
 });

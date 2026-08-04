@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 type Props = {
-  onSubmit: (text: string, files: File[]) => void;
+  onSubmit: (text: string, files: File[]) => boolean | void;
   disabled?: boolean;
   onFilesAdded?: (files: File[]) => void;
   externalFiles?: File[];
@@ -53,7 +53,8 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
 
   const send = () => {
     if (!canSend) return;
-    onSubmit(value.trim(), files);
+    const accepted = onSubmit(value.trim(), files);
+    if (accepted === false) return;
     setValue("");
     setFiles([]);
     if (textareaRef.current) {

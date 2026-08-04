@@ -59,7 +59,7 @@ export default function NotificationsScreen() {
       <PageBackground />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + s(80) }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.amber} />}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(12) }}>
-          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>通知中心</Text>
+          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>通知中心</Text>
           <View style={{ flexDirection: 'row', gap: s(12) }}>
             {notifications.length > 0 && <TouchableOpacity onPress={handleDeleteAll} accessibilityLabel="清空所有通知" accessibilityRole="button"><Text style={{ fontSize: sp(12), color: C.textMuted }}>清空</Text></TouchableOpacity>}
             {notifications.some((n) => !n.read) && <TouchableOpacity onPress={handleMarkAllRead} accessibilityLabel="全部标记为已读" accessibilityRole="button"><Text style={{ fontSize: sp(12), color: C.amber }}>全部已读</Text></TouchableOpacity>}

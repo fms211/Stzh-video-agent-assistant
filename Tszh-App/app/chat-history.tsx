@@ -60,7 +60,7 @@ export default function ChatHistoryScreen() {
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(12), paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(16) }}>
           <NeuIconButton icon="←" onPress={() => router.back()} />
-          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>对话历史</Text>
+          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>对话历史</Text>
           <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={handleNewSession} style={{ padding: s(8) }}>
             <Text style={{ fontSize: sp(14), color: C.amber }}>+ 新对话</Text>

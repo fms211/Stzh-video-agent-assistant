@@ -42,7 +42,7 @@ export function NeuIconButton({
         activeOpacity={0.7}
       >
         <LinearGradient
-          colors={['rgba(255,184,112,0.3)', 'rgba(232,152,64,0.15)']}
+          colors={['rgba(232,152,64,0.3)', 'rgba(232,152,64,0.15)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.gradient, { borderRadius }]}

@@ -211,7 +211,7 @@ export default function ActivityCalendar() {
           margin-bottom: 16px;
         }
         .ac-title {
-          font-family: "GeistPixel-Line", var(--font-display), var(--font-sans);
+          font-family: var(--font-display), "GeistPixel-Line", var(--font-sans);
           font-size: 16px; font-weight: 400; color: var(--foreground); margin: 0;
         }
         .ac-body {

@@ -45,10 +45,10 @@ export default function TemplatesScreen() {
       <PageBackground />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + s(80) }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.amber} />}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(12) }}>
-          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>模板管理</Text>
+          <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>模板管理</Text>
           <View style={{ flexDirection: 'row', gap: s(8) }}>
             <TouchableOpacity onPress={() => router.push('/scheduled-list')} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: sp(14) }}>⏰</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => Alert.alert('提示', '新建模板功能开发中')} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(255,184,112,0.15)', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: sp(18), color: C.amber }}>＋</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => Alert.alert('提示', '新建模板功能开发中')} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(232,152,64,0.15)', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: sp(18), color: C.amber }}>＋</Text></TouchableOpacity>
           </View>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingHorizontal: s(24), marginBottom: s(16) }} contentContainerStyle={{ gap: s(8) }}>

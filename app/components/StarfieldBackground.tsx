@@ -3,6 +3,7 @@
 import { useEffect, useRef, useMemo, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import gsap from "gsap";
 
 function createGlowTexture(size: number, falloff: number) {
   const canvas = document.createElement("canvas");
@@ -18,7 +19,7 @@ function createGlowTexture(size: number, falloff: number) {
 }
 let glowTex: THREE.CanvasTexture | null = null;
 function getGlowTexture() {
-  if (!glowTex) glowTex = createGlowTexture(128, 0.15);
+  if (!glowTex) glowTex = createGlowTexture(128, 0.5);
   return glowTex;
 }
 
@@ -28,14 +29,37 @@ function readCSSColor(varname: string): THREE.Color {
   return new THREE.Color(val || "#ffffff");
 }
 
+// 高斯随机（Box-Muller），用于星团内粒子散布
+function gauss() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+type Cluster = { x: number; y: number; s: number };
+
+function makeClusters(spread: number, n: number): Cluster[] {
+  const clusters: Cluster[] = [];
+  for (let i = 0; i < n; i++) {
+    clusters.push({
+      x: (Math.random() - 0.5) * spread,
+      y: (Math.random() - 0.5) * spread * 0.6,
+      s: 0.08 + Math.random() * 0.10,
+    });
+  }
+  return clusters;
+}
+
 // ── Particle Layer with lifecycle + repel/attract ──
 function ParticleLayer({
   count, spread, size, colorVar, opacity, depthBias, thinking,
-  maxAge, repelStrength, attractStrength,
+  maxAge, repelStrength, attractStrength, clusters,
 }: {
   count: number; spread: number; size: number;
   colorVar: string; opacity: number; depthBias: number; thinking: boolean;
   maxAge: number; repelStrength: number; attractStrength: number;
+  clusters?: Cluster[];
 }) {
   const meshRef = useRef<THREE.Points>(null);
   const pointerRef = useRef({ x: 0.5, y: 0.5, down: false, downUntil: 0 });
@@ -47,9 +71,21 @@ function ParticleLayer({
     const pos = new Float32Array(count * 3);
     const orig = new Float32Array(count * 3);
     const st = new Float32Array(count * 6); // age, maxAge, phase, spare, vx, vy
+    const clusterList = clusters && clusters.length > 0
+      ? clusters
+      : makeClusters(spread, 4);
     for (let i = 0; i < count; i++) {
-      const px = (Math.random() - 0.5) * spread;
-      const py = (Math.random() - 0.5) * spread * 0.6;
+      let px: number, py: number;
+      if (clusters && clusters.length > 0 && i % 3 !== 0) {
+        // 2/3 粒子聚向最近星团中心（高斯散布）
+        const c = clusterList[i % clusterList.length];
+        px = c.x + gauss() * c.s * spread * 0.5;
+        py = c.y + gauss() * c.s * spread * 0.5 * 0.6;
+      } else {
+        // 游离尘埃：均匀散布
+        px = (Math.random() - 0.5) * spread;
+        py = (Math.random() - 0.5) * spread * 0.6;
+      }
       pos[i * 3] = px; pos[i * 3 + 1] = py; pos[i * 3 + 2] = depthBias + Math.random() * 2;
       orig[i * 3] = px; orig[i * 3 + 1] = py; orig[i * 3 + 2] = 0;
       st[i * 6] = Math.random() * maxAge;
@@ -60,7 +96,7 @@ function ParticleLayer({
     originRef.current = orig;
     stateRef.current = st;
     return { positions: pos };
-  }, [count, spread, depthBias, maxAge]);
+  }, [count, spread, depthBias, maxAge, clusters]);
 
   const geom = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -206,9 +242,9 @@ function ParticleLayer({
   );
 }
 
-// ── Constellation Lines ──
-function ConstellationLines({ count, spread, threshold, colorVar }: {
-  count: number; spread: number; threshold: number; colorVar: string;
+// ── Constellation Lines（仅工作区星环模式渲染）──
+function ConstellationLines({ count, spread, threshold, colorVar, visible }: {
+  count: number; spread: number; threshold: number; colorVar: string; visible: boolean;
 }) {
   const lineRef = useRef<THREE.LineSegments>(null);
   const cachedColor = useRef(readCSSColor(colorVar));
@@ -243,6 +279,7 @@ function ConstellationLines({ count, spread, threshold, colorVar }: {
     mat.opacity = 0.04 + Math.sin(clock.elapsedTime * 0.3) * 0.015;
   });
 
+  if (!visible) return null;
   return (
     <lineSegments ref={lineRef} geometry={geom}>
       <lineBasicMaterial color="#ffffff" transparent opacity={0.04}
@@ -252,13 +289,37 @@ function ConstellationLines({ count, spread, threshold, colorVar }: {
 }
 
 // ── Scene ──
-function Scene({ thinkingMode }: { thinkingMode: boolean }) {
+function Scene({ thinkingMode, mode }: { thinkingMode: boolean; mode: "dust" | "ring-backdrop" }) {
+  // 入口阶段（dust）：星团尘埃——聚类星团 + 细尘层，无线
+  // 工作区（ring-backdrop）：柔和星野——均匀粒子 + 星座线，为星环让位
+  const clusters = useMemo(() => makeClusters(30, 12), []);
+
+  if (mode === "dust") {
+    return (
+      <>
+        {/* 细尘基底：大范围、小粒子、低透明度——收敛进视口提高可见 */}
+        <ParticleLayer count={800} spread={30} size={0.06}
+          colorVar="--glow-cool" opacity={0.3} depthBias={-1.8} maxAge={40}
+          repelStrength={0.8} attractStrength={0.008} thinking={false} />
+        {/* 星团：聚类粒子，暖色为主 */}
+        <ParticleLayer count={300} spread={30} size={0.11}
+          colorVar="--glow-warm" opacity={0.4} depthBias={-1} maxAge={30}
+          repelStrength={1.0} attractStrength={0.012} thinking={thinkingMode} clusters={clusters} />
+        {/* 星团核心亮点 */}
+        <ParticleLayer count={120} spread={30} size={0.2}
+          colorVar="--foreground" opacity={0.5} depthBias={0.5} maxAge={22}
+          repelStrength={1.3} attractStrength={0.016} thinking={thinkingMode} clusters={clusters} />
+      </>
+    );
+  }
+
+  // ring-backdrop：工作区柔和星野
   return (
     <>
       <ParticleLayer count={150} spread={30} size={0.07}
         colorVar="--glow-cool" opacity={0.3} depthBias={-2} maxAge={30}
         repelStrength={1.2} attractStrength={0.012} thinking={thinkingMode} />
-      <ConstellationLines count={25} spread={26} threshold={5} colorVar="--glow-warm" />
+      <ConstellationLines count={25} spread={26} threshold={5} colorVar="--glow-warm" visible />
       <ParticleLayer count={100} spread={22} size={0.12}
         colorVar="--foreground" opacity={0.35} depthBias={0} maxAge={24}
         repelStrength={1.4} attractStrength={0.015} thinking={thinkingMode} />
@@ -269,8 +330,14 @@ function Scene({ thinkingMode }: { thinkingMode: boolean }) {
   );
 }
 
-export default function StarfieldBackground({ thinkingMode = false }: { thinkingMode?: boolean }) {
+export default function StarfieldBackground({ thinkingMode = false, phase = "splash", morphKey = 0 }: {
+  thinkingMode?: boolean;
+  phase?: string;
+  morphKey?: number;
+}) {
   const [reducedMotion, setReducedMotion] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const mode: "dust" | "ring-backdrop" = phase === "workspace" ? "ring-backdrop" : "dust";
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -280,6 +347,19 @@ export default function StarfieldBackground({ thinkingMode = false }: { thinking
     return () => mq.removeEventListener("change", cb);
   }, []);
 
+  // 幻变：进入工作区时尘埃层收缩退让给星环（reduced motion 直接隐藏到终态）
+  useEffect(() => {
+    if (morphKey === 0 || !wrapRef.current) return;
+    const el = wrapRef.current;
+    if (reducedMotion) {
+      gsap.set(el, { scale: 0.82, opacity: 0.3 });
+      return;
+    }
+    const tl = gsap.timeline();
+    tl.to(el, { scale: 0.82, opacity: 0.3, duration: 0.45, ease: "power2.inOut" });
+    return () => { tl.kill(); };
+  }, [morphKey, reducedMotion]);
+
   if (reducedMotion) {
     return (
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-20 overflow-hidden"
@@ -288,9 +368,9 @@ export default function StarfieldBackground({ thinkingMode = false }: { thinking
   }
 
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-20">
+    <div ref={wrapRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-20">
       <Canvas camera={{ position: [0, 0, 5], fov: 70 }} dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }}>
-        <Scene thinkingMode={thinkingMode} />
+        <Scene thinkingMode={thinkingMode} mode={mode} />
       </Canvas>
     </div>
   );

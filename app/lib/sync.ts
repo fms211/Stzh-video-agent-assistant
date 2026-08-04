@@ -1,12 +1,9 @@
 import { getToken } from "./auth";
+import { currentDataOwner, workspaceDataKey, type DataOwner } from "./data-owner";
 
 const API_BASE = typeof window !== "undefined"
   ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
   : "";
-
-const SESSIONS_KEY = "tszh_sessions";
-const ACTIVE_KEY = "tszh_active";
-const MESSAGES_PREFIX = "tszh_msgs_";
 
 type HistorySession = {
   id: string;
@@ -35,14 +32,31 @@ function lsSet(key: string, value: any) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function owner(): DataOwner {
+  if (typeof window === "undefined") return { kind: "guest" };
+  return currentDataOwner(localStorage);
+}
+
+function sessionsKey(dataOwner = owner()) {
+  return workspaceDataKey(dataOwner, "sessions");
+}
+
+function activeKey(dataOwner = owner()) {
+  return workspaceDataKey(dataOwner, "active");
+}
+
+function messagesKey(id: string, dataOwner = owner()) {
+  return workspaceDataKey(dataOwner, "messages", id);
+}
+
 // === 会话管理 ===
 export function loadSessions(): HistorySession[] {
   if (typeof window === "undefined") return [];
-  return lsGet<HistorySession[]>(SESSIONS_KEY, []);
+  return lsGet<HistorySession[]>(sessionsKey(), []);
 }
 
 export async function saveSessions(sessions: HistorySession[]) {
-  lsSet(SESSIONS_KEY, sessions);
+  lsSet(sessionsKey(), sessions);
 
   // 如果有 token，同步到服务端
   const token = getToken();
@@ -64,11 +78,11 @@ export async function saveSessions(sessions: HistorySession[]) {
 // === 消息管理 ===
 export function loadMessages(id: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
-  return lsGet<ChatMessage[]>(`${MESSAGES_PREFIX}${id}`, []);
+  return lsGet<ChatMessage[]>(messagesKey(id), []);
 }
 
 export async function saveMessages(id: string, messages: ChatMessage[]) {
-  lsSet(`${MESSAGES_PREFIX}${id}`, messages);
+  lsSet(messagesKey(id), messages);
 
   // 如果有 token，同步到服务端
   const token = getToken();
@@ -94,7 +108,7 @@ export async function saveMessages(id: string, messages: ChatMessage[]) {
 
 export function removeMessages(id: string) {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(`${MESSAGES_PREFIX}${id}`);
+  localStorage.removeItem(messagesKey(id));
 
   const token = getToken();
   if (!token) return;
@@ -107,13 +121,13 @@ export function removeMessages(id: string) {
 // === 活跃会话 ===
 export function getActiveSessionId(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACTIVE_KEY);
+  return localStorage.getItem(activeKey());
 }
 
 export function setActiveSessionId(id: string | null) {
   if (typeof window === "undefined") return;
-  if (id) localStorage.setItem(ACTIVE_KEY, id);
-  else localStorage.removeItem(ACTIVE_KEY);
+  if (id) localStorage.setItem(activeKey(), id);
+  else localStorage.removeItem(activeKey());
 }
 
 // === 从服务端拉取会话列表（登录后首次加载） ===
@@ -193,37 +207,44 @@ export async function saveServerSettings(settings: Record<string, any>) {
 }
 
 // === 登录后合并 localStorage 到服务端 ===
-export async function mergeLocalToServer() {
+export async function mergeLocalToServer(): Promise<{ ok: boolean; failed: number }> {
   const token = getToken();
-  if (!token) return;
+  if (!token) return { ok: true, failed: 0 };
+
+  let failed = 0;
+  const attempt = async (url: string, body: unknown) => {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) failed += 1;
+    } catch {
+      failed += 1;
+    }
+  };
 
   try {
     // 合并会话
-    const localSessions = lsGet<HistorySession[]>(SESSIONS_KEY, []);
+    const dataOwner = owner();
+    const localSessions = lsGet<HistorySession[]>(sessionsKey(dataOwner), []);
     if (localSessions.length > 0) {
       for (const s of localSessions) {
-        await fetch(`${API_BASE}/api/conversations`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ id: s.id, title: s.title }),
-        }).catch(() => {});
+        await attempt(`${API_BASE}/api/conversations`, { id: s.id, title: s.title });
       }
     }
 
     // 合并消息
     for (const s of localSessions) {
-      const msgs = lsGet<ChatMessage[]>(`${MESSAGES_PREFIX}${s.id}`, []);
+      const msgs = lsGet<ChatMessage[]>(messagesKey(s.id, dataOwner), []);
       if (msgs.length > 0) {
-        await fetch(`${API_BASE}/api/conversations/${s.id}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            messages: msgs.map((m) => ({
-              id: m.id, role: m.role, text: m.text,
-              payload: m.payload, isError: m.isError, errorText: m.errorText,
-            })),
-          }),
-        }).catch(() => {});
+        await attempt(`${API_BASE}/api/conversations/${s.id}/messages`, {
+          messages: msgs.map((m) => ({
+            id: m.id, role: m.role, text: m.text,
+            payload: m.payload, isError: m.isError, errorText: m.errorText,
+          })),
+        });
       }
     }
 
@@ -232,7 +253,11 @@ export async function mergeLocalToServer() {
     if (theme) {
       await saveServerSettings({ theme });
     }
-  } catch {}
+  } catch {
+    failed += 1;
+  }
+
+  return { ok: failed === 0, failed };
 }
 
 // === 登录后从服务端覆盖 localStorage ===
@@ -244,7 +269,7 @@ export async function syncServerToLocal() {
     // 拉取会话
     const serverSessions = await fetchServerSessions();
     if (serverSessions.length > 0) {
-      lsSet(SESSIONS_KEY, serverSessions);
+      lsSet(sessionsKey(), serverSessions);
     }
 
     // 拉取设置

@@ -26,7 +26,7 @@ export function NeuSection({ title, subtitle, action, style }: Props) {
       {/* 发光分隔线 */}
       <View style={styles.dividerWrapper}>
         <LinearGradient
-          colors={['rgba(255,184,112,0.4)', 'rgba(255,184,112,0.08)', 'rgba(255,184,112,0)']}
+          colors={['rgba(232,152,64,0.4)', 'rgba(232,152,64,0.08)', 'rgba(232,152,64,0)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.dividerGlow}

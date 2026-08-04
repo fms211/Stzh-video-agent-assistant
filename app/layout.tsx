@@ -27,14 +27,25 @@ export const metadata: Metadata = {
   description:
     "腾昇智和短视频智能体交互演示：输入需求，调用智能体生成视频/图片素材并在页面展示结果。",
   applicationName: "腾昇智和",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.json",
   icons: {
-    icon: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml", sizes: "any" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      {
+        url: "/icons/apple-touch-icon.png",
+        type: "image/png",
+        sizes: "180x180",
+      },
+    ],
   },
 };
 
 export const viewport = {
-  themeColor: "#070b12",
+  themeColor: "#050A14",
   colorScheme: "dark light",
 };
 

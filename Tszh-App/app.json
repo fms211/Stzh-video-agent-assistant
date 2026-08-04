@@ -7,14 +7,17 @@
     "icon": "./assets/icon.png",
     "scheme": "tszh-remote",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "backgroundColor": "#050a14"
-    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tszh.remote"
+      "bundleIdentifier": "com.tszh.remote",
+      "icon": {
+        "light": "./assets/ios-icon-light.png",
+        "dark": "./assets/ios-icon-dark.png",
+        "tinted": "./assets/ios-icon-tinted.png"
+      }
     },
     "android": {
+      "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "backgroundColor": "#050a14",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +35,26 @@
       "expo-router",
       "expo-status-bar",
       "expo-font",
-      "expo-splash-screen"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许腾昇智和扫描桌面端生成的设备配对二维码",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050a14",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#050a14",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ]
     ]
   }
 }

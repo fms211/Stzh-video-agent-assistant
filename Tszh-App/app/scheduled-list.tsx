@@ -42,9 +42,9 @@ export default function ScheduledListScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: s(24), paddingTop: insets.top + s(16), paddingBottom: s(16) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(12) }}>
             <TouchableOpacity onPress={() => router.back()} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }} accessibilityLabel="返回" accessibilityRole="button"><Text style={{ fontSize: sp(18), color: C.text }}>←</Text></TouchableOpacity>
-            <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(255,184,112,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>定时任务</Text>
+            <Text style={{ fontSize: sp(20), fontWeight: '700', color: C.amber, letterSpacing: 2, textShadowColor: 'rgba(232,152,64,0.3)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12 }}>定时任务</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/scheduled')} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(255,184,112,0.15)', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: sp(18), color: C.amber }}>＋</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/scheduled')} style={{ width: s(36), height: s(36), borderRadius: s(18), backgroundColor: 'rgba(232,152,64,0.15)', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: sp(18), color: C.amber }}>＋</Text></TouchableOpacity>
         </View>
 
         {error && (

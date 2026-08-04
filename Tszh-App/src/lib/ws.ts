@@ -1,7 +1,7 @@
 // Tszh Remote - WebSocket 客户端
 // 实时接收任务状态推送（可选功能，服务器不支持时静默降级）
 
-import { getServerUrl, getToken } from './api';
+import { getDeviceId, getServerUrl, getToken } from './api';
 
 type MessageHandler = (data: any) => void;
 
@@ -12,7 +12,7 @@ class WsClient {
   private isConnected = false;
   private shouldReconnect = true;
   private retryCount = 0;
-  private maxRetries = 3;
+  private maxRetries = 8;
 
   // 连接 WebSocket
   async connect() {
@@ -27,13 +27,17 @@ class WsClient {
     try {
       const serverUrl = await getServerUrl();
       const token = await getToken();
+      const deviceId = await getDeviceId();
 
       // 将 http:// 转为 ws://
       const wsUrl = serverUrl
         .replace('http://', 'ws://')
         .replace('https://', 'wss://');
 
-      const url = token ? `${wsUrl}/ws/mobile?token=${token}` : `${wsUrl}/ws/mobile`;
+      const params = new URLSearchParams();
+      if (token) params.set('token', token);
+      if (deviceId) params.set('deviceId', deviceId);
+      const url = `${wsUrl}/ws/mobile?${params.toString()}`;
 
       this.ws = new WebSocket(url);
 
@@ -123,6 +127,13 @@ class WsClient {
     this.ws?.close();
     this.ws = null;
     this.isConnected = false;
+  }
+
+  reconnect() {
+    this.disconnect();
+    this.shouldReconnect = true;
+    this.retryCount = 0;
+    this.connect();
   }
 
   // 获取连接状态
