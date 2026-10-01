@@ -7,6 +7,7 @@ type WorkspaceDataKind =
   | "active"
   | "messages"
   | "preferences"
+  | "wallpaper-appearance"
   | "stats"
   | "generation-stats";
 

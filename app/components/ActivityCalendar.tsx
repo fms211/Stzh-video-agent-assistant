@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getStats } from "@/app/lib/tracker";
 
 // 颜色混合函数（模拟 color-mix）
 function mixColors(color1: string, color2: string, weight: number): string {
@@ -35,8 +34,7 @@ function getGreenLevel(count: number, max: number, colors: string[]): string {
   return colors[3];
 }
 
-export default function ActivityCalendar() {
-  const stats = useMemo(() => getStats(), []);
+export default function ActivityCalendar({ daily }: { daily: Record<string, number> }) {
   const [themeKey, setThemeKey] = useState(0);
 
   // 读取主题颜色
@@ -85,7 +83,7 @@ export default function ActivityCalendar() {
 
     while (d <= endDate || currentWeek.length > 0) {
       const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-      const count = stats.daily[dateKey] || 0;
+      const count = daily[dateKey] || 0;
       const isCurrentMonth = d.getMonth() === month && d.getFullYear() === year;
 
       currentWeek.push({ date: new Date(d), count, isCurrentMonth });
@@ -102,10 +100,10 @@ export default function ActivityCalendar() {
     }
     if (currentWeek.length > 0) weeks.push(currentWeek);
 
-    const maxCount = Math.max(1, ...Object.values(stats.daily));
+    const maxCount = Math.max(1, ...Object.values(daily));
 
     return { weeks, maxCount };
-  }, [stats, themeKey]);
+  }, [daily, themeKey]);
 
   const monthLabels = useMemo(() => {
     const labels: { month: string; col: number }[] = [];
@@ -139,7 +137,7 @@ export default function ActivityCalendar() {
   return (
     <div className="activity-calendar">
       <div className="ac-header">
-        <h2 className="ac-title">Active Days</h2>
+        <h2 className="ac-title page-title">生成活动日历</h2>
       </div>
 
       <div className="ac-body">
@@ -184,7 +182,9 @@ export default function ActivityCalendar() {
                         height: cellSize,
                         backgroundColor: getGreenLevel(day.count, calendarData.maxCount, colorsRef.current),
                       }}
-                      title={`${day.date.toLocaleDateString()}: ${day.count} 次调用`}
+                      title={`${day.date.toLocaleDateString()}: ${day.count} 个成功任务`}
+                      role="img"
+                      aria-label={`${day.date.toLocaleDateString()}: ${day.count} 个成功任务`}
                     />
                   );
                 })}
@@ -195,11 +195,11 @@ export default function ActivityCalendar() {
 
         {/* 图例 */}
         <div className="ac-legend">
-          <span className="ac-legend-text">Less</span>
+          <span className="ac-legend-text">少</span>
           {colorsRef.current.map((color, i) => (
             <div key={i} className="ac-cell" style={{ width: cellSize, height: cellSize, backgroundColor: color }} />
           ))}
-          <span className="ac-legend-text">More</span>
+          <span className="ac-legend-text">多</span>
         </div>
       </div>
 
@@ -211,13 +211,12 @@ export default function ActivityCalendar() {
           margin-bottom: 16px;
         }
         .ac-title {
-          font-family: var(--font-display), "GeistPixel-Line", var(--font-sans);
-          font-size: 16px; font-weight: 400; color: var(--foreground); margin: 0;
-        }
+          font-family: var(--font-ui);
+          font-size: var(--text-subheading-size); font-weight: var(--weight-regular); color: var(--foreground); margin: 0; line-height: var(--text-subheading-line); }
         .ac-body {
           background: var(--space-panel);
           border: 1px solid var(--border-subtle);
-          border-radius: 12px;
+          border-radius: var(--shape-control);
           padding: 16px 20px 12px;
         }
         .ac-months {
@@ -227,11 +226,10 @@ export default function ActivityCalendar() {
         }
         .ac-month-label {
           position: absolute;
-          font-size: 11px;
-          color: var(--foreground-muted);
-          font-family: "Geist Mono", monospace;
-          transform: translateX(-50%);
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          font-family: var(--font-code);
+          transform: translateX(-50%); line-height: var(--text-caption-line); }
         .ac-grid-wrap {
           display: flex;
           gap: 4px;
@@ -242,14 +240,13 @@ export default function ActivityCalendar() {
           gap: 0;
         }
         .ac-day-label {
-          font-size: 10px;
-          color: var(--foreground-muted);
-          font-family: "Geist Mono", monospace;
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          font-family: var(--font-code);
           display: flex;
           align-items: center;
           justify-content: flex-end;
-          padding-right: 4px;
-        }
+          padding-right: 4px; line-height: var(--text-caption-line); }
         .ac-grid {
           display: flex;
           gap: 3px;
@@ -260,7 +257,7 @@ export default function ActivityCalendar() {
           gap: 3px;
         }
         .ac-cell {
-          border-radius: 2px;
+          border-radius: 50%;
           transition: opacity 0.15s;
           border: 1px solid rgba(255,255,255,0.06);
         }
@@ -282,10 +279,9 @@ export default function ActivityCalendar() {
           margin-top: 10px;
         }
         .ac-legend-text {
-          font-size: 10px;
-          color: var(--foreground-muted);
-          font-family: "Geist Mono", monospace;
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          font-family: var(--font-code); line-height: var(--text-caption-line); }
       `}</style>
     </div>
   );

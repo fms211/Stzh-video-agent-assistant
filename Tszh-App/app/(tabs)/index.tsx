@@ -1,6 +1,6 @@
 // 手机远程控制台 — 统一任务模型 + WebSocket 实时联动
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -34,7 +34,7 @@ type TaskFilter = 'all' | 'active' | 'completed' | 'failed';
 type TaskAction = 'pause' | 'resume' | 'cancel' | 'retry';
 
 const LABELS: Record<TaskStatus, string> = {
-  queued: '等待桌面',
+  queued: '等待服务器',
   running: '进行中',
   paused: '已暂停',
   completed: '已完成',
@@ -251,14 +251,16 @@ export default function ProcessScreen() {
   const [realtime, setRealtime] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
+  const nextCursorRef = useRef<string | null>(null);
   const [totalTasks, setTotalTasks] = useState(0);
   const PAGE_SIZE = 20;
 
   const loadData = useCallback(async (loadMore = false) => {
     try {
-      const offset = loadMore ? page * PAGE_SIZE : 0;
-      const [data, online] = await Promise.all([getTasks({ limit: PAGE_SIZE, offset }), healthCheck()]);
+      const [data, online] = await Promise.all([getTasks({
+        limit: PAGE_SIZE,
+        cursor: loadMore ? nextCursorRef.current || undefined : undefined,
+      }), healthCheck()]);
       if (loadMore) {
         setTasks((current) => {
           const seen = new Set(current.map((t) => t.id));
@@ -267,6 +269,7 @@ export default function ProcessScreen() {
       } else {
         setTasks(data.tasks || []);
       }
+      nextCursorRef.current = data.nextCursor;
       setTotalTasks(data.total);
       setIsOnline(online);
       setError(null);
@@ -276,11 +279,10 @@ export default function ProcessScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page]);
+  }, []);
 
   const onEndReached = () => {
     if (loading || tasks.length >= totalTasks) return;
-    setPage((p) => p + 1);
     void loadData(true);
   };
 

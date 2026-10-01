@@ -1,148 +1,56 @@
-// OPC 创作助手 — 服务端 API 客户端
-// 优先使用服务端 SQLite，localStorage 作为缓存/离线回退
-
+// OPC API requests pin their original credentials across asynchronous synchronization.
 import type { OpcAgentMessage } from "@/app/components/opc-agent/types";
-import { getToken } from "./auth";
+import { getToken, resolveApiBase } from "./auth";
 
-const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
-  : "";
+export type OpcRequestContext = { base: string; token: string | null };
+export const captureOpcRequestContext = (): OpcRequestContext => ({ base: typeof window === "undefined" ? "" : resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location), token: getToken() });
 
-const isBrowser = typeof window !== "undefined";
-
-// 构建带 JWT 的请求头
-function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json", ...extra };
-  if (isBrowser) {
-    const token = getToken();
-    if (token) h["Authorization"] = `Bearer ${token}`;
-  }
-  return h;
+async function request<T>(path: string, options: RequestInit = {}, context = captureOpcRequestContext()): Promise<T> {
+  const response = await fetch(`${context.base}/api/opc${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(context.token ? { Authorization: `Bearer ${context.token}` } : {}) },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : `会话同步失败（${response.status}）`);
+  return body as T;
 }
 
-// ── 会话管理 ──
+export async function apiCreateSession(id: string, title?: string, context?: OpcRequestContext): Promise<void> {
+  await request("/sessions", { method: "POST", body: JSON.stringify({ id, title }) }, context);
+}
 
-export async function apiCreateSession(id: string, title?: string): Promise<void> {
+export async function apiListSessions(context?: OpcRequestContext, offset = 0): Promise<Array<{ id: string; title: string; updated_at: number; message_count: number; mode?: "chat" | "workflow" | "coze" }>> {
+  const body = await request<{ sessions: Array<{ id: string; title: string; updated_at: number; message_count: number; mode?: "chat" | "workflow" | "coze" }> }>(`/sessions?limit=100&offset=${offset}`, {}, context);
+  return body.sessions;
+}
+
+export async function apiDeleteSession(id: string, context?: OpcRequestContext): Promise<void> {
+  await request(`/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }, context);
+}
+
+export async function apiGetMessages(sessionId: string, limit = 200, context?: OpcRequestContext, offset = 0): Promise<OpcAgentMessage[]> {
+  const body = await request<{ messages: Record<string, unknown>[] }>(`/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}&offset=${offset}`, {}, context);
+  return body.messages.map(message => {
+    const metadata = parseMetadata(message.metadata);
+    return {
+      ...Object.fromEntries(Object.entries(metadata).filter(([key]) => ["isError", "contextTrace", "referenceNotes", "workflowRunId", "workflowStepId", "workflowId", "workflowInput", "workflowName", "workflowIcon", "stepName", "stepIndex", "totalSteps", "cards", "attachments", "ragSources"].includes(key))),
+      id: typeof metadata.clientMessageId === "string" ? metadata.clientMessageId : String(message.id),
+      role: message.role as OpcAgentMessage["role"],
+      content: String(message.content || ""),
+      timestamp: Number(message.timestamp || 0) * 1000,
+    };
+  });
+}
+
+export async function apiBatchAddMessages(sessionId: string, messages: Array<{ id?: string; timestamp?: number; role: string; content: string; metadata?: Record<string, unknown> }>, context?: OpcRequestContext): Promise<number> {
+  const body = await request<{ count: number }>(`/sessions/${encodeURIComponent(sessionId)}/messages/batch`, { method: "POST", body: JSON.stringify({ messages }) }, context);
+  return body.count;
+}
+
+function parseMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
   try {
-    await fetch(`${API_BASE}/api/opc/sessions`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ id, title }),
-    });
-  } catch { /* 离线时忽略 */ }
-}
-
-export async function apiListSessions(): Promise<{ id: string; title: string; updated_at: number; message_count: number }[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions`, { headers: authHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      return data.sessions || [];
-    }
-  } catch { /* 离线 */ }
-  return [];
-}
-
-export async function apiDeleteSession(id: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/api/opc/sessions/${id}`, { method: "DELETE", headers: authHeaders() });
-  } catch { /* 离线 */ }
-}
-
-// ── 消息管理 ──
-
-export async function apiGetMessages(sessionId: string, limit = 200): Promise<OpcAgentMessage[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages?limit=${limit}`, { headers: authHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      return (data.messages || []).map((m: any) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp * 1000, // SQLite unixepoch → JS ms
-        ...parseMetadata(m.metadata),
-      }));
-    }
-  } catch { /* 离线 */ }
-  return [];
-}
-
-export async function apiAddMessage(sessionId: string, role: string, content: string, metadata?: Record<string, unknown>): Promise<string | null> {
-  try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ role, content, metadata }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.id;
-    }
-  } catch { /* 离线 */ }
-  return null;
-}
-
-export async function apiBatchAddMessages(sessionId: string, messages: { role: string; content: string; metadata?: Record<string, unknown> }[]): Promise<number> {
-  try {
-    const res = await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/messages/batch`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ messages }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.count || 0;
-    }
-  } catch { /* 离线 */ }
-  return 0;
-}
-
-export async function apiDeleteMessage(id: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/api/opc/messages/${id}`, { method: "DELETE", headers: authHeaders() });
-  } catch { /* 离线 */ }
-}
-
-// ── 对话压缩 ──
-
-export async function apiCompressSession(sessionId: string, summary: string, keepRecent = 10): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/api/opc/sessions/${sessionId}/compress`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ summary, keepRecent }),
-    });
-  } catch { /* 离线 */ }
-}
-
-// ── 跨会话记忆 ──
-
-export async function apiGetMemory(category?: string): Promise<{ key: string; value: string; category: string }[]> {
-  try {
-    const url = category ? `${API_BASE}/api/opc/memory?category=${category}` : `${API_BASE}/api/opc/memory`;
-    const res = await fetch(url, { headers: authHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      return data.memory || [];
-    }
-  } catch { /* 离线 */ }
-  return [];
-}
-
-export async function apiSetMemory(key: string, value: string, category?: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/api/opc/memory`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ key, value, category }),
-    });
-  } catch { /* 离线 */ }
-}
-
-// ── 工具函数 ──
-
-function parseMetadata(metaStr: string | null): Record<string, unknown> {
-  if (!metaStr) return {};
-  try { return JSON.parse(metaStr); } catch { return {}; }
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
 }

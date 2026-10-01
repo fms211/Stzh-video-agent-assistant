@@ -1,101 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { BASIC_MOVES, COMBO_MOVES, IMG_PARAM_CATEGORIES } from "@/app/data/opc-knowledge";
+import { Video, Clapperboard } from "lucide-react";
+import { ASPECTS, BASIC_MOVES, COMBO_MOVES, DURATIONS, IMG_PARAM_CATEGORIES, STYLE_CATEGORIES, STYLES } from "@/app/data/opc-knowledge";
 import { useAuth } from "./AuthProvider";
 import { getToken } from "@/app/lib/auth";
 import { fetchServerSettings, saveServerSettings } from "@/app/lib/sync";
 
-// ── 风格预设（知识库全量，按类别分组）──
-
-const STYLE_CATEGORIES = [
-  { label: "全部", key: "all" },
-  { label: "东方美学", key: "eastern" },
-  { label: "电影导演", key: "director" },
-  { label: "摄影技法", key: "photo" },
-  { label: "科幻未来", key: "scifi" },
-  { label: "艺术画派", key: "art" },
-  { label: "动画", key: "animation" },
-  { label: "商业视觉", key: "commercial" },
-  { label: "当代视觉", key: "contemporary" },
-];
-
-const STYLES = [
-  // ── 东方美学 ──
-  { cat: "eastern", label: "水墨画", prefix: "traditional Chinese ink wash，黑白灰渐变、留白、笔触感、山水意境、禅意——" },
-  { cat: "eastern", label: "浮世绘", prefix: "Japanese ukiyo-e woodblock print，平面化色彩、清晰轮廓线、装饰性图案——" },
-  { cat: "eastern", label: "敦煌壁画", prefix: "ancient Dunhuang mural art，矿物颜料褪色感、飞天造型、流畅线条——" },
-  { cat: "eastern", label: "丝绸朋克", prefix: "Silkpunk Chinese sci-fi aesthetic，东方竹木机械装置、丝绸+科技融合——" },
-  // ── 电影导演 ──
-  { cat: "director", label: "王家卫", prefix: "in the style of Wong Kar-wai，霓虹灯光、朦胧柔焦、浓郁色彩、都市孤独感——" },
-  { cat: "director", label: "宫崎骏", prefix: "in the style of Hayao Miyazaki，手绘感、自然环境、蓝天白云、治愈氛围——" },
-  { cat: "director", label: "新海诚", prefix: "in the style of Makoto Shinkai，极致光影、天空渲染、光斑散景、青春感——" },
-  { cat: "director", label: "诺兰", prefix: "in the style of Christopher Nolan，冷峻色调、几何构图、大画幅质感、时间感——" },
-  { cat: "director", label: "韦斯·安德森", prefix: "in the style of Wes Anderson，对称构图、柔和粉彩色调、复古质感——" },
-  { cat: "director", label: "张艺谋", prefix: "in the style of Zhang Yimou，高饱和色彩、宏大场面调度、红黄绿对撞——" },
-  { cat: "director", label: "陈凯歌", prefix: "in the style of Chen Kaige，诗意构图、历史厚重感、长镜头运镜——" },
-  { cat: "director", label: "昆汀", prefix: "in the style of Quentin Tarantino，非线性叙事、高对比色调、复古质感、暴力美学——" },
-  { cat: "director", label: "库布里克", prefix: "in the style of Stanley Kubrick，完美对称单点透视、冷峻凝视感、极致几何构图——" },
-  { cat: "director", label: "大卫·芬奇", prefix: "in the style of David Fincher，暗绿色调、低照度灯光、精密摄影机运动——" },
-  { cat: "director", label: "是枝裕和", prefix: "in the style of Hirokazu Kore-eda，自然光拍摄、静态长镜头、日常生活的诗意——" },
-  { cat: "director", label: "今敏", prefix: "in the style of Satoshi Kon，现实与梦境无缝转场、意识流动画、分屏剪辑——" },
-  { cat: "director", label: "维伦纽瓦", prefix: "in the style of Denis Villeneuve，巨构建筑、史诗尺度的空旷感、缓慢沉浸式镜头——" },
-  { cat: "director", label: "雷德利·斯科特", prefix: "in the style of Ridley Scott，烟雾与光束交织的大气透视、世界建造感——" },
-  { cat: "director", label: "蒂姆·波顿", prefix: "in the style of Tim Burton，哥特式童话、黑色幽默、螺旋条纹、暗黑背景对比——" },
-  // ── 摄影技法 ──
-  { cat: "photo", label: "35mm胶片", prefix: "35mm film photography，颗粒感、柔和色调过渡、轻微暗角、复古怀旧——" },
-  { cat: "photo", label: "宝丽来", prefix: "Polaroid instant photo，白色边框、偏色、柔焦、复古色调——" },
-  { cat: "photo", label: "Kodachrome", prefix: "Kodachrome film colors，鲜艳但不刺眼的色彩、偏暖色调、经典柯达色——" },
-  { cat: "photo", label: "黑白纪实", prefix: "black and white documentary photography，高对比度、粗颗粒、真实感——" },
-  { cat: "photo", label: "Vogue大片", prefix: "high fashion editorial photography，精致布光、超模姿态、奢华质感——" },
-  { cat: "photo", label: "蜷川实花", prefix: "in the style of Mika Ninagawa，高饱和色彩、花卉密集、梦幻艳丽——" },
-  { cat: "photo", label: "杉本博司", prefix: "in the style of Hiroshi Sugimoto，黑白长曝光、极简构图、时间凝固感——" },
-  { cat: "photo", label: "荒木经惟", prefix: "in the style of Nobuyoshi Araki，黑白高反差、私摄影、花卉与人体——" },
-  { cat: "photo", label: "布列松", prefix: "in the style of Henri Cartier-Bresson，决定性瞬间、几何构图、黑白街拍——" },
-  { cat: "photo", label: "安妮·莱博维茨", prefix: "in the style of Annie Leibovitz，戏剧化布光、电影感构图、名流肖像——" },
-  { cat: "photo", label: "彼得·林德伯格", prefix: "in the style of Peter Lindbergh，黑白高对比、自然光、不加修饰的真实感——" },
-  { cat: "photo", label: "蒂姆·沃克", prefix: "in the style of Tim Walker，超现实场景搭建、童话奇幻色彩、明亮梦幻——" },
-  { cat: "photo", label: "陈漫", prefix: "in the style of Chen Man，中国元素与时尚融合、高饱和+柔焦——" },
-  // ── 科幻未来 ──
-  { cat: "scifi", label: "太阳朋克", prefix: "Solarpunk aesthetic，绿植覆盖的未来建筑、清洁能源、明亮暖色调阳光——" },
-  { cat: "scifi", label: "蒸汽朋克", prefix: "Steampunk aesthetic，黄铜齿轮机械、维多利亚时代服饰、暖棕铜色调——" },
-  { cat: "scifi", label: "柴油朋克", prefix: "Dieselpunk aesthetic，重型内燃机美学、铆接钢板、战时工业风——" },
-  { cat: "scifi", label: "废土美学", prefix: "post-apocalyptic wasteland，生锈金属、沙尘暴、褪色枯黄、末日荒凉——" },
-  { cat: "scifi", label: "磁带未来", prefix: "Cassette Futurism aesthetic，CRT球面屏幕、笨重物理按钮、70-80年代科幻UI——" },
-  { cat: "scifi", label: "生化朋克", prefix: "Biopunk aesthetic，有机组织与机械融合、基因改造视觉、生物发光——" },
-  { cat: "scifi", label: "霓虹黑色", prefix: "Neon Noir aesthetic，雨夜霓虹倒影、高反差剪影、冷蓝色+品红高光——" },
-  { cat: "scifi", label: "合成波", prefix: "Synthwave Outrun aesthetic，网格线地平线、落日橙色渐变、80年代跑车剪影——" },
-  { cat: "scifi", label: "全息美学", prefix: "holographic display aesthetic，半透明蓝光投影、扫描线、粒子网格——" },
-  { cat: "scifi", label: "线框视觉", prefix: "wireframe neon geometry，发光几何线框、网格空间、Tron式光带——" },
-  { cat: "scifi", label: "液态金属", prefix: "liquid metal reflective surface，流动金属反光曲面、水银质感、镜面反射——" },
-  { cat: "scifi", label: "参数化设计", prefix: "parametric algorithmic geometry，算法生成的有机曲线阵列、Zaha Hadid式流体建筑——" },
-  { cat: "scifi", label: "巨构建筑", prefix: "megastructure sci-fi architecture，超尺度建筑群、层级城市体块、BR2049式巨型方块——" },
-  { cat: "scifi", label: "赛博贫民窟", prefix: "cyberpunk slum aesthetic，密集缠绕电线、潮湿肮脏街巷、密集霓虹招牌——" },
-  { cat: "scifi", label: "极简未来", prefix: "minimalist futuristic architecture，纯白无缝曲面、隐藏式光源、禅意科技感——" },
-  { cat: "scifi", label: "后人类", prefix: "posthuman transhuman aesthetic，超越传统人形、数据化意识流、赛博格改造——" },
-  { cat: "scifi", label: "非洲未来", prefix: "Afrofuturism aesthetic，非洲传统织物+高科技元素、鲜艳大地色系——" },
-  { cat: "scifi", label: "赛博朋克插画", prefix: "cyberpunk digital illustration，霓虹灯色板、高对比、未来城市、机械细节——" },
-  { cat: "scifi", label: "玻璃科技", prefix: "glassmorphism UI aesthetic，磨砂玻璃层叠、透明面板、微光边缘——" },
-  { cat: "scifi", label: "生态建筑", prefix: "arcology eco-city，自给自足的梯形生态城市、植被梯田层叠——" },
-  // ── 艺术画派 ──
-  { cat: "art", label: "印象派", prefix: "Impressionist painting style，捕捉瞬间光影、可见笔触、色彩并置混合——" },
-  { cat: "art", label: "巴洛克", prefix: "Baroque art style，戏剧性明暗对比、动感构图、丰富的金色与深色调——" },
-  { cat: "art", label: "波普艺术", prefix: "Pop art style，鲜艳平涂色块、网点印刷纹理、大众消费品符号——" },
-  { cat: "art", label: "超现实主义", prefix: "Surrealist art style，梦境般的非理性组合、变形与置换、潜意识视觉化——" },
-  { cat: "art", label: "极简主义", prefix: "Minimalist art style，极简几何形、大面积留白/纯色、空间呼吸感——" },
-  { cat: "art", label: "表现主义", prefix: "Expressionist art style，强烈的主观情感表达、扭曲变形、狂野色彩——" },
-  { cat: "art", label: "双重曝光", prefix: "double exposure，人像与风景融合、叠影、象征、情绪化表达强——" },
-  // ── 动画 ──
-  { cat: "animation", label: "皮克斯", prefix: "Pixar style 3D animation，圆润造型、高饱和度材质、精细光线渲染、温暖治愈——" },
-  { cat: "animation", label: "迪士尼经典", prefix: "classic Disney animation style，流畅手绘线条、夸张弹性动作、童话色彩——" },
-  { cat: "animation", label: "京都动画", prefix: "Kyoto Animation style，极致细腻的背景美术、柔和光影、少女感线条——" },
-  { cat: "animation", label: "梦工厂", prefix: "DreamWorks animation style，夸张角色比例、卡通化弹性变形、鲜艳色彩——" },
-  { cat: "animation", label: "卡通沙龙", prefix: "Cartoon Saloon art style，手绘民族艺术感、几何装饰纹样、传统民间美术——" },
-  // ── 商业视觉 ──
-  { cat: "commercial", label: "极简产品", prefix: "minimalist product photography，纯色背景、精确布光、干净构图、细节锐利——" },
-  { cat: "commercial", label: "概念海报", prefix: "artistic movie poster design，创意合成、象征元素、留白构图、视觉冲击——" },
-  { cat: "commercial", label: "Kurzgesagt", prefix: "Kurzgesagt presents，高饱和、扁平化、教育动画感、信息图友好——" },
-];
 
 type Template = { icon: string; label: string; prompt: string };
 
@@ -127,9 +38,6 @@ const DEFAULT_TEMPLATES: Record<string, Template[]> = {
 };
 
 const CATEGORIES = Object.keys(DEFAULT_TEMPLATES) as string[];
-const DURATIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-const ASPECTS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "9:21", "adaptive"];
-
 function loadUserTemplates(): Record<string, Template[]> {
   if (typeof window === "undefined") return {};
   try { return JSON.parse(localStorage.getItem("opc_templates") || "{}"); } catch { return {}; }
@@ -144,12 +52,11 @@ type Props = {
   onTemplateClick: (prompt: string) => void;
   onStyleClick: (prefix: string) => void;
   onParamsChange?: (params: OPCParams) => void;
-  onOpenAgent?: () => void;
 };
 
 // ── 可折叠分类组件 ──
 function CollapsibleSection({ title, icon, count, defaultOpen, children }: {
-  title: string; icon?: string; count?: number; defaultOpen?: boolean; children: React.ReactNode;
+  title: string; icon?: React.ReactNode; count?: number; defaultOpen?: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
@@ -173,7 +80,7 @@ function ParamChip({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
-export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange, onOpenAgent }: Props) {
+export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange }: Props) {
   const { user } = useAuth();
   const [duration, setDuration] = useState(8);
   const [aspect, setAspect] = useState("16:9");
@@ -199,6 +106,14 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
   const [saveCategory, setSaveCategory] = useState(CATEGORIES[0]);
 
   useEffect(() => { setUserTemplates(loadUserTemplates()); }, []);
+
+  // 保存弹窗 ESC 关闭
+  useEffect(() => {
+    if (!showSaveModal) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowSaveModal(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showSaveModal]);
 
   // 登录后从服务端加载 OPC 设置
   useEffect(() => {
@@ -315,30 +230,20 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
 
   return (
     <div className="opc-panel">
-      {/* ── AI 创作助手入口 ── */}
-      {onOpenAgent && (
-        <button type="button" className="opc-ai-trigger" onClick={onOpenAgent}>
-          <span className="opc-ai-trigger-glow" />
-          <span className="opc-ai-trigger-icon">✦</span>
-          <span className="opc-ai-trigger-text">AI 创作助手</span>
-          <span className="opc-ai-trigger-hint">点击或按 ⌘K 开启</span>
-        </button>
-      )}
-
       {/* ── 快捷模板 ── */}
       <div className="opc-section-block">
         <h3 className="opc-section-h">快捷模板</h3>
         <div className="opc-grid">
           {CATEGORIES.map((cat) => (
             <button key={cat} type="button"
-              className={`opc-card edge-glow edge-glow-subtle ${activeCategory === cat ? "active" : ""}`}
+              className={`opc-card edge-glow edge-glow-subtle edge-glow--interactive ${activeCategory === cat ? "active" : ""}`}
               onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}>
               <span className="opc-card-icon">{DEFAULT_TEMPLATES[cat]?.[0]?.icon || "□"}</span>
               <span className="opc-card-label">{cat}</span>
             </button>
           ))}
         </div>
-        <button type="button" className="opc-manage-bar edge-glow edge-glow-subtle"
+        <button type="button" className="opc-manage-bar edge-glow edge-glow-subtle edge-glow--interactive"
           onClick={() => setEditingCategory(activeCategory || CATEGORIES[0])}>
           <span className="opc-manage-bar-icon">＋</span>
           <span className="opc-manage-bar-text">管理自定义模板</span>
@@ -415,7 +320,7 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         <div className="opc-style-grid">
           {filteredStyles.map((s) => (
             <button key={s.label} type="button"
-              className={`opc-style-chip edge-glow edge-glow-subtle ${activeStyle === s.label ? "active" : ""}`}
+              className={`opc-style-chip edge-glow edge-glow-subtle edge-glow--interactive ${activeStyle === s.label ? "active" : ""}`}
               onClick={() => {
                 const next = activeStyle === s.label ? null : s.label;
                 setActiveStyle(next);
@@ -435,7 +340,7 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
           <h3 className="opc-section-h">运镜选择</h3>
           {cameraMove && <button type="button" className="opc-reset-btn" onClick={() => setCameraMove("")}>清除</button>}
         </div>
-        <CollapsibleSection title="基础运镜" icon="📹" count={BASIC_MOVES.length} defaultOpen={true}>
+        <CollapsibleSection title="基础运镜" icon={<Video size={14} strokeWidth={1.8} />} count={BASIC_MOVES.length} defaultOpen={true}>
           <div className="opc-move-grid">
             {BASIC_MOVES.map((m) => (
               <button key={m.name} type="button"
@@ -453,7 +358,7 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
             ))}
           </div>
         </CollapsibleSection>
-        <CollapsibleSection title="组合运镜" icon="🎬" count={COMBO_MOVES.length}>
+        <CollapsibleSection title="组合运镜" icon={<Clapperboard size={14} strokeWidth={1.8} />} count={COMBO_MOVES.length}>
           <div className="opc-move-grid">
             {COMBO_MOVES.map((m) => (
               <button key={m.name} type="button"
@@ -515,6 +420,7 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
             <span className="opc-param-label">时长</span>
             <div className="opc-slider-wrap">
               <input type="range" min={4} max={15} step={1} value={duration}
+                aria-label="视频时长（秒）"
                 onChange={(e) => {
                   const v = Number(e.target.value);
                   setDuration(v);
@@ -548,7 +454,7 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
       {/* ── 保存模板悬浮窗（太空舷窗风格）── */}
       {showSaveModal && (
         <div className="opc-save-overlay" onClick={() => setShowSaveModal(false)}>
-          <div className="opc-save-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="opc-save-modal" role="dialog" aria-modal="true" aria-label="保存模板" onClick={(e) => e.stopPropagation()}>
             <div className="opc-save-porthole">
               <div className="opc-save-porthole-ring" />
               <div className="opc-save-porthole-inner">
@@ -584,21 +490,19 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         .opc-section-block { margin-bottom: 40px; }
         .opc-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
         .opc-section-h {
-          font-family: "GeistPixel-Line", var(--font-display), var(--font-sans);
-          font-size: 18px; font-weight: 400; letter-spacing: 0.06em; margin: 0;
+          font-family: var(--font-ui);
+          font-size: var(--text-heading-size); font-weight: var(--weight-regular); letter-spacing: 0.06em; margin: 0;
           color: var(--glow-warm-soft);
-          text-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 30%, transparent);
-        }
-        .opc-section-count { font-size: 12px; color: var(--foreground-muted); margin-left: 6px; }
+          text-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 30%, transparent); line-height: var(--text-heading-line); }
+        .opc-section-count { font-size: var(--text-caption-size); color: var(--text-muted); margin-left: 6px; line-height: var(--text-caption-line); }
         .opc-reset-btn {
-          padding: 5px 14px; border-radius: 8px; border: 1px solid var(--border-subtle);
-          background: transparent; color: var(--foreground-muted); cursor: pointer;
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 12px; transition: all 0.15s;
-        }
+          padding: 5px 14px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
+          background: transparent; color: var(--text-muted); cursor: pointer;
+          font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-reset-btn:hover { border-color: var(--glow-warm); color: var(--glow-warm); }
 
         /* 折叠面板 */
-        .opc-collapse { margin-bottom: 8px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border-subtle); }
+        .opc-collapse { margin-bottom: 8px; border-radius: var(--shape-control); overflow: hidden; border: 1px solid var(--border-subtle); }
         .opc-collapse-header {
           display: flex; align-items: center; gap: 8px; padding: 10px 14px;
           cursor: pointer; list-style: none; user-select: none;
@@ -606,52 +510,48 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         }
         .opc-collapse-header:hover { background: color-mix(in srgb, var(--space-panel) 80%, var(--glow-warm) 5%); }
         .opc-collapse-header::-webkit-details-marker { display: none; }
-        .opc-collapse-icon { font-size: 12px; color: var(--glow-warm); transition: transform 0.2s; }
+        .opc-collapse-icon { font-size: var(--text-caption-size); color: var(--glow-warm); transition: transform 0.2s; line-height: var(--text-caption-line); }
         .opc-collapse[open] .opc-collapse-icon { transform: rotate(90deg); }
         .opc-collapse-title {
-          flex: 1; font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px;
-          color: var(--foreground); letter-spacing: 0.04em;
-        }
+          flex: 1; font-family: var(--font-ui); font-size: var(--text-label-size);
+          color: var(--foreground); letter-spacing: 0.04em; line-height: var(--text-label-line); }
         .opc-collapse-count {
-          font-size: 11px; color: var(--foreground-muted); background: var(--space-surface);
-          padding: 2px 8px; border-radius: 10px;
-        }
+          font-size: var(--text-caption-size); color: var(--text-muted); background: var(--space-surface);
+          padding: 2px 8px; border-radius: var(--shape-control); line-height: var(--text-caption-line); }
         .opc-collapse-body { padding: 10px 14px 14px; }
 
         /* 运镜网格 */
         .opc-move-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
         .opc-move-btn {
           display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-          padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-subtle);
+          padding: 10px 12px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
           background: var(--space-surface); cursor: pointer; transition: all 0.15s; text-align: left;
         }
         .opc-move-btn:hover { border-color: var(--glow-warm); background: color-mix(in srgb, var(--space-surface) 80%, var(--glow-warm) 5%); }
         .opc-move-btn.active { border-color: var(--glow-warm); background: color-mix(in srgb, var(--glow-warm) 10%, var(--space-surface)); }
-        .opc-move-name { font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; color: var(--foreground); }
-        .opc-move-en { font-size: 10px; color: var(--foreground-muted); font-family: "Geist Mono", monospace; }
-        .opc-move-effect { font-size: 10px; color: var(--glow-cool); }
+        .opc-move-name { font-family: var(--font-ui); font-size: var(--text-label-size); color: var(--foreground); line-height: var(--text-label-line); }
+        .opc-move-en { font-size: var(--text-caption-size); color: var(--text-muted); font-family: var(--font-code); line-height: var(--text-caption-line); }
+        .opc-move-effect { font-size: var(--text-caption-size); color: var(--glow-cool); line-height: var(--text-caption-line); }
 
         /* 参数子分类 */
         .opc-param-sub { margin-bottom: 12px; }
         .opc-param-sub:last-child { margin-bottom: 0; }
         .opc-param-sub-label {
-          font-size: 12px; color: var(--foreground-muted); margin-bottom: 6px; display: block;
-          font-family: "GeistPixel-Line", var(--font-sans); letter-spacing: 0.04em;
-        }
+          font-size: var(--text-caption-size); color: var(--text-muted); margin-bottom: 6px; display: block;
+          font-family: var(--font-ui); letter-spacing: 0.04em; line-height: var(--text-caption-line); }
         .opc-param-chips { display: flex; flex-wrap: wrap; gap: 6px; }
         .opc-param-chip {
-          padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
-          background: var(--space-surface); color: var(--foreground-muted); font-size: 12px;
-          cursor: pointer; font-family: "GeistPixel-Line", var(--font-sans); transition: all 0.15s;
-        }
+          padding: 5px 12px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
+          background: var(--space-surface); color: var(--text-muted); font-size: var(--text-label-size);
+          cursor: pointer; font-family: var(--font-ui); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-param-chip:hover { border-color: var(--glow-cool); color: var(--foreground); }
-        .opc-param-chip.active { background: var(--glow-cool); color: #0a0812; border-color: var(--glow-cool); }
+        .opc-param-chip.active { background: var(--glow-cool); color: var(--on-warm); border-color: var(--glow-cool); }
 
         /* 模板卡片 */
         .opc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
         .opc-card {
           display: flex; flex-direction: column; align-items: center; gap: 8px;
-          padding: 18px 12px; border-radius: 16px;
+          padding: 18px 12px; border-radius: var(--shape-card);
           background: var(--space-panel); border: 1px solid var(--border-subtle);
           cursor: pointer; transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
           box-shadow: 0 4px 16px rgba(0,0,0,0.3); position: relative; z-index: 1;
@@ -659,60 +559,59 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         .opc-card:hover { border-color: var(--glow-warm); transform: translateY(-3px);
           box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 20px color-mix(in srgb, var(--glow-warm) 15%, transparent); }
         .opc-card.active { border-color: var(--glow-warm); background: color-mix(in srgb, var(--glow-warm) 10%, var(--space-panel)); }
-        .opc-card-icon { font-size: 22px; color: var(--glow-warm); position: relative; z-index: 2; }
+        .opc-card-icon { font-size: var(--text-section-size); color: var(--glow-warm); position: relative; z-index: 2; line-height: var(--text-section-line); }
         .opc-card-label {
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 12px;
-          color: var(--foreground-muted); text-align: center; letter-spacing: 0.04em;
-          position: relative; z-index: 2;
-        }
+          font-family: var(--font-ui); font-size: var(--text-caption-size);
+          color: var(--text-muted); text-align: center; letter-spacing: 0.04em;
+          position: relative; z-index: 2; line-height: var(--text-caption-line); }
 
         .opc-manage-bar {
           display: flex; align-items: center; gap: 10px; width: 100%;
-          padding: 14px 20px; border-radius: 14px;
+          padding: 14px 20px; border-radius: var(--shape-card);
           background: var(--space-panel); border: 1px dashed var(--border-subtle);
           cursor: pointer; transition: all 0.2s ease-out; position: relative; z-index: 1;
         }
         .opc-manage-bar:hover { border-color: var(--glow-warm); border-style: solid; }
-        .opc-manage-bar-icon { font-size: 18px; color: var(--glow-warm); flex-shrink: 0; transition: transform 0.2s ease-out; }
+        .opc-manage-bar-icon { font-size: var(--text-heading-size); color: var(--glow-warm); flex-shrink: 0; transition: transform 0.2s ease-out; line-height: var(--text-heading-line); }
         .opc-manage-bar:hover .opc-manage-bar-icon { transform: rotate(90deg); }
-        .opc-manage-bar-text { flex: 1; font-size: 13px; color: var(--foreground-muted); font-family: "GeistPixel-Line", var(--font-sans); letter-spacing: 0.04em; text-align: left; }
-        .opc-manage-bar-arrow { font-size: 16px; color: var(--glow-warm); flex-shrink: 0; transition: transform 0.2s ease-out; }
+        .opc-manage-bar-text { flex: 1; font-size: var(--text-label-size); color: var(--text-muted); font-family: var(--font-ui); letter-spacing: 0.04em; text-align: left; line-height: var(--text-label-line); }
+        .opc-manage-bar-arrow { font-size: var(--text-subheading-size); color: var(--glow-warm); flex-shrink: 0; transition: transform 0.2s ease-out; line-height: var(--text-subheading-line); }
         .opc-manage-bar:hover .opc-manage-bar-arrow { transform: translateX(4px); }
 
         .opc-manager { animation: manager-in 0.3s cubic-bezier(0.16,1,0.3,1); }
         @keyframes manager-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         .opc-manager-top { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
-        .opc-manager-back { padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border-subtle); background: transparent; color: var(--foreground-muted); cursor: pointer; font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; transition: all 0.15s; }
+        .opc-manager-back { padding: 8px 16px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-muted); cursor: pointer; font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-manager-back:hover { border-color: var(--glow-warm); color: var(--glow-warm); }
-        .opc-manager-title { font-family: "GeistPixel-Line", var(--font-sans); font-size: 16px; color: var(--glow-warm-soft); }
+        .opc-manager-title { font-family: var(--font-ui); font-size: var(--text-subheading-size); color: var(--glow-warm-soft); line-height: var(--text-subheading-line); }
         .opc-manager-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-        .opc-manager-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 14px; background: var(--space-surface); border: 1px solid var(--border-subtle); gap: 12px; }
-        .opc-manager-item-label { font-size: 13px; color: var(--foreground); display: block; font-weight: 500; }
-        .opc-manager-item-prompt { font-size: 11px; color: var(--foreground-muted); display: block; margin-top: 2px; line-height: 1.4; }
+        .opc-manager-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: var(--shape-card); background: var(--space-surface); border: 1px solid var(--border-subtle); gap: 12px; }
+        .opc-manager-item-label { font-size: var(--text-label-size); color: var(--foreground); display: block; font-weight: var(--weight-medium); line-height: var(--text-label-line); }
+        .opc-manager-item-prompt { font-size: var(--text-caption-size); color: var(--text-muted); display: block; margin-top: 2px; line-height: var(--text-caption-line); }
         .opc-manager-item-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .opc-manager-use-btn { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--glow-warm); background: transparent; color: var(--glow-warm); cursor: pointer; font-size: 12px; transition: all 0.15s; }
-        .opc-manager-use-btn:hover { background: var(--glow-warm); color: #0a0812; }
-        .opc-manager-del-btn { width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: var(--foreground-muted); cursor: pointer; font-size: 14px; }
+        .opc-manager-use-btn { padding: 6px 14px; border-radius: var(--shape-control); border: 1px solid var(--glow-warm); background: transparent; color: var(--glow-warm); cursor: pointer; font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
+        .opc-manager-use-btn:hover { background: var(--glow-warm); color: var(--on-warm); }
+        .opc-manager-del-btn { width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-label-size); line-height: var(--text-label-line); }
         .opc-manager-del-btn:hover { color: var(--error); }
         .opc-manager-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
-        .opc-manager-input { flex: 1; min-width: 140px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-subtle); background: var(--space-surface); color: var(--foreground); font-family: var(--font-sans); font-size: 13px; outline: none; }
+        .opc-manager-input { flex: 1; min-width: 140px; padding: 10px 14px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle); background: var(--space-surface); color: var(--foreground); font-family: var(--font-sans); font-size: var(--text-label-size); outline: none; line-height: var(--text-label-line); }
         .opc-manager-input:focus { border-color: var(--glow-warm); }
         .opc-manager-input::placeholder { color: var(--foreground-muted); }
         .opc-manager-textarea-wrap { flex: 2; min-width: 200px; }
-        .opc-manager-textarea { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-subtle); background: var(--space-surface); color: var(--foreground); font-family: var(--font-sans); font-size: 13px; outline: none; resize: vertical; min-height: 44px; max-height: 200px; transition: border-color 0.15s; line-height: 1.5; }
+        .opc-manager-textarea { width: 100%; padding: 10px 14px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle); background: var(--space-surface); color: var(--foreground); font-family: var(--font-sans); font-size: var(--text-label-size); outline: none; resize: vertical; min-height: 44px; max-height: 200px; transition: border-color 0.15s; line-height: var(--text-label-line); }
         .opc-manager-textarea:focus { border-color: var(--glow-warm); }
         .opc-manager-textarea::placeholder { color: var(--foreground-muted); }
-        .opc-manager-add-btn { padding: 10px 18px; border-radius: 10px; border: none; background: var(--glow-warm); color: #0a0812; cursor: pointer; font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; transition: all 0.15s; }
+        .opc-manager-add-btn { padding: 10px 18px; border-radius: var(--shape-control); border: none; background: var(--glow-warm); color: var(--on-warm); cursor: pointer; font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-manager-add-btn:hover { background: var(--glow-warm-soft); }
 
         /* ── 传递框 ── */
-        .opc-compose-box { border: 1px solid var(--border-subtle); border-radius: 16px; padding: 20px; background: var(--space-panel); }
-        .opc-compose-hint { font-size: 12px; color: var(--foreground-muted); margin: 0 0 12px; font-family: "GeistPixel-Line", var(--font-sans); }
+        .opc-compose-box { border: 1px solid var(--border-subtle); border-radius: var(--shape-card); padding: 20px; background: var(--space-panel); }
+        .opc-compose-hint { font-size: var(--text-caption-size); color: var(--text-muted); margin: 0 0 12px; font-family: var(--font-ui); line-height: var(--text-caption-line); }
         .opc-compose-textarea {
-          width: 100%; min-height: 120px; padding: 14px 16px; border-radius: 12px;
+          width: 100%; min-height: 120px; padding: 14px 16px; border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle); background: var(--space-surface);
-          color: var(--foreground); font-family: "Geist Sans", var(--font-sans);
-          font-size: 14px; line-height: 1.6; outline: none; resize: vertical;
+          color: var(--foreground); font-family: var(--font-ui);
+          font-size: var(--text-body-size); line-height: var(--text-body-line); outline: none; resize: vertical;
           transition: border-color 0.2s;
         }
         .opc-compose-textarea:focus { border-color: var(--glow-warm); box-shadow: 0 0 16px color-mix(in srgb, var(--glow-warm) 10%, transparent); }
@@ -721,134 +620,51 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
           display: flex; gap: 12px; margin-top: 14px; justify-content: flex-end;
         }
         .opc-compose-confirm {
-          padding: 10px 28px; border-radius: 10px; border: none;
-          background: var(--glow-warm); color: #0a0812;
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 14px; font-weight: 500;
-          cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em;
-        }
+          padding: 10px 28px; border-radius: var(--shape-control); border: none;
+          background: var(--glow-warm); color: var(--on-warm);
+          font-family: var(--font-ui); font-size: var(--text-body-size); font-weight: var(--weight-medium);
+          cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em; line-height: var(--text-body-line); }
         .opc-compose-confirm:hover { background: var(--glow-warm-soft); transform: translateY(-1px); box-shadow: 0 4px 16px color-mix(in srgb, var(--glow-warm) 30%, transparent); }
         .opc-compose-save {
-          padding: 10px 20px; border-radius: 10px;
+          padding: 10px 20px; border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle); background: transparent;
-          color: var(--foreground-muted); font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 13px; cursor: pointer; transition: all 0.15s;
-        }
+          color: var(--text-muted); font-family: var(--font-ui);
+          font-size: var(--text-label-size); cursor: pointer; transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-compose-save:hover { border-color: var(--glow-aurora); color: var(--glow-aurora); }
-        .opc-ai-trigger {
-          position: relative;
-          display: flex; align-items: center; gap: 10px;
-          width: 100%; padding: 12px 18px;
-          border-radius: 12px;
-          border: 1px solid color-mix(in srgb, var(--glow-warm) 18%, transparent);
-          background: linear-gradient(135deg,
-            color-mix(in srgb, var(--glow-warm) 6%, var(--space-panel)) 0%,
-            color-mix(in srgb, var(--glow-cool) 4%, var(--space-panel)) 100%
-          );
-          cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          margin-bottom: 16px; overflow: hidden;
-          outline: none;
-        }
-        .opc-ai-trigger:hover {
-          border-color: color-mix(in srgb, var(--glow-warm) 35%, transparent);
-          transform: translateY(-1px);
-          box-shadow:
-            0 4px 20px color-mix(in srgb, var(--glow-warm) 12%, transparent),
-            0 0 40px color-mix(in srgb, var(--glow-warm) 6%, transparent);
-        }
-        .opc-ai-trigger:active {
-          transform: translateY(0);
-          transition-duration: 0.1s;
-        }
-        .opc-ai-trigger:focus-visible {
-          box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 30%, transparent);
-        }
-
-        .opc-ai-trigger-glow {
-          position: absolute; inset: -1px;
-          border-radius: 12px;
-          background: conic-gradient(
-            from var(--glow-angle, 0deg),
-            color-mix(in srgb, var(--glow-warm) 15%, transparent),
-            color-mix(in srgb, var(--glow-cool) 10%, transparent),
-            color-mix(in srgb, var(--glow-aurora) 10%, transparent),
-            color-mix(in srgb, var(--glow-warm) 15%, transparent)
-          );
-          opacity: 0;
-          transition: opacity 0.3s;
-          pointer-events: none;
-          animation: opc-ai-glow-rotate 6s linear infinite;
-        }
-        .opc-ai-trigger:hover .opc-ai-trigger-glow { opacity: 1; }
-
-        @keyframes opc-ai-glow-rotate { to { --glow-angle: 360deg; } }
-
-        .opc-ai-trigger-icon {
-          font-size: 18px; z-index: 1;
-          color: var(--glow-warm);
-          filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow-warm) 60%, transparent));
-          animation: opc-ai-icon-pulse 3s ease-in-out infinite;
-        }
-        @keyframes opc-ai-icon-pulse {
-          0%, 100% { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow-warm) 60%, transparent)); }
-          50% { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--glow-warm) 80%, transparent)); }
-        }
-
-        .opc-ai-trigger-text {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 14px; color: var(--foreground);
-          letter-spacing: 0.04em; z-index: 1;
-        }
-
-        .opc-ai-trigger-hint {
-          margin-left: auto; z-index: 1;
-          font-size: 10px; color: var(--foreground-muted);
-          padding: 2px 8px; border-radius: 4px;
-          background: color-mix(in srgb, var(--foreground-muted) 8%, transparent);
-          border: 1px solid color-mix(in srgb, var(--foreground-muted) 12%, transparent);
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .opc-ai-trigger { transition: none !important; }
-          .opc-ai-trigger:hover { transform: none !important; }
-          .opc-ai-trigger-glow { animation: none !important; }
-          .opc-ai-trigger-icon { animation: none !important; }
-        }
 
         /* ── 风格标签页 ── */
         .opc-style-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
         .opc-style-tab {
           padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border-subtle);
-          background: transparent; color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 12px; cursor: pointer;
-          transition: all 0.15s; letter-spacing: 0.04em;
-        }
+          background: transparent; color: var(--text-muted);
+          font-family: var(--font-ui); font-size: var(--text-label-size); cursor: pointer;
+          transition: all 0.15s; letter-spacing: 0.04em; line-height: var(--text-label-line); }
         .opc-style-tab:hover { border-color: var(--glow-cool); color: var(--foreground); }
-        .opc-style-tab.active { background: var(--glow-cool); color: #0a0812; border-color: var(--glow-cool); }
+        .opc-style-tab.active { background: var(--glow-cool); color: var(--on-warm); border-color: var(--glow-cool); }
 
         .opc-style-grid { display: flex; flex-wrap: wrap; gap: 10px; }
         .opc-style-chip {
           padding: 10px 18px; border-radius: 999px; border: 1px solid var(--border-subtle);
-          background: var(--space-panel); color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 14px; cursor: pointer;
+          background: var(--space-panel); color: var(--text-muted);
+          font-family: var(--font-ui); font-size: var(--text-label-size); cursor: pointer;
           letter-spacing: 0.04em; transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
-          position: relative; z-index: 1;
-        }
+          position: relative; z-index: 1; line-height: var(--text-label-line); }
         .opc-style-chip:hover { border-color: var(--glow-warm); color: var(--foreground); box-shadow: 0 0 16px color-mix(in srgb, var(--glow-warm) 10%, transparent); }
-        .opc-style-chip.active { background: var(--glow-warm); color: #0a0812; border-color: var(--glow-warm); box-shadow: 0 0 20px color-mix(in srgb, var(--glow-warm) 30%, transparent); }
+        .opc-style-chip.active { background: var(--glow-warm); color: var(--on-warm); border-color: var(--glow-warm); box-shadow: 0 0 20px color-mix(in srgb, var(--glow-warm) 30%, transparent); }
 
         .opc-params { display: flex; flex-direction: column; gap: 24px; }
         .opc-param-group { display: flex; flex-direction: column; gap: 10px; }
-        .opc-param-label { font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; color: var(--foreground-muted); letter-spacing: 0.06em; }
+        .opc-param-label { font-family: var(--font-ui); font-size: var(--text-label-size); color: var(--text-muted); letter-spacing: 0.06em; line-height: var(--text-label-line); }
         .opc-slider-wrap { display: flex; flex-direction: column; gap: 8px; }
-        .opc-slider { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; background: var(--space-surface); outline: none; cursor: pointer; }
+        .opc-slider { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 50%; background: var(--space-surface); outline: none; cursor: pointer; }
         .opc-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--glow-warm); border: 2px solid var(--space-panel); cursor: pointer; box-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 40%, transparent); }
         .opc-slider-ticks { display: flex; justify-content: space-between; }
-        .opc-tick { padding: 3px 8px; border-radius: 8px; border: none; background: transparent; color: var(--foreground-muted); font-size: 11px; cursor: pointer; font-family: var(--font-sans); }
-        .opc-tick.active { color: var(--glow-warm); font-weight: 600; }
+        .opc-tick { padding: 3px 8px; border-radius: var(--shape-control); border: none; background: transparent; color: var(--text-muted); font-size: var(--text-caption-size); cursor: pointer; font-family: var(--font-sans); line-height: var(--text-caption-line); }
+        .opc-tick.active { color: var(--glow-warm); font-weight: var(--weight-semibold); }
         .opc-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .opc-chip { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border-subtle); background: var(--space-panel); color: var(--foreground-muted); font-size: 13px; cursor: pointer; font-family: "GeistPixel-Line", var(--font-sans); letter-spacing: 0.04em; transition: all 0.2s ease-out; }
+        .opc-chip { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border-subtle); background: var(--space-panel); color: var(--text-muted); font-size: var(--text-label-size); cursor: pointer; font-family: var(--font-ui); letter-spacing: 0.04em; transition: all 0.2s ease-out; line-height: var(--text-label-line); }
         .opc-chip:hover { border-color: var(--glow-warm); color: var(--foreground); }
-        .opc-chip.active { background: var(--glow-warm); color: #0a0812; border-color: var(--glow-warm); }
+        .opc-chip.active { background: var(--glow-warm); color: var(--on-warm); border-color: var(--glow-warm); }
 
         /* ── 保存悬浮窗（太空舷窗）── */
         .opc-save-overlay {
@@ -865,13 +681,13 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         .opc-save-porthole {
           position: relative; width: 440px; max-width: 90vw;
           background: var(--space-deep, #050a14);
-          border-radius: 24px; padding: 3px;
+          border-radius: var(--shape-panel); padding: 3px;
           box-shadow: 0 0 60px color-mix(in srgb, var(--glow-warm) 15%, transparent),
                       0 0 120px color-mix(in srgb, var(--glow-cool) 8%, transparent),
                       inset 0 0 40px rgba(0,0,0,0.5);
         }
         .opc-save-porthole-ring {
-          position: absolute; inset: 0; border-radius: 24px; padding: 2px;
+          position: absolute; inset: 0; border-radius: var(--shape-panel); padding: 2px;
           background: conic-gradient(
             from 0deg,
             color-mix(in srgb, var(--glow-warm) 40%, transparent),
@@ -887,54 +703,48 @@ export default function OPCPanel({ onTemplateClick, onStyleClick, onParamsChange
         }
         @keyframes porthole-spin { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
         .opc-save-porthole-inner {
-          border-radius: 22px; padding: 28px 24px;
+          border-radius: var(--shape-panel); padding: 28px 24px;
           background: var(--space-panel, #0a1228);
           position: relative; z-index: 1;
         }
         .opc-save-title {
-          font-family: "GeistPixel-Line", var(--font-display), var(--font-sans);
-          font-size: 16px; font-weight: 400; margin: 0 0 18px;
+          font-family: var(--font-ui);
+          font-size: var(--text-subheading-size); font-weight: var(--weight-regular); margin: 0 0 18px;
           color: var(--glow-warm-soft);
           text-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 30%, transparent);
-          text-align: center; letter-spacing: 0.06em;
-        }
+          text-align: center; letter-spacing: 0.06em; line-height: var(--text-subheading-line); }
         .opc-save-form { display: flex; flex-direction: column; gap: 12px; }
         .opc-save-label {
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 12px;
-          color: var(--foreground-muted); letter-spacing: 0.04em;
-        }
+          font-family: var(--font-ui); font-size: var(--text-caption-size);
+          color: var(--text-muted); letter-spacing: 0.04em; line-height: var(--text-caption-line); }
         .opc-save-input {
-          width: 100%; padding: 10px 14px; border-radius: 10px;
+          width: 100%; padding: 10px 14px; border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle); background: var(--space-surface);
-          color: var(--foreground); font-family: var(--font-sans); font-size: 13px; outline: none;
-        }
+          color: var(--foreground); font-family: var(--font-sans); font-size: var(--text-label-size); outline: none; line-height: var(--text-label-line); }
         .opc-save-input:focus { border-color: var(--glow-warm); }
         .opc-save-categories { display: flex; flex-wrap: wrap; gap: 6px; }
         .opc-save-cat {
-          padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
-          background: transparent; color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 12px; cursor: pointer;
-          transition: all 0.15s;
-        }
+          padding: 6px 12px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
+          background: transparent; color: var(--text-muted);
+          font-family: var(--font-ui); font-size: var(--text-caption-size); cursor: pointer;
+          transition: all 0.15s; line-height: var(--text-caption-line); }
         .opc-save-cat:hover { border-color: var(--glow-cool); color: var(--foreground); }
-        .opc-save-cat.active { background: var(--glow-cool); color: #0a0812; border-color: var(--glow-cool); }
+        .opc-save-cat.active { background: var(--glow-cool); color: var(--on-warm); border-color: var(--glow-cool); }
         .opc-save-preview {
-          padding: 10px 14px; border-radius: 8px; background: var(--space-surface);
-          font-size: 11px; color: var(--foreground-muted); line-height: 1.5;
+          padding: 10px 14px; border-radius: var(--shape-control); background: var(--space-surface);
+          font-size: var(--text-caption-size); color: var(--text-muted); line-height: var(--text-caption-line);
           max-height: 60px; overflow: auto;
         }
         .opc-save-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
         .opc-save-cancel {
-          padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border-subtle);
-          background: transparent; color: var(--foreground-muted); cursor: pointer;
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; transition: all 0.15s;
-        }
+          padding: 8px 18px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
+          background: transparent; color: var(--text-muted); cursor: pointer;
+          font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-save-cancel:hover { border-color: var(--foreground-muted); color: var(--foreground); }
         .opc-save-confirm {
-          padding: 8px 22px; border-radius: 8px; border: none;
-          background: var(--glow-warm); color: #0a0812; cursor: pointer;
-          font-family: "GeistPixel-Line", var(--font-sans); font-size: 13px; transition: all 0.15s;
-        }
+          padding: 8px 22px; border-radius: var(--shape-control); border: none;
+          background: var(--glow-warm); color: var(--on-warm); cursor: pointer;
+          font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
         .opc-save-confirm:hover { background: var(--glow-warm-soft); }
       `}</style>
     </div>

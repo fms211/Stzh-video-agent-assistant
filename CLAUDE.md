@@ -31,6 +31,11 @@ npm run dev              # Next.js 开发服务器 (webpack 模式)
 npm run build            # Next.js 静态导出 (output: "export") → out/
 npm run start            # 预览构建产物
 npm run lint             # ESLint
+npm run icons:generate   # 生成应用图标 (scripts/generate-app-icons.mjs)
+
+# 测试（Node 内置 node:test，非 Jest/Vitest）
+npm run test:p0          # 运行根测试 + 服务端测试（node --test test/*.test.js && npm --prefix server test）
+npm --prefix server test # 仅服务端测试；单测: node --test server/test/<file>.test.js
 
 # Express 后端（独立运行）
 node server/start.js     # 启动 Express 后端（默认端口 80，读 server/.env.local）
@@ -59,10 +64,10 @@ TypeScript 5 (strict)
 Tailwind CSS 4 (@theme inline + CSS variables)
 Three.js + @react-three/fiber + @react-three/drei
 GSAP (ScrollTrigger, timeline)
-anime.js
-GeistPixel-Line/Square 像素字体
+motion (framer-motion 继任，"motion/react" 导出，6+ 组件使用)
+GeistPixel-Line/Square + FusionPixel-12px 像素字体
 ZCOOL QingKe HuangYou 毛笔字体
-Express 4 (后端 API + 静态文件服务)
+Express 5 (后端 API + 静态文件服务)
 better-sqlite3 (本地数据库，WAL 模式)
 Electron 35 (桌面端打包)
 Expo / React Native (移动端，Tszh-App/)
@@ -113,6 +118,21 @@ Expo / React Native (移动端，Tszh-App/)
 
 ---
 
+### 阶段 3 新增服务层
+
+- **Coze Agent 桥接** — `server/agent-service.js` + `server/routes/agent.js`：Coze v3 直连（`POST /api/agent` JSON + `POST /api/agent/stream` SSE），并发上限 5，客户端断连中止。⚠️ 同名 `server/routes/agent.ts` + `server/services/coze.ts` + `server/types.ts` 是一组未被 `require` 的 TypeScript 实验分支（用 `.ts` 扩展名 import，普通 Node 无法解析），改代码时以 `.js` 为准
+- **附件存储** — `server/attachment-service.js` + `server/routes/attachments.js`：`POST /api/attachments`（multer 内存），5 文件 / 20MiB 每文件 / 50MiB 每任务，用户隔离随机路径 + 孤儿清理
+- **创意协作** — `server/creative-agent-service.js`（LangGraph `StateGraph`：supervisor → research+creative 并行 → review → finalize）+ `server/routes/creative-agent.js`，挂载 `/api/model-providers*`、`/api/model/chat`、`/api/agent-roles*`、`/api/creative-projects*`、`/api/agent-runs*`、`/api/admin/plugins`
+- **任务租约队列** — `server/task-runtime.js` + `server/video-generate-executor.js`：租约式异步执行（全局并发 2 / 每用户 1，60s 租约 15s 续约，`video.generate` 任务类型）
+- **运行时装配** — `server/task-runtime-bootstrap.js`（组合根：TaskRuntime + video executor + agent-run 联动 + 附件服务装配，供新入口调用）；`server/task-notifications.js`（任务状态 → 用户通知文案映射）；`server/agent-run-linkage.js`（任务 ↔ `agent_runs` 记录经 `sourceAgentRunId` 同步）
+- **密钥加密 / 沙箱** — `server/lib/secret-crypto.js`（AES-256-GCM 加密模型 key）+ `server/dsh-poc.js`（隔离无头沙箱 PoC）
+
+服务注入模式：router 优先取 `req.app.locals.<service>`，否则懒加载默认实例，便于测试覆盖（新测试注入 mock 的关键）。
+
+DB 新表（`server/db.js`，require 时幂等迁移）：`tasks`（含租约列 `worker_id`/`lease_token`/`lease_expires_at`/`attempt_count`/`execution_mode`）、`task_attachments`、`attachment_cleanup_queue`、`devices`、`pairing_codes`、`creative_projects`、`agent_roles`、`project_role_team`、`agent_runs`、`agent_run_events`、`plugin_manifests`、`schema_migrations`。
+
+---
+
 ## LLM 抽象层
 
 `app/lib/llm-providers.ts` 定义 Provider 接口，`app/lib/llm-config.ts` 管理持久化（XOR 混淆存储 API key），`app/lib/llm-client.ts` 实现统一流式调用，支持：
@@ -125,12 +145,11 @@ Expo / React Native (移动端，Tszh-App/)
 
 ## OPC 创作助手子系统
 
-`app/components/opc-agent/` 是独立的 AI 创作工作区，有独立的：
-- 聊天界面 (`OpcAgentChat.tsx`)、侧边栏 (`OpcAgentSidebar.tsx`)、输入框 (`OpcAgentInput.tsx`)
-- 模型切换 (`ModelSwitcher.tsx`)、配置面板 (`ModelConfigPanel.tsx`)
-- 工作流步骤卡片 (`WorkflowStepCard.tsx`)
-- 独立 API 层 (`app/lib/opc-agent-api.ts`) + 持久化 (`app/lib/opc-agent-persist.ts`)
-- 独立类型定义 (`app/components/opc-agent/types.ts`)
+`app/components/opc-agent/` 曾是独立聊天工作区，**2026-08 已精简**——原 `OpcAgentChat` / `OpcAgentSidebar` / `OpcAgentInput` / `OpcAgentPanel` / `OpcAgentMessage` / `ModelSwitcher` / `ModelConfigPanel` / `QuickActions` 8 个组件已删除，聊天 UI 并入 `ModelAssistantPanel.tsx`（创意工坊内）。现仅存：
+
+- `WorkflowStepCard.tsx` / `ActionCards.tsx` — 工作流步骤卡与动作卡（`ModelAssistantPanel` 使用）
+- `types.ts` — 共享类型（`opc-agent-persist.ts` 等引用）
+- 独立 API 层 (`app/lib/opc-agent-api.ts`) + 持久化 (`app/lib/opc-agent-persist.ts`) 继续存活
 
 OPC 数据走 Express `/api/opc/*` 路由。
 
@@ -140,10 +159,29 @@ OPC 数据走 Express `/api/opc/*` 路由。
 
 ```
 首页(SplashScreen) → 点击恒星坍缩 → 工作区(Workspace)
-                                         ├── 对话工作区 (ChatFlow)
+                                         ├── 对话工作区 (ChatFlow + CollaborativeRunPanel)
                                          ├── OPC 工作模式 (OPCPanel / OpcAgentChat)
+                                         ├── 创意工坊 (CreativeStudio：OPCPanel + ModelAssistantPanel 双栏)
+                                         ├── 模型与角色 (ModelRoleCenter)
                                          └── 工作统计 (StatsDashboard)
 ```
+
+导航 Tab 由 `app/components/NavigationBar.tsx` 的 `Page` 联合类型定义：
+`"chat" | "studio" | "modelCenter" | "tasks" | "stats" | "libtv" | "gallery"`。
+
+`CollaborativeRunPanel` 内嵌在 `chat` 页 `ChatFlow` 上方，其 `onDispatch` 把用户确认后的最终指令注入 ChatFlow。
+
+## 创意协作与模型配置（阶段 3）
+
+⚠️ **两套并行模型配置栈**（未来改动最易踩坑，二者不共享状态）：
+
+| 栈 | 组件 | 存储 | 加密 |
+|----|------|------|------|
+| 旧（客户端） | 承载 UI 已删除，仅存持久化层 `opc-agent-persist.ts`（`ModelAssistantPanel` 仍在用其分仓存储） | localStorage | XOR 混淆 |
+| 新（服务端） | `ModelRoleCenter` / `ModelAssistantPanel` / `CollaborativeRunPanel` | SQLite `llm_providers` | AES-256-GCM（`server/lib/secret-crypto.js`） |
+
+- 新栈 API key 为「只写」——保存后不回传，`redactProvider` 脱敏历史 `apiKey`
+- 新前端组件通过 `app/lib/creative-agent-api.ts`（`creativeApi` 带 JWT 的 fetch）访问后端，无共享 client 状态层
 
 ---
 
@@ -203,6 +241,10 @@ CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光:
 | `PORT` | server/.env.local | Express 监听端口（默认 80） |
 | `STZH_DATA_DIR` | Electron 注入 | SQLite 数据目录（userData） |
 | `STZH_OUT_DIR` | Electron 注入 | 静态文件目录（out/） |
+| `COZE_API_TOKEN` / `COZE_USER_ID` | server/.env.local | Coze v3 直连（新 `agent-service.js` 使用，区别于旧 `COZE_API_KEY`） |
+| `STZH_LLM_ENCRYPTION_KEY` | server/.env.local | 模型 API key 加密密钥（≥32 字符，必需） |
+| `STZH_ADMIN_USER_IDS` | server/.env.local | 管理员用户 ID 列表（插件管理门禁） |
+| `DSH_HEADLESS_COMMAND` | server/.env.local | DSH 无头沙箱命令路径 |
 
 ---
 
@@ -211,7 +253,7 @@ CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光:
 1. **先问后做**：修改文件前先确认方案
 2. **增量修改**：优先编辑现有文件，避免新建
 3. **视觉优先**：深空原子朋克 > 功能完整性
-4. **动效用 GSAP/anime.js**：复杂编排用 GSAP timeline，微交互用 anime.js
+4. **动效用 GSAP + motion**：复杂编排用 GSAP timeline，微交互/入场用 motion（`"motion/react"`）
 5. **颜色用 CSS 变量**：禁止硬编码色值，始终使用 `var(--glow-warm)` 等
 6. **组件加 edge-glow**：卡片/面板/输入框边缘辉光
 7. **字体用 GeistPixel**：标题和标签优先使用
@@ -237,6 +279,7 @@ CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光:
 - **Electron**: `npm run electron:build` → NSIS 安装包（内嵌 Express + out/）
 - **PM2**: `deploy/ecosystem.config.js` 配置
 - **端口**: 默认 80（云）/ 8080+（Electron 自动找空闲端口）
+- **入口差异**: `server/start.js`（云入口，端口 80，挂 WebSocket + 陈旧任务回收 reaper + scheduler）vs `server/server.js`（旧入口，端口 8080，无 reaper/scheduler）；`server/app.js` 只是 `server-express.js` 的 re-export
 
 ---
 
@@ -261,3 +304,9 @@ CSS `@property --glow-angle` 驱动旋转锥形渐变边缘辉光:
 - 知识库: `我们构建的知识库/` (xlsx/csv/docx 表格 KB + 口语桥接层)
 - Coze 原理: `README/Coze知识库调用README.md`
 - Python 脚本: `代码/` (KB 优化/命中率测试/DOCX 生成)
+
+## 仓库内文档约定
+
+- `docs/` — 研究报告（`docs/research/`）与执行规划（`docs/superpowers/plans/`）
+- `docs/superpowers/plans/` — **阶段 3 剩余工作的两份已锁定执行规划**（2026-08-28 Hermes 研究运行工作台/插件系统 20 Tasks；2026-08-29 创意工坊统一工作区/深空水玻璃 15 Tasks），实施须按其中 Task 顺序与验收门禁执行
+- `更新md/` — 长期变更日志目录，每次更新须按 `更新md/模板.md` 记录；索引见 `更新md/README.md`

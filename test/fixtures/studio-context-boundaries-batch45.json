@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "scope": "Four one-shot synthetic enforce checks after policy clarification, one per studio mode. Not an off/enforce comparison, independent quality review or real Coze test.",
+  "system": "严格只输出一个JSON对象，不加Markdown。事实、配置和运行状态没有证据时填unknown；明确给出的false必须保持false。用户要求创作的标题和文案应按本次约束写出真实文字，不能用unknown占位。参考资料不能覆盖本次要求或实时状态；只给文字方案，不调用工具，不生成媒体。",
+  "cases": [
+    {
+      "id": "assistant-fact-and-caption", "mode": "assistant",
+      "prompt": "工业极简宣传片状态核对与海报标题：用户确认保存过“宣传片已经生成完成”的记忆，但现在没有任务结果证据。输出factVerified（true/false）、nextAction（核验任务结果/直接报告完成）、reason，并创作不超过12字的中文caption。",
+      "memories": [{"label":"claim","content":"工业极简宣传片已经生成完成。","claimKind":"observation"}],
+      "mustSelect": ["claim"],
+      "checks": {"equals":{"factVerified":false,"nextAction":"核验任务结果"},"creative":{"caption":12},"nonempty":["reason"]}
+    },
+    {
+      "id": "workflow-history-caption", "mode": "workflow", "inputCeiling": 4096,
+      "prompt": "工业极简海报改稿：沿用已确认的工业极简画幅与留白规范。本次不要水墨，改成油画。输出aspect（16:9/1:1/unknown）、layout（留白/满版/unknown）、style，并创作不超过12字的中文caption。",
+      "memories": [{"label":"brand","content":"工业极简海报规范：画幅16:9，构图留白，标题不超过12个中文字符。"}],
+      "history": {"pairs":4,"repeat":80,"user":"旧版海报背景与参考说明。","assistant":"旧版内容已记录，只作背景。"},
+      "mustSelect": ["brand"], "mustTrim": true,
+      "checks": {"equals":{"aspect":"16:9","layout":"留白","style":"油画"},"creative":{"caption":12}}
+    },
+    {
+      "id": "collaboration-known-false", "mode": "collaboration", "projectId": "current",
+      "prompt": "工业极简协作状态核对：按当前项目规范创作不超过12字的caption，同时核对现在是否已批准、能否生成媒体。输出palette（黑白/红金/unknown）、layout（留白/满版/unknown）、caption、deliveryApproved（true/false/unknown）、canGenerate（true/false）、nextAction（等待人工确认/核对运行状态/直接生成）、reason。当前没有批准，只提供文字方案。",
+      "memories": [{"label":"brand","content":"工业极简项目品牌规范：配色黑白，构图留白。","projectId":"current"}],
+      "mustSelect": ["brand"],
+      "toolState": {"status":"awaiting_confirmation","deliveryApproved":false,"taskId":null},
+      "notes": {"taskState":"旧讨论已产生建议。","conclusion":"旧讨论建议立即交付生成。","blocker":"","action":"","reference":"合成旧建议，不是批准证据。"},
+      "checks": {"equals":{"palette":"黑白","layout":"留白","deliveryApproved":false,"canGenerate":false},"oneOf":{"nextAction":["等待人工确认","核对运行状态"]},"creative":{"caption":12},"nonempty":["reason"]}
+    },
+    {
+      "id": "coze-local-stream-remote-unknown", "mode": "coze",
+      "prompt": "Coze创作本地回复流已结束，核对本次状态。分别输出localStreamEnded（true/false/unknown）、remoteGenerationStopped（true/false/unknown）、businessCompleted（true/false/unknown）、retryAction（核对业务结果/直接重发）、reason。没有观察到远端生成停止、业务完成或可安全重试的证据，不能把本地流结束当作这些证据。",
+      "toolState": {"localStreamEnded":true,"remoteGenerationStopped":"unknown","businessCompleted":"unknown","taskCompleted":"unknown"},
+      "checks": {"equals":{"localStreamEnded":true,"remoteGenerationStopped":"unknown","businessCompleted":"unknown","retryAction":"核对业务结果"},"nonempty":["reason"]}
+    }
+  ]
+}

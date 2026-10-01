@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { Plus, ArrowUp } from "lucide-react";
+import { PluginSlot } from "./plugin-slots/PluginSlot";
 
 type Props = {
   onSubmit: (text: string, files: File[]) => boolean | void;
@@ -8,23 +10,31 @@ type Props = {
   onFilesAdded?: (files: File[]) => void;
   externalFiles?: File[];
   fillText?: string;
+  onTextChange?: (value: string) => void;
 };
 
-export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFiles, fillText }: Props) {
+export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFiles, fillText, onTextChange }: Props) {
   const [value, setValue] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const manualEditRef = useRef(false);
+  const composingRef = useRef(false);
   const canSend = (value.trim().length > 0 || files.length > 0) && !disabled;
 
   useEffect(() => {
-    if (fillText) { setValue(fillText); manualEditRef.current = false; }
+    if (fillText !== undefined && fillText !== value) {
+      setValue(fillText);
+      manualEditRef.current = false;
+    }
+    // value 只用于避免重复写入；外部草稿才是跨模式恢复来源。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fillText]);
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     manualEditRef.current = true;
     setValue(e.target.value);
+    onTextChange?.(e.target.value);
   };
 
   useEffect(() => {
@@ -56,6 +66,7 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
     const accepted = onSubmit(value.trim(), files);
     if (accepted === false) return;
     setValue("");
+    onTextChange?.("");
     setFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -63,6 +74,7 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -71,6 +83,8 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
 
   return (
     <div className="chat-input-anchor edge-glow edge-glow-subtle">
+      {/* 插件槽位：chat.composer.actions（additive，Mock 阶段无贡献时不渲染） */}
+      <PluginSlot slot="chat.composer.actions" contributions={[]} projectId="project-a" />
       {files.length > 0 && (
         <div className="chat-file-preview">
           {files.map((f, i) => (
@@ -91,7 +105,7 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
           aria-label="上传文件"
           title="上传文件"
         >
-          +
+          <Plus size={16} strokeWidth={1.8} />
         </button>
         <input
           ref={fileInputRef}
@@ -110,7 +124,9 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
             handleChange(e);
             resizeTextarea();
           }}
-          onKeyDown={onKeyDown}
+        onKeyDown={onKeyDown}
+        onCompositionStart={() => { composingRef.current = true; }}
+        onCompositionEnd={() => { composingRef.current = false; }}
           placeholder="描述你想生成的视频，或上传参考文件..."
           disabled={disabled}
         />
@@ -121,7 +137,7 @@ export default function ChatInput({ onSubmit, disabled, onFilesAdded, externalFi
           disabled={!canSend}
           aria-label="发送"
         >
-          &uarr;
+          <ArrowUp size={16} strokeWidth={1.8} />
         </button>
       </div>
     </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
-import { Menu, X } from "lucide-react";
+import { Menu, X, FileImage, FileText, FileSpreadsheet, File } from "lucide-react";
 
 export type StagedFile = { id: string; name: string; file: File };
 export type HistorySession = { id: string; title: string; timestamp: number; messageCount: number };
@@ -18,6 +18,8 @@ type Props = {
   onSessionDelete: (id: string) => void;
   onNewChat: () => void;
   onGoHome?: () => void;
+  /** 统一工作台 dock 内使用：隐藏旧 toggle、面板常开 */
+  forceOpen?: boolean;
 };
 
 // 时间分组工具
@@ -54,10 +56,16 @@ export default function LeftSidebar({
   files, onFileClick, onClear,
   sessions, activeSessionId,
   onSessionClick, onSessionDelete, onNewChat, onGoHome,
+  forceOpen = false,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsedSelf, setCollapsedSelf] = useState(true);
+  // 在统一工作台 dock 内时面板常开（开合由 dock 的 rail/docked 控制，不用旧 toggle）
+  const collapsed = forceOpen ? false : collapsedSelf;
   const [tab, setTab] = useState<"files" | "history">("history");
   const [searchQuery, setSearchQuery] = useState("");
+  const newChatButton = useRef<HTMLButtonElement>(null);
+  const deleteButtons = useRef(new Map<string, HTMLButtonElement>());
+  const pendingDeletionFocus = useRef<{ removedId: string; targetId: string | null } | null>(null);
   const hasFiles = files.length > 0;
   const hasSessions = sessions.length > 0;
 
@@ -71,22 +79,41 @@ export default function LeftSidebar({
   // 按时间分组
   const groupedSessions = useMemo(() => groupSessions(filteredSessions), [filteredSessions]);
 
+  useEffect(() => {
+    const pending = pendingDeletionFocus.current;
+    if (!pending || sessions.some((session) => session.id === pending.removedId)) return;
+    const target = pending.targetId ? deleteButtons.current.get(pending.targetId) : newChatButton.current;
+    (target || newChatButton.current)?.focus();
+    pendingDeletionFocus.current = null;
+  }, [sessions]);
+
+  const handleDeleteSession = (id: string, keyboard: boolean) => {
+    if (keyboard) {
+      const index = filteredSessions.findIndex((session) => session.id === id);
+      const target = filteredSessions[index + 1] || filteredSessions[index - 1];
+      pendingDeletionFocus.current = { removedId: id, targetId: target?.id || null };
+    }
+    onSessionDelete(id);
+  };
+
   return (
     <>
-      <button
-        type="button"
-        className={`sidebar-toggle ${!collapsed ? "is-open" : ""}`}
-        onClick={() => setCollapsed(!collapsed)}
-        aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
-      >
-        <span className="sidebar-toggle-icon">{collapsed ? <Menu size={18} strokeWidth={1.8} /> : <X size={18} strokeWidth={1.8} />}</span>
-        {hasFiles && <span className="sidebar-toggle-badge">{files.length}</span>}
-      </button>
+      {!forceOpen && (
+        <button
+          type="button"
+          className={`sidebar-toggle ${!collapsed ? "is-open" : ""}`}
+          onClick={() => setCollapsedSelf(!collapsed)}
+          aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+        >
+          <span className="sidebar-toggle-icon">{collapsed ? <Menu size={18} strokeWidth={1.8} /> : <X size={18} strokeWidth={1.8} />}</span>
+          {hasFiles && <span className="sidebar-toggle-badge">{files.length}</span>}
+        </button>
+      )}
 
-      <div className={`sidebar-panel edge-glow ${!collapsed ? "is-open" : ""}`}>
+      <div className={`sidebar-panel edge-glow ${!collapsed ? "is-open" : ""} ${forceOpen ? "sidebar-panel--docked" : ""}`}>
         {/* New Chat button */}
         <div className="sidebar-new-chat">
-          <button type="button" onClick={onNewChat} className="sidebar-new-chat-btn">
+          <button type="button" ref={newChatButton} onClick={onNewChat} className="sidebar-new-chat-btn">
             + 新对话
           </button>
         </div>
@@ -153,22 +180,26 @@ export default function LeftSidebar({
                   {items.map((s) => (
                     <div
                       key={s.id}
-                      role="button"
-                      tabIndex={0}
                       className={`sidebar-history-item ${s.id === activeSessionId ? "active" : ""}`}
-                      onClick={() => onSessionClick(s.id)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSessionClick(s.id); }}
                     >
-                      <div className="sidebar-history-info">
-                        <span className="sidebar-history-title">{s.title}</span>
-                        <span className="sidebar-history-meta">
-                          {new Date(s.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} · {s.messageCount} 条消息
+                      <button
+                        type="button"
+                        className="sidebar-history-select"
+                        onClick={() => onSessionClick(s.id)}
+                        aria-current={s.id === activeSessionId ? "true" : undefined}
+                      >
+                        <span className="sidebar-history-info">
+                          <span className="sidebar-history-title">{s.title}</span>
+                          <span className="sidebar-history-meta">
+                            {new Date(s.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} · {s.messageCount} 条消息
+                          </span>
                         </span>
-                      </div>
+                      </button>
                       <button
                         type="button"
                         className="sidebar-history-delete"
-                        onClick={(e) => { e.stopPropagation(); onSessionDelete(s.id); }}
+                        ref={(node) => { if (node) deleteButtons.current.set(s.id, node); else deleteButtons.current.delete(s.id); }}
+                        onClick={(event) => handleDeleteSession(s.id, event.detail === 0)}
                         aria-label={`删除 ${s.title}`}
                       >
                         ×
@@ -200,11 +231,11 @@ export default function LeftSidebar({
                     title={`点击添加到输入框：${f.name}`}
                   >
                     <span className="sidebar-file-icon">
-                      {f.file.type.startsWith("image/") ? "▨"
-                        : f.file.type.includes("pdf") ? "▤"
-                        : f.name.endsWith(".docx") ? "◫"
-                        : f.name.endsWith(".xlsx") || f.name.endsWith(".csv") ? "◧"
-                        : "◎"}
+                      {f.file.type.startsWith("image/") ? <FileImage size={15} strokeWidth={1.6} />
+                        : f.file.type.includes("pdf") ? <FileText size={15} strokeWidth={1.6} />
+                        : f.name.endsWith(".docx") ? <FileText size={15} strokeWidth={1.6} />
+                        : f.name.endsWith(".xlsx") || f.name.endsWith(".csv") ? <FileSpreadsheet size={15} strokeWidth={1.6} />
+                        : <File size={15} strokeWidth={1.6} />}
                     </span>
                     <span className="sidebar-file-name">{f.name}</span>
                   </button>
@@ -228,7 +259,7 @@ export default function LeftSidebar({
           gap: 6px;
           padding: 6px 10px;
           margin: 0 8px 4px;
-          border-radius: 8px;
+          border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle);
           background: color-mix(in srgb, var(--space-deep) 60%, transparent);
           transition: border-color 0.2s;
@@ -237,22 +268,20 @@ export default function LeftSidebar({
           border-color: color-mix(in srgb, var(--glow-warm) 40%, transparent);
         }
         .sidebar-search-icon {
-          font-size: 14px;
-          color: var(--foreground-muted);
+          font-size: var(--text-body-size);
+          color: var(--text-muted);
           opacity: 0.6;
-          flex-shrink: 0;
-        }
+          flex-shrink: 0; line-height: var(--text-body-line); }
         .sidebar-search-input {
           flex: 1;
           background: transparent;
           border: none;
           outline: none;
           color: var(--foreground);
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 12px;
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size);
           letter-spacing: 0.02em;
-          min-width: 0;
-        }
+          min-width: 0; line-height: var(--text-caption-line); }
         .sidebar-search-input::placeholder {
           color: var(--foreground-muted);
           opacity: 0.5;
@@ -263,15 +292,14 @@ export default function LeftSidebar({
           border-radius: 50%;
           border: none;
           background: color-mix(in srgb, var(--foreground-muted) 15%, transparent);
-          color: var(--foreground-muted);
-          font-size: 12px;
+          color: var(--text-muted);
+          font-size: var(--text-caption-size);
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
-          transition: all 0.15s;
-        }
+          transition: all 0.15s; line-height: var(--text-caption-line); }
         .sidebar-search-clear:hover {
           background: color-mix(in srgb, var(--error) 20%, transparent);
           color: var(--error);
@@ -282,13 +310,12 @@ export default function LeftSidebar({
         }
         .sidebar-group-label {
           padding: 6px 14px 2px;
-          font-family: "GeistPixel-Square", var(--font-sans);
-          font-size: 9px;
-          color: var(--foreground-muted);
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
           opacity: 0.6;
           letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
+          text-transform: uppercase; line-height: var(--text-caption-line); }
       `}</style>
     </>
   );
@@ -297,6 +324,15 @@ export default function LeftSidebar({
 function SidebarAuth() {
   const router = useRouter();
   const { user, logout } = useAuth();
+
+  // 注入样式（useEffect 内，避免模块作用域副作用 / hydration 风险）
+  useEffect(() => {
+    if (document.getElementById("sidebar-auth-styles")) return;
+    const style = document.createElement("style");
+    style.id = "sidebar-auth-styles";
+    style.textContent = authStyles;
+    document.head.appendChild(style);
+  }, []);
 
   if (user) {
     return (
@@ -321,23 +357,13 @@ const authStyles = `
     border-top: 1px solid var(--border-subtle);
   }
   .sidebar-auth-user {
-    flex: 1; font-size: 12px; color: var(--foreground-muted);
-    font-family: "GeistPixel-Line", var(--font-sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+    flex: 1; font-size: var(--text-caption-size); color: var(--text-muted);
+    font-family: var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--text-caption-line); }
   .sidebar-auth-btn {
-    padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
-    background: transparent; color: var(--foreground-muted); cursor: pointer;
-    font-family: "GeistPixel-Line", var(--font-sans); font-size: 11px; transition: all 0.15s;
-  }
+    padding: 5px 12px; border-radius: var(--shape-control); border: 1px solid var(--border-subtle);
+    background: transparent; color: var(--text-muted); cursor: pointer;
+    font-family: var(--font-ui); font-size: var(--text-label-size); transition: all 0.15s; line-height: var(--text-label-line); }
   .sidebar-auth-btn:hover { border-color: var(--glow-warm); color: var(--glow-warm); }
-  .sidebar-auth-btn.primary { background: var(--glow-warm); color: #0a0812; border-color: var(--glow-warm); }
+  .sidebar-auth-btn.primary { background: var(--glow-warm); color: var(--on-warm); border-color: var(--glow-warm); }
   .sidebar-auth-btn.primary:hover { background: var(--glow-warm-soft); }
 `;
-
-// 注入样式
-if (typeof document !== "undefined" && !document.getElementById("sidebar-auth-styles")) {
-  const style = document.createElement("style");
-  style.id = "sidebar-auth-styles";
-  style.textContent = authStyles;
-  document.head.appendChild(style);
-}

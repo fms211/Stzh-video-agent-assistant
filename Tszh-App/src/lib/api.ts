@@ -7,14 +7,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const DEFAULT_SERVER = 'http://192.168.5.105:8080';
 const STORAGE_KEY_SERVER = 'tszh_server_url';
 const STORAGE_KEY_TOKEN = 'tszh_token';
+const STORAGE_KEY_USER_ID = 'tszh_user_id';
 const STORAGE_KEY_DEVICE_ID = 'tszh_device_id';
+const STORAGE_KEY_PENDING_TASKS = 'tszh_pending_tasks';
 
 // 确保 URL 有协议前缀
 function ensureProtocol(url: string): string {
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `http://${url}`;
-  }
-  return url;
+  const normalized = !url.startsWith('http://') && !url.startsWith('https://')
+    ? `http://${url}`
+    : url;
+  return normalized.replace(/\/+$/, '');
 }
 
 // 获取服务器地址
@@ -25,7 +27,10 @@ export async function getServerUrl(): Promise<string> {
 
 // 设置服务器地址
 export async function setServerUrl(url: string): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY_SERVER, ensureProtocol(url));
+  const next = ensureProtocol(url);
+  const current = await getServerUrl();
+  if (current !== next) await removeToken();
+  await AsyncStorage.setItem(STORAGE_KEY_SERVER, next);
 }
 
 // 获取 Token
@@ -38,17 +43,46 @@ export async function setToken(token: string): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY_TOKEN, token);
 }
 
+async function setUserId(userId: unknown): Promise<void> {
+  if (typeof userId === 'number' || typeof userId === 'string') {
+    await AsyncStorage.setItem(STORAGE_KEY_USER_ID, String(userId));
+  }
+}
+
 // 清除 Token
 export async function removeToken(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY_TOKEN);
+  await AsyncStorage.removeItem(STORAGE_KEY_USER_ID);
+}
+
+async function scopedStorageKey(base: string): Promise<string> {
+  const [serverUrl, userId] = await Promise.all([
+    getServerUrl(),
+    AsyncStorage.getItem(STORAGE_KEY_USER_ID),
+  ]);
+  return `${base}:${encodeURIComponent(serverUrl)}:${userId ? `user:${userId}` : 'anonymous'}`;
+}
+
+async function migrateLegacyScopedValue(base: string, target: string): Promise<void> {
+  const userId = await AsyncStorage.getItem(STORAGE_KEY_USER_ID);
+  if (!userId) return;
+  const marker = `${base}:scoped-migration-complete`;
+  if (await AsyncStorage.getItem(marker)) return;
+  const legacy = await AsyncStorage.getItem(base);
+  if (legacy !== null && await AsyncStorage.getItem(target) === null) {
+    await AsyncStorage.setItem(target, legacy);
+  }
+  await AsyncStorage.setItem(marker, '1');
 }
 
 export async function getDeviceId(): Promise<string | null> {
-  return AsyncStorage.getItem(STORAGE_KEY_DEVICE_ID);
+  const key = await scopedStorageKey(STORAGE_KEY_DEVICE_ID);
+  await migrateLegacyScopedValue(STORAGE_KEY_DEVICE_ID, key);
+  return AsyncStorage.getItem(key);
 }
 
 export async function setDeviceId(deviceId: string): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY_DEVICE_ID, deviceId);
+  await AsyncStorage.setItem(await scopedStorageKey(STORAGE_KEY_DEVICE_ID), deviceId);
 }
 
 // 通用请求函数
@@ -89,6 +123,7 @@ export async function login(username: string, password: string) {
     body: JSON.stringify({ username, password }),
   });
   await setToken(data.token);
+  await setUserId(data.user?.id);
   return data;
 }
 
@@ -98,6 +133,7 @@ export async function register(username: string, password: string, displayName?:
     body: JSON.stringify({ username, password, displayName }),
   });
   await setToken(data.token);
+  await setUserId(data.user?.id);
   return data;
 }
 
@@ -240,11 +276,12 @@ export interface LinkedTask {
   updatedAt: string;
 }
 
-export async function getTasks(options?: { status?: string; limit?: number; offset?: number }): Promise<{ tasks: LinkedTask[]; total: number }> {
+export async function getTasks(options?: { status?: string; limit?: number; offset?: number; cursor?: string }): Promise<{ tasks: LinkedTask[]; total: number; nextCursor: string | null }> {
   const params = new URLSearchParams();
   if (options?.status) params.set('status', options.status);
   if (options?.limit) params.set('limit', String(options.limit));
   if (options?.offset) params.set('offset', String(options.offset));
+  if (options?.cursor) params.set('cursor', options.cursor);
   const qs = params.toString();
   return request(`/api/tasks${qs ? `?${qs}` : ''}`);
 }
@@ -267,8 +304,6 @@ export async function createTask(prompt: string): Promise<LinkedTask> {
 // 断网时 createTask 失败 → 入本地队列；联网后 flushPendingTasks 按幂等 key 补发。
 // 服务端 taskCreate 对同 idempotency_key 返回已有任务（不重复创建），保证幂等。
 
-const STORAGE_KEY_PENDING_TASKS = 'tszh_pending_tasks';
-
 interface PendingTask {
   prompt: string;
   idempotencyKey: string;
@@ -277,7 +312,9 @@ interface PendingTask {
 
 export async function getPendingTasks(): Promise<PendingTask[]> {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY_PENDING_TASKS);
+    const key = await scopedStorageKey(STORAGE_KEY_PENDING_TASKS);
+    await migrateLegacyScopedValue(STORAGE_KEY_PENDING_TASKS, key);
+    const raw = await AsyncStorage.getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
@@ -301,7 +338,7 @@ export async function createTaskOrQueue(prompt: string): Promise<{ task: LinkedT
     // 离线：入队，稍后补发
     const pending = await getPendingTasks();
     pending.push({ prompt, idempotencyKey, queuedAt: Date.now() });
-    await AsyncStorage.setItem(STORAGE_KEY_PENDING_TASKS, JSON.stringify(pending));
+    await AsyncStorage.setItem(await scopedStorageKey(STORAGE_KEY_PENDING_TASKS), JSON.stringify(pending));
     return { task: null, queued: true };
   }
 }
@@ -330,7 +367,7 @@ export async function flushPendingTasks(): Promise<{ flushed: number; failed: nu
       failed += 1;
     }
   }
-  await AsyncStorage.setItem(STORAGE_KEY_PENDING_TASKS, JSON.stringify(remaining));
+  await AsyncStorage.setItem(await scopedStorageKey(STORAGE_KEY_PENDING_TASKS), JSON.stringify(remaining));
   return { flushed, failed };
 }
 
@@ -371,7 +408,7 @@ export async function getDevices(): Promise<PairedDevice[]> {
 // ============ 通知 API ============
 
 export interface Notification {
-  id: number;
+  id: string;
   title: string;
   message: string;
   type: string;
@@ -380,11 +417,18 @@ export interface Notification {
 }
 
 export async function getNotifications(): Promise<Notification[]> {
-  const data = await request<{ notifications: Notification[] }>('/api/notifications');
-  return data.notifications || [];
+  const data = await request<{ notifications: Array<Notification & { read: boolean | number; created_at: string | number }> }>('/api/notifications');
+  return (data.notifications || []).map((notification) => ({
+    ...notification,
+    id: String(notification.id),
+    read: Boolean(notification.read),
+    created_at: typeof notification.created_at === 'number'
+      ? new Date(notification.created_at * 1000).toISOString()
+      : notification.created_at,
+  }));
 }
 
-export async function markNotificationRead(id: number) {
+export async function markNotificationRead(id: string) {
   return request(`/api/notifications/${id}/read`, { method: 'POST' });
 }
 

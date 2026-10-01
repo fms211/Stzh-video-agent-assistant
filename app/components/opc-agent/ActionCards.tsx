@@ -45,7 +45,7 @@ export default function ActionCards({ cards, onAction }: Props) {
         }
         .action-card {
           display: flex; align-items: center; gap: 8px;
-          padding: 10px 14px; border-radius: 10px;
+          padding: 10px 14px; border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle);
           background: var(--space-surface);
           cursor: pointer; transition: all 0.2s;
@@ -62,7 +62,7 @@ export default function ActionCards({ cards, onAction }: Props) {
           box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 30%, transparent);
         }
         .action-card-icon {
-          width: 32px; height: 32px; border-radius: 8px;
+          width: 32px; height: 32px; border-radius: var(--shape-control);
           display: flex; align-items: center; justify-content: center;
           background: color-mix(in srgb, var(--glow-warm) 10%, transparent);
           color: var(--glow-warm); flex-shrink: 0;
@@ -71,13 +71,11 @@ export default function ActionCards({ cards, onAction }: Props) {
           display: flex; flex-direction: column; gap: 1px; min-width: 0;
         }
         .action-card-title {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 11px; color: var(--foreground);
-        }
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size); color: var(--foreground); line-height: var(--text-caption-line); }
         .action-card-desc {
-          font-size: 9px; color: var(--foreground-muted);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
+          font-size: var(--text-caption-size); color: var(--text-muted);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--text-caption-line); }
 
         @media (max-width: 640px) {
           .action-cards { flex-direction: column; }

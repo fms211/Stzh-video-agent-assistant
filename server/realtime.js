@@ -6,6 +6,8 @@ const db = require("./db.js");
 const { JWT_SECRET } = require("./routes/auth.js");
 const { bus, publish } = require("./events.js");
 const { serializeTask } = require("./routes/tasks.js");
+const { syncAgentRunFromTask } = require("./agent-run-linkage.js");
+const { createTaskNotification } = require("./task-notifications.js");
 
 function send(socket, message) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -13,8 +15,9 @@ function send(socket, message) {
   }
 }
 
-function attachRealtime(server) {
+function attachRealtime(server, options = {}) {
   if (server.stzhRealtime) return server.stzhRealtime;
+  const runtimeFor = () => options.taskRuntime || server.stzhTaskRuntime || null;
 
   const wss = new WebSocketServer({
     noServer: true,
@@ -98,6 +101,15 @@ function attachRealtime(server) {
           message.payload || {}
         );
         if (result.task && !result.reason) {
+          const runtime = runtimeFor();
+          const action = String(message.payload?.action || "");
+          if (action === "pause" || action === "cancel") runtime?.abortTask?.(result.task.id);
+          if (action === "resume" || action === "retry") runtime?.wake?.();
+          syncAgentRunFromTask(db, result.task, user.userId);
+          const notification = createTaskNotification(db, result.task, user.userId);
+          if (notification?.created) {
+            publish(user.userId, "notification.created", { notification: notification.notification });
+          }
           publish(user.userId, "task.updated", { task: serializeTask(result.task) });
         } else {
           send(socket, {

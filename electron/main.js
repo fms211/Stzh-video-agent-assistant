@@ -52,6 +52,7 @@ function waitForPort(port, timeout = 30000) {
 // ── 内嵌 Express 后端 ──
 let backendServer = null;
 let realtimeServer = null;
+let taskRuntime = null;
 
 function startBackend() {
   return new Promise(async (resolve, reject) => {
@@ -86,12 +87,23 @@ function startBackend() {
 
       // 直接 require Express 应用
       const expressApp = require(path.join(SERVER_DIR, "app.js"));
+      const { startProductionTaskRuntime } = require(path.join(SERVER_DIR, "task-runtime-bootstrap.js"));
+      const runtimeState = startProductionTaskRuntime();
+      taskRuntime = runtimeState.runtime;
+      expressApp.locals.taskRuntime = taskRuntime;
+      expressApp.locals.taskRuntimeState = runtimeState;
       backendServer = expressApp.listen(port, () => {
         const { attachRealtime } = require(path.join(SERVER_DIR, "realtime.js"));
+        backendServer.stzhTaskRuntime = taskRuntime;
         realtimeServer = attachRealtime(backendServer);
+        console.log(runtimeState.enabled
+          ? "[Electron] 服务端任务运行时已启用"
+          : "[Electron] 服务端任务运行时未启用：缺少 Coze 运行配置");
         console.log(`[Electron] 后端已启动: http://localhost:${port}`);
         resolve(port);
       });
+
+      backendServer.on("close", () => { void taskRuntime?.stop(); });
 
       backendServer.on("error", (e) => {
         console.error("[Electron] 后端启动失败:", e.message);
@@ -173,6 +185,8 @@ function createTray() {
 
 // ── 清理 ──
 function cleanup() {
+  void taskRuntime?.stop();
+  taskRuntime = null;
   if (realtimeServer) {
     try { realtimeServer.close(); } catch {}
     realtimeServer = null;

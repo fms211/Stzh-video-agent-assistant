@@ -169,24 +169,18 @@ test("username-only password reset is not exposed", async () => {
 });
 
 test("canonical server exposes authenticated SSE agent streaming", async () => {
-  const originalFetch = global.fetch;
-  const encoder = new TextEncoder();
-  global.fetch = async () => new Response(new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoder.encode(
-        'event: conversation.message.delta\n' +
-        'data: {"role":"assistant","type":"answer","content":"hello "}\n\n' +
-        'event: conversation.message.completed\n' +
-        'data: {"role":"assistant","type":"answer","content":"hello world"}\n\n' +
-        'event: conversation.chat.completed\n' +
-        'data: {}\n\n'
-      ));
-      controller.close();
+  const previousService = app.locals.agentService;
+  app.locals.agentService = {
+    async generate(options) {
+      await options.onDelta?.("hello ");
+      return {
+        text: "hello world",
+        followUps: [],
+        conversationId: "p0-mock-conversation",
+        chatId: "p0-mock-chat",
+      };
     },
-  }), {
-    status: 200,
-    headers: { "Content-Type": "text/event-stream" },
-  });
+  };
 
   try {
     const { response, body } = await request("/api/agent/stream", {
@@ -201,7 +195,8 @@ test("canonical server exposes authenticated SSE agent streaming", async () => {
     assert.match(body, /event: done/);
     assert.match(body, /hello world/);
   } finally {
-    global.fetch = originalFetch;
+    if (previousService === undefined) delete app.locals.agentService;
+    else app.locals.agentService = previousService;
   }
 });
 

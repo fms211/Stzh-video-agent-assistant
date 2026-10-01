@@ -1,8 +1,7 @@
 // 通知管理工具 — 服务端 SQLite + localStorage 缓存
 
 import { addNotificationToServer, markAllReadOnServer, clearNotificationsOnServer } from "./server-sync";
-
-const NOTIF_KEY = "tszh_notifications";
+import { notificationCacheKey } from "./notification-client";
 
 export type NotificationType = "success" | "error" | "info";
 
@@ -24,7 +23,7 @@ function createId(): string {
 export function getNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   try {
-    const stored = localStorage.getItem(NOTIF_KEY);
+    const stored = localStorage.getItem(notificationCacheKey());
     if (!stored) return [];
     return JSON.parse(stored).map((n: any) => ({ ...n, time: new Date(n.time) }));
   } catch {
@@ -48,34 +47,34 @@ export function addNotification(title: string, message: string, type: Notificati
 
   // 最多保留 50 条通知
   const updated = [newNotif, ...notifications].slice(0, 50);
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(updated));
+  localStorage.setItem(notificationCacheKey(), JSON.stringify(updated));
 
   // 触发自定义事件，通知 NavigationBar 更新
   window.dispatchEvent(new CustomEvent("tszh_notification_added", { detail: newNotif }));
 
   // 同步到服务端
-  addNotificationToServer(newNotif.id, title, message, type).catch(() => {});
+  addNotificationToServer(newNotif.id, title, message, type)
+    .then(() => window.dispatchEvent(new CustomEvent("tszh_notification_added")))
+    .catch(() => {});
 }
 
 // 标记单条已读
 export function markAsRead(id: string): void {
   const notifications = getNotifications();
   const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(updated));
+  localStorage.setItem(notificationCacheKey(), JSON.stringify(updated));
 }
 
 // 标记全部已读
-export function markAllAsRead(): void {
-  const notifications = getNotifications();
-  const updated = notifications.map((n) => ({ ...n, read: true }));
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(updated));
-  markAllReadOnServer().catch(() => {});
+export async function markAllAsRead(): Promise<void> {
+  await markAllReadOnServer();
+  window.dispatchEvent(new CustomEvent("tszh_notification_added"));
 }
 
 // 清空通知
-export function clearAllNotifications(): void {
-  localStorage.removeItem(NOTIF_KEY);
-  clearNotificationsOnServer().catch(() => {});
+export async function clearAllNotifications(): Promise<void> {
+  await clearNotificationsOnServer();
+  window.dispatchEvent(new CustomEvent("tszh_notification_added"));
 }
 
 // 获取未读数

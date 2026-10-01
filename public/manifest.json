@@ -1,7 +1,7 @@
 {
-  "name": "腾昇智和 · 短视频智能体",
-  "short_name": "腾昇智和",
-  "description": "腾昇智和短视频智能体交互展示与调用页面。",
+  "name": "Stzh·video agent assistant",
+  "short_name": "Stzh",
+  "description": "AI视频创作工作台 · AI video creation workspace",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050A14",

@@ -2,13 +2,16 @@
 
 import { savePrefToServer, savePrefsBatchToServer } from "./server-sync";
 import { currentDataOwner, workspaceDataKey } from "./data-owner";
+import { migrateStartPage, type MappedStartPage } from "./appearance-types";
+import { DEFAULT_GALAXY_SETTINGS, normalizeGalaxySettings, type GalaxySettings } from "./galaxy-settings";
+import { DEFAULT_COZE_GLOW, normalizeCozeGlow, type CozeGlowSettings } from "./coze-dialogue-settings";
 
 function preferencesKey() {
   if (typeof window === "undefined") return "tszh:v2:guest:preferences";
   return workspaceDataKey(currentDataOwner(localStorage), "preferences");
 }
 
-export type StartPage = "chat" | "opc" | "tasks" | "stats" | "libtv" | "gallery";
+export type StartPage = MappedStartPage;
 
 export interface UserPreferences {
   // 通知偏好
@@ -24,7 +27,9 @@ export interface UserPreferences {
   startPage: StartPage;            // 起始页
   particleEffects: boolean;        // 粒子效果开关
   reducedMotion: boolean;          // 减少动画（无障碍）
-  cursorTrail: boolean;            // 鼠标拖尾效果
+  cursorTrail: boolean;            // 兼容旧偏好字段；鼠标拖尾暂时停用
+  galaxySettings: GalaxySettings;  // 银河星场：官网可调参数与主题配色
+  cozeGlow: CozeGlowSettings;
 
   // 导出设置
   exportFormat: "markdown" | "json" | "txt";  // 默认导出格式
@@ -42,10 +47,12 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   historyDays: 0,
 
   // 界面设置
-  startPage: "chat",
+  startPage: "studio",
   particleEffects: true,
   reducedMotion: false,
-  cursorTrail: true,
+  cursorTrail: false,
+  galaxySettings: DEFAULT_GALAXY_SETTINGS,
+  cozeGlow: DEFAULT_COZE_GLOW,
 
   // 导出设置
   exportFormat: "markdown",
@@ -60,7 +67,7 @@ export function getPreferences(): UserPreferences {
     if (!stored) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(stored);
     // 合并默认值，防止新增字段缺失
-    return { ...DEFAULT_PREFERENCES, ...parsed };
+    return { ...DEFAULT_PREFERENCES, ...parsed, cursorTrail: false, cozeGlow: normalizeCozeGlow(parsed.cozeGlow), galaxySettings: normalizeGalaxySettings(parsed.galaxySettings), startPage: migrateStartPage(parsed.startPage ?? DEFAULT_PREFERENCES.startPage) };
   } catch {
     return DEFAULT_PREFERENCES;
   }
@@ -70,10 +77,11 @@ export function getPreferences(): UserPreferences {
 export function savePreferences(prefs: Partial<UserPreferences>): void {
   if (typeof window === "undefined") return;
   const current = getPreferences();
-  const updated = { ...current, ...prefs };
+  const normalized = { ...prefs, ...(prefs.galaxySettings ? { galaxySettings: normalizeGalaxySettings(prefs.galaxySettings) } : {}), ...(prefs.cozeGlow ? { cozeGlow: normalizeCozeGlow(prefs.cozeGlow) } : {}) };
+  const updated = { ...current, ...normalized, cursorTrail: false };
   localStorage.setItem(preferencesKey(), JSON.stringify(updated));
   // 异步同步到服务端
-  savePrefsBatchToServer(prefs as Record<string, unknown>).catch(() => {});
+  savePrefsBatchToServer(normalized as Record<string, unknown>).catch(() => {});
 }
 
 // 重置偏好

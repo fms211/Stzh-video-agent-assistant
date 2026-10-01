@@ -6,16 +6,32 @@ require("dotenv").config({ path: path.join(__dirname, ".env.local") });
 
 const app = require("./app.js");
 const { attachRealtime } = require("./realtime.js");
+const { startProductionTaskRuntime } = require("./task-runtime-bootstrap.js");
 const port = Number(process.env.PORT) || 8080;
+
+const runtimeState = startProductionTaskRuntime();
+app.locals.taskRuntime = runtimeState.runtime;
+app.locals.taskRuntimeState = runtimeState;
 
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(`腾昇智和服务已启动：http://0.0.0.0:${port}`);
+  console.log(runtimeState.enabled
+    ? "[TaskRuntime] 服务端视频任务执行已启用"
+    : "[TaskRuntime] 未启用：缺少 Coze 运行配置，任务会安全保持排队");
 });
-attachRealtime(server);
+server.stzhTaskRuntime = runtimeState.runtime;
+const realtime = attachRealtime(server);
 
 server.on("error", (error) => {
   console.error("[Server] 启动失败:", error);
   process.exitCode = 1;
+});
+
+server.on("close", () => {
+  void app.locals.researchRuntime?.stop();
+  void app.locals.pluginService?.stop();
+  void runtimeState.runtime?.stop();
+  void realtime?.close();
 });
 
 module.exports = server;

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import {
   type AuthResponse,
   type User,
@@ -48,9 +48,12 @@ export function useAuth() {
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const authRevision = useRef(0);
 
   const refreshUser = useCallback(async () => {
+    const revision = ++authRevision.current;
     const token = getToken();
+    const isCurrent = () => revision === authRevision.current && token === getToken();
     if (!token) {
       setUser(null);
       setLoading(false);
@@ -67,19 +70,25 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     // 再验证 token
     try {
       const data = await getMe();
+      if (!isCurrent()) return;
       setUser(data.user);
       localStorage.setItem("stzh_user", JSON.stringify(data.user));
 
       migrateLegacyWorkspaceData(localStorage, dataOwnerFromUser(data.user));
+      notifyDataOwnerChanged();
 
       // 登录后合并本地数据到服务端，再从服务端拉取最新数据
       await mergeLocalToServer();
+      if (!isCurrent()) return;
       await syncServerToLocal();
+      if (!isCurrent()) return;
       notifyDataOwnerChanged();
     } catch {
+      if (!isCurrent()) return;
       setUser(null);
       localStorage.removeItem("stzh_token");
       localStorage.removeItem("stzh_user");
+      notifyDataOwnerChanged();
     }
     setLoading(false);
   }, []);
@@ -89,19 +98,27 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   const logout = useCallback(() => {
+    authRevision.current += 1;
     authLogout();
     setUser(null);
+    setLoading(false);
     migrateLegacyWorkspaceData(localStorage, { kind: "guest" });
     notifyDataOwnerChanged();
   }, []);
 
   const acceptAuth = useCallback(async (response: AuthResponse, decision: GuestImportDecision) => {
+    const revision = ++authRevision.current;
     const previousToken = getToken();
     const previousUser = getCachedUser();
+    const isCurrent = () => revision === authRevision.current && getToken() === response.token;
+    const assertCurrent = () => {
+      if (!isCurrent()) throw new DOMException("账户已切换，请使用当前账户继续", "AbortError");
+    };
 
     try {
       commitAuthSession(response);
       const verified = await getMe();
+      assertCurrent();
       const accountOwner = dataOwnerFromUser(verified.user);
       migrateLegacyWorkspaceData(localStorage, accountOwner);
       if (decision === "import") {
@@ -109,11 +126,16 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUser(verified.user);
       setCachedUser(verified.user);
+      setLoading(false);
+      notifyDataOwnerChanged();
       const merged = decision === "import" ? await mergeLocalToServer() : { ok: true, failed: 0 };
+      assertCurrent();
       await syncServerToLocal();
+      assertCurrent();
       notifyDataOwnerChanged();
       return merged;
     } catch (cause) {
+      if (!isCurrent()) throw cause;
       if (previousToken && previousUser) {
         setToken(previousToken);
         setCachedUser(previousUser);
@@ -122,6 +144,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         removeToken();
         setUser(null);
       }
+      notifyDataOwnerChanged();
       throw cause;
     }
   }, []);

@@ -1,0 +1,110 @@
+{
+  "checkedAt": "2026-10-01T13:47:56.021Z",
+  "scope": "local read-only API and HTML entry smoke; not browser interaction; no model, workflow execution, or media generation",
+  "checks": [
+    {
+      "path": "out/_next/static/*.js",
+      "status": 200
+    },
+    {
+      "path": "/health",
+      "status": 200
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/login",
+      "status": 200
+    },
+    {
+      "path": "/register",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks",
+      "status": 401
+    },
+    {
+      "path": "/api/auth/login",
+      "status": 200
+    },
+    {
+      "path": "/api/notifications",
+      "status": 200
+    },
+    {
+      "path": "/api/devices",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20&status=queued%2Crunning%2Cpaused",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20&status=queued",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20&status=completed",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20&status=failed%2Ccancelled",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?limit=20&status=completed%2Cfailed%2Ccancelled",
+      "status": 200
+    },
+    {
+      "path": "/api/research/runs?limit=5",
+      "status": 200
+    },
+    {
+      "path": "/api/opc/sessions",
+      "status": 200
+    },
+    {
+      "path": "/api/opc/sessions?limit=1&offset=0",
+      "status": 200
+    },
+    {
+      "path": "/api/opc/sessions?limit=1&offset=1",
+      "status": 200
+    },
+    {
+      "path": "/api/creative-projects",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/packages",
+      "status": 200
+    },
+    {
+      "path": "/api/model-providers",
+      "status": 200
+    },
+    {
+      "path": "/api/agent-roles",
+      "status": 200
+    },
+    {
+      "path": "/api/agent-runs",
+      "status": 200
+    },
+    {
+      "path": "/api/agent-runs?limit=1",
+      "status": 200
+    },
+    {
+      "path": "/api/tasks?status=completed&limit=100",
+      "status": 200
+    }
+  ]
+}

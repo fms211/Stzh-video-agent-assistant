@@ -28,6 +28,8 @@ export type WorkflowDef = {
   reflect?: boolean;
   /** 是否启用动态规划器（参考教科书 Plan-and-Solve） */
   dynamic?: boolean;
+  /** 运行时模式：设置后该工作流转交独立运行工作台承载（当前仅 style-research 试点） */
+  runtimeMode?: "research-workbench";
 };
 
 export type WorkflowField = {
@@ -39,6 +41,12 @@ export type WorkflowField = {
 };
 
 export type WorkflowInput = Record<string, string>;
+
+export async function workflowDefinitionHash(steps: WorkflowStepDef[], input: WorkflowInput, systemPrompt: string) {
+  const snapshot = JSON.stringify({engine:1,systemPrompt,steps:steps.map(step=>({id:step.id,name:step.name,prompt:step.buildPrompt(input,"__PREVIOUS_STEP_OUTPUT__")}))});
+  const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(snapshot));
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");
+}
 
 export type WorkflowStepState = {
   stepId: string;
@@ -208,6 +216,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
     desc: "调研 → 分析 → 提取特征 → 生成应用方案",
     icon: "🔍",
     category: "research",
+    runtimeMode: "research-workbench",
     fields: [
       { key: "style_name", label: "风格名称", placeholder: "如：赛博朋克、浮世绘、新海诚", type: "text", required: true },
       { key: "use_case", label: "应用场景", placeholder: "如：产品宣传、城市风光、人物特写", type: "text" },

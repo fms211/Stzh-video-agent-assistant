@@ -58,6 +58,8 @@ export default function NebulaCursorTrail() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // 减少动画偏好：星云拖尾不渲染
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
@@ -66,14 +68,17 @@ export default function NebulaCursorTrail() {
     let w = window.innerWidth;
     let h = window.innerHeight;
 
-    // 流体网格（简化版）
+    // 流体网格（简化版，双缓冲复用避免每帧分配）
     const gridW = Math.ceil(w / CONFIG.GRID_SIZE);
     const gridH = Math.ceil(h / CONFIG.GRID_SIZE);
-    const fluidGrid: FluidCell[][] = [];
+    let fluidGrid: FluidCell[][] = [];
+    let bufferGrid: FluidCell[][] = [];
     for (let y = 0; y < gridH; y++) {
       fluidGrid[y] = [];
+      bufferGrid[y] = [];
       for (let x = 0; x < gridW; x++) {
         fluidGrid[y][x] = { vx: 0, vy: 0, density: 0 };
+        bufferGrid[y][x] = { vx: 0, vy: 0, density: 0 };
       }
     }
 
@@ -147,14 +152,6 @@ export default function NebulaCursorTrail() {
 
     // BFECC 简化版平流
     const advectFluid = () => {
-      const tempGrid: FluidCell[][] = [];
-      for (let y = 0; y < gridH; y++) {
-        tempGrid[y] = [];
-        for (let x = 0; x < gridW; x++) {
-          tempGrid[y][x] = { vx: 0, vy: 0, density: 0 };
-        }
-      }
-
       for (let y = 1; y < gridH - 1; y++) {
         for (let x = 1; x < gridW - 1; x++) {
           const cell = fluidGrid[y][x];
@@ -189,23 +186,21 @@ export default function NebulaCursorTrail() {
           const c01 = fluidGrid[iy + 1]?.[ix] || { vx: 0, vy: 0, density: 0 };
           const c11 = fluidGrid[iy + 1]?.[ix + 1] || { vx: 0, vy: 0, density: 0 };
 
-          tempGrid[y][x].vx = (c00.vx * (1 - fx) + c10.vx * fx) * (1 - fy) + (c01.vx * (1 - fx) + c11.vx * fx) * fy;
-          tempGrid[y][x].vy = (c00.vy * (1 - fx) + c10.vy * fx) * (1 - fy) + (c01.vy * (1 - fx) + c11.vy * fx) * fy;
-          tempGrid[y][x].density = (c00.density * (1 - fx) + c10.density * fx) * (1 - fy) + (c01.density * (1 - fx) + c11.density * fx) * fy;
+          bufferGrid[y][x].vx = (c00.vx * (1 - fx) + c10.vx * fx) * (1 - fy) + (c01.vx * (1 - fx) + c11.vx * fx) * fy;
+          bufferGrid[y][x].vy = (c00.vy * (1 - fx) + c10.vy * fx) * (1 - fy) + (c01.vy * (1 - fx) + c11.vy * fx) * fy;
+          bufferGrid[y][x].density = (c00.density * (1 - fx) + c10.density * fx) * (1 - fy) + (c01.density * (1 - fx) + c11.density * fx) * fy;
 
           // 消散
-          tempGrid[y][x].vx *= CONFIG.VELOCITY_DECAY;
-          tempGrid[y][x].vy *= CONFIG.VELOCITY_DECAY;
-          tempGrid[y][x].density *= CONFIG.DENSITY_DECAY;
+          bufferGrid[y][x].vx *= CONFIG.VELOCITY_DECAY;
+          bufferGrid[y][x].vy *= CONFIG.VELOCITY_DECAY;
+          bufferGrid[y][x].density *= CONFIG.DENSITY_DECAY;
         }
       }
 
-      // 复制回主网格
-      for (let y = 0; y < gridH; y++) {
-        for (let x = 0; x < gridW; x++) {
-          fluidGrid[y][x] = tempGrid[y][x];
-        }
-      }
+      // 交换缓冲（复用对象，避免每帧 new 整个网格）
+      const tmp = fluidGrid;
+      fluidGrid = bufferGrid;
+      bufferGrid = tmp;
     };
 
     // 生成粒子
@@ -279,6 +274,7 @@ export default function NebulaCursorTrail() {
     // 渲染循环
     let running = true;
     let time = 0;
+    let animationFrame = 0;
 
     const draw = () => {
       if (!running) return;
@@ -319,36 +315,18 @@ export default function NebulaCursorTrail() {
               b: Math.round(warm.b * (1 - t) + cool.b * t),
             };
 
-            // 主密度块（更大尺寸）
-            ctx.fillStyle = `rgba(${color.r},${color.g},${color.b},${intensity * 0.5})`;
-            ctx.fillRect(
-              x * CONFIG.GRID_SIZE,
-              y * CONFIG.GRID_SIZE,
-              CONFIG.GRID_SIZE + 2,
-              CONFIG.GRID_SIZE + 2
-            );
-
-            // 辉光效果（更宽范围）
-            if (intensity > 0.3) {
-              ctx.fillStyle = `rgba(${color.r},${color.g},${color.b},${intensity * 0.18})`;
-              ctx.fillRect(
-                x * CONFIG.GRID_SIZE - CONFIG.GRID_SIZE,
-                y * CONFIG.GRID_SIZE - CONFIG.GRID_SIZE,
-                CONFIG.GRID_SIZE * 3 + 2,
-                CONFIG.GRID_SIZE * 3 + 2
-              );
-            }
-
-            // 外层辉光（高强度区域）
-            if (intensity > 0.5) {
-              ctx.fillStyle = `rgba(${color.r},${color.g},${color.b},${intensity * 0.08})`;
-              ctx.fillRect(
-                x * CONFIG.GRID_SIZE - CONFIG.GRID_SIZE * 2,
-                y * CONFIG.GRID_SIZE - CONFIG.GRID_SIZE * 2,
-                CONFIG.GRID_SIZE * 5,
-                CONFIG.GRID_SIZE * 5
-              );
-            }
+            // 网格仅用于模拟；以连续圆形柔光绘制，避免把网格显示成像素方块。
+            const centerX = (x + 0.5) * CONFIG.GRID_SIZE;
+            const centerY = (y + 0.5) * CONFIG.GRID_SIZE;
+            const radius = CONFIG.GRID_SIZE * 1.6;
+            const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+            glow.addColorStop(0, `rgba(${color.r},${color.g},${color.b},${intensity * 0.35})`);
+            glow.addColorStop(0.45, `rgba(${color.r},${color.g},${color.b},${intensity * 0.14})`);
+            glow.addColorStop(1, `rgba(${color.r},${color.g},${color.b},0)`);
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
       }
@@ -378,42 +356,25 @@ export default function NebulaCursorTrail() {
         const alpha = life * 0.6 * globalAlpha;
         const size = p.size * life;
 
-        // 主粒子
-        ctx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha})`;
-        ctx.fillRect(
-          Math.floor(p.x / size) * size,
-          Math.floor(p.y / size) * size,
-          size,
-          size
-        );
-
-        // 辉光
-        ctx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha * 0.25})`;
-        ctx.fillRect(
-          Math.floor(p.x / (size * 2)) * (size * 2),
-          Math.floor(p.y / (size * 2)) * (size * 2),
-          size * 2,
-          size * 2
-        );
-
-        // 外层辉光（大粒子）
-        if (alpha > 0.3) {
-          ctx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha * 0.1})`;
-          ctx.fillRect(
-            Math.floor(p.x / (size * 3)) * (size * 3),
-            Math.floor(p.y / (size * 3)) * (size * 3),
-            size * 3,
-            size * 3
-          );
-        }
+        // 粒子使用真实坐标和径向光晕，不再吸附像素格或绘制方形光块。
+        const radius = size * 3;
+        const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+        glow.addColorStop(0, `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha})`);
+        glow.addColorStop(0.25, `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha * 0.45})`);
+        glow.addColorStop(1, `rgba(${p.color.r},${p.color.g},${p.color.b},0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
       }
 
-      requestAnimationFrame(draw);
+      animationFrame = requestAnimationFrame(draw);
     };
-    requestAnimationFrame(draw);
+    animationFrame = requestAnimationFrame(draw);
 
     return () => {
       running = false;
+      cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerleave", onLeave);

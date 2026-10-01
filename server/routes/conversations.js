@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const crypto = require("crypto");
 const db = require("../db.js");
+const sessionScope=require("../studio-session-scope.js");
 
 const router = Router();
 
@@ -30,12 +31,14 @@ function mapSession(s) {
 // opc_messages 行 → messages 前端形状（payload 从 metadata 解出，is_error 从 metadata.isError 推）
 function mapMessage(m) {
   let payload;
+  let contextTrace;
   let isError = 0;
   let errorText = "";
   if (m.metadata) {
     try {
       const meta = JSON.parse(m.metadata);
       payload = meta.payload;
+      contextTrace = meta.contextTrace;
       isError = meta.isError ? 1 : 0;
       errorText = meta.errorText || "";
     } catch { payload = m.metadata; }
@@ -46,6 +49,7 @@ function mapMessage(m) {
     role: m.role,
     content: m.content,
     payload,
+    contextTrace,
     is_error: isError,
     error_text: errorText,
     created_at: tsToIso(m.timestamp),
@@ -56,9 +60,13 @@ function mapMessage(m) {
 router.get("/api/conversations", (req, res) => {
   try {
     const userId = req.user.userId;
-    const sessions = db.prepare(
-      "SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200"
-    ).all(userId);
+    if (req.query.mode !== undefined && req.query.mode !== "coze") return res.status(400).json({error:{message:"会话模式无效"}});
+    const sessions = [];
+    for (const session of db.prepare("SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC").iterate(userId)) {
+      if (req.query.mode === "coze" && sessionScope.inferMode(db,userId,session.id) !== "coze") continue;
+      sessions.push(session);
+      if (sessions.length === 200) break;
+    }
     res.json({ conversations: sessions.map(mapSession) });
   } catch (error) {
     console.error("[Conversations] 查询失败:", error.message);
@@ -82,7 +90,7 @@ router.get("/api/conversations/:id", (req, res) => {
       "SELECT * FROM opc_messages WHERE session_id = ? ORDER BY timestamp ASC"
     ).all(session.id);
 
-    res.json({ conversation: mapSession(session), messages: messages.map(mapMessage) });
+    res.json({ conversation: { ...mapSession(session), mode: sessionScope.inferMode(db, userId, session.id) }, messages: messages.map(mapMessage) });
   } catch (error) {
     console.error("[Conversations] 查询失败:", error.message);
     res.status(500).json({ error: { message: "查询消息失败" } });
@@ -103,6 +111,7 @@ router.post("/api/conversations", (req, res) => {
       return res.status(409).json({ error: { message: "会话 ID 已被占用" } });
     }
 
+    db.transaction(()=>{
     if (existing) {
       db.prepare(
         "UPDATE opc_sessions SET title = ?, updated_at = unixepoch() WHERE id = ? AND user_id = ?"
@@ -113,6 +122,10 @@ router.post("/api/conversations", (req, res) => {
       ).run(convId, userId, title || "新对话");
     }
 
+    sessionScope.initialize(db);
+    const known=db.prepare("SELECT mode FROM studio_session_modes WHERE session_id=? AND user_id=?").get(convId,userId);
+    sessionScope.register(db,userId,convId,known?.mode||(convId.startsWith("opc_")?sessionScope.inferMode(db,userId,convId):"coze"));
+    })();
     res.json({ id: convId, title: title || "新对话" });
   } catch (error) {
     console.error("[Conversations] 创建失败:", error.message);
@@ -175,30 +188,38 @@ router.post("/api/conversations/:id/messages", (req, res) => {
     );
 
     const insertMany = db.transaction((msgs) => {
+      const ids=[];
       for (const msg of msgs) {
+        const messageId=msg.id || generateId();
+        const occupied=db.prepare("SELECT session_id FROM opc_messages WHERE id=?").get(messageId);
+        if(occupied&&occupied.session_id!==convId)throw Object.assign(new Error("消息ID已被其他会话占用"),{status:409});
         const meta = {};
         if (msg.payload !== undefined) meta.payload = msg.payload;
+        if (msg.contextTrace !== undefined) meta.contextTrace = msg.contextTrace;
         if (msg.isError) meta.isError = true;
         if (msg.errorText) meta.errorText = msg.errorText;
         insert.run(
-          msg.id || generateId(),
+          messageId,
           convId,
           msg.role || "user",
           msg.text || msg.content || "",
           Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
         );
+        ids.push(messageId);
       }
+      return ids;
     });
 
-    insertMany(messages);
+    const savedIds=insertMany(messages);
 
     const count = db.prepare("SELECT COUNT(*) as c FROM opc_messages WHERE session_id = ?").get(convId).c;
     db.prepare("UPDATE opc_sessions SET updated_at = unixepoch(), message_count = ? WHERE id = ?").run(count, convId);
 
-    res.json({ ok: true });
+    const memoryCandidates=require("../studio-memory-candidates.js").createStudioCandidateService(db).messages(userId,convId,savedIds);
+    res.json({ ok: true, memoryCandidates });
   } catch (error) {
     console.error("[Conversations] 保存消息失败:", error.message);
-    res.status(500).json({ error: { message: "保存消息失败" } });
+    res.status(error.status||500).json({ error: { message: error.status===409?error.message:"保存消息失败" } });
   }
 });
 

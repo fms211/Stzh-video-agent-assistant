@@ -6,8 +6,12 @@ export type OpcAgentMessage = {
   content: string;
   timestamp: number;
   isError?: boolean;
+  contextTrace?: unknown;
   // 工作流专用
   workflowId?: string;
+  workflowRunId?: string;
+  workflowStepId?: string;
+  workflowInput?: Record<string, string>;
   workflowName?: string;
   workflowIcon?: string;
   stepName?: string;
@@ -19,6 +23,8 @@ export type OpcAgentMessage = {
   attachments?: MessageAttachment[];
   // RAG 来源
   ragSources?: { name: string; score: number; kb_type: string }[];
+  // 检索资料缺口；随会话和工作流结果保存，不代表事实核验。
+  referenceNotes?: string[];
 };
 
 export type MessageAttachment = {

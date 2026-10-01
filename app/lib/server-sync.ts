@@ -1,10 +1,11 @@
 // 服务端同步 API — LLM 配置、偏好、通知、主题
 // 服务端优先 + localStorage 缓存
 
-import { getToken } from "./auth";
+import { getToken, resolveApiBase } from "./auth";
+import { captureNotificationClient } from "./notification-client";
 
 const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
+  ? resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location)
   : "";
 
 const isBrowser = typeof window !== "undefined";
@@ -135,15 +136,9 @@ export async function savePrefsBatchToServer(prefs: Record<string, unknown>) {
 // 通知
 // ══════════════════════════════════════════
 
-const NOTIF_KEY = "tszh_notifications";
-
-export async function syncNotifications(): Promise<{ id: string; title: string; message: string; type: string; read: number; created_at: number }[]> {
-  const data = await apiGet<{ notifications: { id: string; title: string; message: string; type: string; read: number; created_at: number }[] }>("/api/notifications");
-  if (data && data.notifications.length > 0) {
-    localStorage.setItem(NOTIF_KEY, JSON.stringify(data.notifications));
-    return data.notifications;
-  }
-  try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "[]"); } catch { return []; }
+export async function syncNotifications() {
+  const client = captureNotificationClient();
+  const rows = await client.read(); client.save(rows); return rows;
 }
 
 export async function addNotificationToServer(id: string, title: string, message: string, type = "info") {
@@ -151,11 +146,13 @@ export async function addNotificationToServer(id: string, title: string, message
 }
 
 export async function markAllReadOnServer() {
-  await apiPost("/api/notifications/read-all", {});
+  const client = captureNotificationClient();
+  return client.mutate("read", client.cached());
 }
 
 export async function clearNotificationsOnServer() {
-  await apiDelete("/api/notifications");
+  const client = captureNotificationClient();
+  return client.mutate("clear", client.cached());
 }
 
 // ══════════════════════════════════════════

@@ -6,38 +6,22 @@ import { getToken } from "@/app/lib/auth";
 import { fetchServerSettings, saveServerSettings } from "@/app/lib/sync";
 import { getPreferences, savePreferences, resetPreferences, type UserPreferences, type StartPage } from "@/app/lib/preferences";
 import { saveSettingToServer } from "@/app/lib/server-sync";
-import { Settings, MessageSquare, Film, BarChart3, ImageIcon, Palette } from "lucide-react";
-
-const THEMES = [
-  { id: "deep-space", name: "深空观测者", desc: "暖琥珀 + 冷靛 — 科学仪器的浪漫星空", colors: ["#e89840", "#6088d8", "#060a14"] },
-  { id: "atom-lab", name: "原子实验室", desc: "CRT 绿光 + 暖黄 — 1950s 核子实验室", colors: ["#80c060", "#d8b040", "#081408"] },
-  { id: "quantum-garden", name: "量子花园", desc: "极光紫 + 青 — 有机与科技的融合", colors: ["#9880d0", "#50c0b0", "#0a0c18"] },
-  { id: "nebula-drift", name: "星云漂流", desc: "粉霞 + 青蓝 — 深空星云的浪漫", colors: ["#e87898", "#48c8d8", "#0c0818"] },
-  { id: "solar-forge", name: "太阳熔炉", desc: "橙红 + 金 — 核聚变般的能量感", colors: ["#f06040", "#f0b830", "#140804"] },
-  { id: "crystal-cave", name: "水晶洞穴", desc: "冰蓝 + 白 — 冷冽的晶体折射", colors: ["#80c8e0", "#e0f0ff", "#040c14"] },
-  { id: "void-signal", name: "虚空信号", desc: "纯黑 + 青 — 深空探测器的信号灯", colors: ["#40d8c0", "#40d8c0", "#020608"] },
-  { id: "rust-chamber", name: "锈蚀密室", desc: "铜绿 + 黄铜 — 蒸汽时代的原子朋克", colors: ["#c08860", "#d8b870", "#0c0804"] },
-  { id: "photon-field", name: "光子场", desc: "白金 + 暖光 — 纯粹的光之美学", colors: ["#f8e8c0", "#e8d8a0", "#0a0a08"] },
-  { id: "ocean-void", name: "深海虚空", desc: "深靛 + 墨绿 — 海底深渊的静谧", colors: ["#4068a0", "#30a080", "#040810"] },
-] as const;
-
-type ThemeId = (typeof THEMES)[number]["id"];
+import { THEMES, type ThemeId, DEFAULT_THEME } from "@/app/lib/theme-registry";
+import { Settings, MessageSquare, BarChart3, Palette } from "lucide-react";
 
 function getStoredTheme(): ThemeId {
-  if (typeof window === "undefined") return "deep-space";
+  if (typeof window === "undefined") return DEFAULT_THEME;
   const stored = localStorage.getItem("theme");
   if (THEMES.some((t) => t.id === stored)) return stored as ThemeId;
-  return "deep-space";
+  return DEFAULT_THEME;
 }
 
 const ASPECTS = ["3:2", "16:9"] as const;
 const FITS = ["cover", "contain"] as const;
 
 const START_PAGES: { key: StartPage; label: string; icon: React.ReactNode }[] = [
-  { key: "chat", label: "对话工作区", icon: <MessageSquare size={16} strokeWidth={1.8} /> },
-  { key: "opc", label: "OPC 工作模式", icon: <Film size={16} strokeWidth={1.8} /> },
+  { key: "studio", label: "创意工坊", icon: <MessageSquare size={16} strokeWidth={1.8} /> },
   { key: "stats", label: "工作统计", icon: <BarChart3 size={16} strokeWidth={1.8} /> },
-  { key: "libtv", label: "LibTV 生图", icon: <ImageIcon size={16} strokeWidth={1.8} /> },
   { key: "gallery", label: "创作画廊", icon: <Palette size={16} strokeWidth={1.8} /> },
 ];
 
@@ -114,7 +98,7 @@ export default function SettingsDrawer() {
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && open) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && open) handleClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
@@ -140,11 +124,11 @@ export default function SettingsDrawer() {
                   <button key={t.id} type="button" onClick={() => setTheme(t.id)}
                     className={`settings-theme-card ${theme === t.id ? "active" : ""}`}>
                     <div className="settings-theme-colors">
-                      {t.colors.map((c) => (<span key={c} className="settings-theme-swatch" style={{ background: c }} />))}
+                      {[t.colors.primary, t.colors.cool, t.colors.deep].map((c) => (<span key={c} className="settings-theme-swatch" style={{ background: c }} />))}
                     </div>
                     <div className="flex flex-col gap-0.5">
                       <span className="settings-theme-name">{t.name}</span>
-                      <span className="settings-theme-desc">{t.desc}</span>
+                      <span className="settings-theme-desc">{t.description}</span>
                     </div>
                   </button>
                 ))}
@@ -249,14 +233,6 @@ export default function SettingsDrawer() {
                   <button type="button"
                     onClick={() => updatePref("particleEffects", !prefs.particleEffects)}
                     className={`settings-toggle ${prefs.particleEffects ? "active" : ""}`}>
-                    <span className="settings-toggle-knob" />
-                  </button>
-                </div>
-                <div className="settings-row">
-                  <span className="settings-row-label">鼠标拖尾</span>
-                  <button type="button"
-                    onClick={() => updatePref("cursorTrail", !prefs.cursorTrail)}
-                    className={`settings-toggle ${prefs.cursorTrail ? "active" : ""}`}>
                     <span className="settings-toggle-knob" />
                   </button>
                 </div>

@@ -2,17 +2,15 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
+import { RefreshCw, Palette } from "lucide-react";
 import { needsUnoptimized } from "@/app/lib/needsUnoptimized";
 import { loadMessages, loadSessions } from "@/app/lib/sync";
-
-type MediaItem = {
-  id: string;
-  type: "video" | "image";
-  url: string;
-  sessionTitle: string;
-  sessionId: string;
-  timestamp: number;
-};
+import { PluginSlot } from "./plugin-slots/PluginSlot";
+import { useAuth } from "./AuthProvider";
+import { getTasks } from "@/app/lib/auth";
+import { loadTaskMedia, mergeMedia, type MediaItem } from "@/app/lib/workspace-media";
+import GalleryMediaActions from "./GalleryMediaActions";
+import GalleryPreview from "./GalleryPreview";
 
 function collectMedia(): MediaItem[] {
   const sessions = loadSessions();
@@ -55,17 +53,46 @@ function collectMedia(): MediaItem[] {
 }
 
 export default function GalleryPanel() {
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const { user, loading } = useAuth();
+  if (loading) return <p role="status">正在确认作品账户…</p>;
+  const owner = user ? `user:${user.id}` : "guest";
+  return <GalleryPanelView key={owner} owner={owner} authenticated={Boolean(user)} />;
+}
+
+function GalleryPanelView({ owner, authenticated }: { owner: string; authenticated: boolean }) {
+  const [remote, setRemote] = useState<{ owner: string; items: MediaItem[] }>({ owner: "", items: [] });
+  const [remoteError, setRemoteError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<"all" | "video" | "image">("all");
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const media = useMemo(() => collectMedia(), [refreshKey]);
+  const media = useMemo(() => mergeMedia(remote.owner === owner ? remote.items : [], collectMedia()), [refreshKey, owner, remote]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRemoteError("");
+    setLoading(authenticated);
+    if (authenticated) {
+      void loadTaskMedia((cursor) => getTasks({ status: "completed", limit: 100, cursor }), () => !cancelled)
+        .then((items) => { if (!cancelled) setRemote({ owner, items }); })
+        .catch((error) => { if (!cancelled) setRemoteError(error instanceof Error ? error.message : "读取服务端作品失败"); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }
+    return () => { cancelled = true; };
+  }, [owner, authenticated, refreshKey]);
 
   // 监听 storage 变化刷新
   useEffect(() => {
     const handleStorage = () => setRefreshKey((k) => k + 1);
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleStorage);
+    const timer = window.setInterval(handleStorage, 30_000);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleStorage);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -78,6 +105,8 @@ export default function GalleryPanel() {
 
   return (
     <div className="gallery-panel">
+      {/* 插件槽位：gallery.itemActions（additive，Mock 阶段无贡献时不渲染） */}
+      <PluginSlot slot="gallery.itemActions" contributions={[]} projectId="project-a" />
       {/* 头部 */}
       <div className="gallery-header">
         <div className="gallery-stats">
@@ -101,6 +130,7 @@ export default function GalleryPanel() {
               type="button"
               className={`gallery-filter-btn ${filter === f ? "active" : ""}`}
               onClick={() => setFilter(f)}
+              aria-pressed={filter === f}
             >
               {f === "all" ? "全部" : f === "video" ? "视频" : "图片"}
             </button>
@@ -110,18 +140,20 @@ export default function GalleryPanel() {
             className="gallery-filter-btn"
             onClick={() => setRefreshKey((k) => k + 1)}
             aria-label="刷新"
+            disabled={loading}
           >
-            ↻
+            <RefreshCw size={15} strokeWidth={1.8} />
           </button>
         </div>
       </div>
 
       {/* 网格 */}
+      {remoteError && <p role="alert">服务端作品暂未同步：{remoteError}。可点击刷新重试。</p>}
       {filtered.length === 0 ? (
         <div className="gallery-empty">
-          <span className="gallery-empty-icon">🎨</span>
-          <p className="gallery-empty-title">还没有创作作品</p>
-          <p className="gallery-empty-desc">在对话工作区中生成视频或图片，作品会自动出现在这里</p>
+          <span className="gallery-empty-icon"><Palette size={28} strokeWidth={1.5} /></span>
+          <p className="gallery-empty-title">{loading ? "正在同步作品…" : media.length ? "当前分类没有作品" : "还没有创作作品"}</p>
+          <p className="gallery-empty-desc">{media.length ? "切换到全部，查看其他类型的作品" : "在对话工作区中生成视频或图片，作品会自动出现在这里"}</p>
         </div>
       ) : (
         <div className="gallery-grid">
@@ -129,14 +161,15 @@ export default function GalleryPanel() {
             <div key={item.id} className="gallery-card">
               {item.type === "video" ? (
                 <div className="gallery-media">
-                  <video src={item.url} muted preload="metadata" />
+                  <video src={item.url} controls preload="metadata" />
                   <span className="gallery-badge video">视频</span>
                 </div>
               ) : (
                 <button
                   type="button"
                   className="gallery-media"
-                  onClick={() => setLightboxUrl(item.url)}
+                  onClick={() => setPreview(item)}
+                  aria-label={`预览 ${item.sessionTitle}`}
                 >
                   <Image
                     src={item.url}
@@ -155,29 +188,13 @@ export default function GalleryPanel() {
                   {new Date(item.timestamp).toLocaleDateString("zh-CN")}
                 </span>
               </div>
+              <GalleryMediaActions key={item.url} item={item} />
             </div>
           ))}
         </div>
       )}
 
-      {/* Lightbox */}
-      {lightboxUrl && (
-        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
-          <button className="lightbox-close" onClick={() => setLightboxUrl(null)} aria-label="关闭">
-            &times;
-          </button>
-          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-            <Image
-              src={lightboxUrl}
-              alt="放大预览"
-              width={1200}
-              height={900}
-              sizes="90vw"
-              unoptimized={needsUnoptimized(lightboxUrl)}
-            />
-          </div>
-        </div>
-      )}
+      {preview && <GalleryPreview item={preview} onClose={() => setPreview(null)} />}
 
       <style>{`
         .gallery-panel {
@@ -207,34 +224,31 @@ export default function GalleryPanel() {
           gap: 2px;
         }
         .gallery-stat-num {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 22px;
+          font-family: var(--font-ui);
+          font-size: var(--text-section-size);
           color: var(--glow-warm);
           font-feature-settings: "tnum";
           font-variant-numeric: tabular-nums;
-          text-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 40%, transparent);
-        }
+          text-shadow: 0 0 12px color-mix(in srgb, var(--glow-warm) 40%, transparent); line-height: var(--text-section-line); }
         .gallery-stat-label {
-          font-size: 10px;
-          color: var(--foreground-muted);
-          letter-spacing: 0.06em;
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          letter-spacing: 0.06em; line-height: var(--text-caption-line); }
         .gallery-filters {
           display: flex;
           gap: 6px;
         }
         .gallery-filter-btn {
           padding: 5px 12px;
-          border-radius: 8px;
+          border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle);
           background: transparent;
-          color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--font-ui);
+          font-size: var(--text-label-size);
           cursor: pointer;
           transition: all 0.15s;
-          outline: none;
-        }
+          outline: none; line-height: var(--text-label-line); }
         .gallery-filter-btn:hover {
           border-color: color-mix(in srgb, var(--glow-warm) 40%, transparent);
           color: var(--foreground);
@@ -247,6 +261,19 @@ export default function GalleryPanel() {
         .gallery-filter-btn:focus-visible {
           box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 30%, transparent);
         }
+        .gallery-filter-btn:disabled { opacity: 0.55; cursor: wait; }
+        .gallery-media:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: -3px; }
+        .gallery-download { padding: 0 10px 12px; }
+        .gallery-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .gallery-actions a { text-decoration: none; }
+        .gallery-download-message { color: var(--text-muted); font-size: var(--text-caption-size); margin: 8px 0 0; overflow-wrap: anywhere; line-height: var(--text-caption-line); }
+        .gallery-preview { border: 0; padding: 24px; margin: auto; background: transparent; color: var(--foreground); max-width: 100vw; max-height: 100dvh; }
+        .gallery-preview::backdrop { background: color-mix(in srgb, var(--space-deep) 90%, transparent); }
+        .gallery-preview-panel { width: min(1200px, 88vw); border: 1px solid var(--border-subtle); border-radius: var(--shape-control); padding: 12px; background: var(--space-panel); }
+        .gallery-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+        .gallery-preview-header h3 { margin: 0; font-size: var(--text-body-size); overflow-wrap: anywhere; line-height: var(--text-body-line); }
+        .gallery-preview-header button { flex-shrink: 0; }
+        .gallery-preview-panel img { width: 100%; height: auto; max-height: 75dvh; object-fit: contain; }
 
         /* 空状态 */
         .gallery-empty {
@@ -254,33 +281,33 @@ export default function GalleryPanel() {
           padding: 80px 20px;
         }
         .gallery-empty-icon {
-          font-size: 48px;
-          display: block;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           margin-bottom: 16px;
           opacity: 0.6;
+          color: var(--glow-aurora);
         }
         .gallery-empty-title {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 16px;
+          font-family: var(--font-ui);
+          font-size: var(--text-subheading-size);
           color: var(--foreground);
-          margin: 0 0 8px;
-        }
+          margin: 0 0 8px; line-height: var(--text-subheading-line); }
         .gallery-empty-desc {
-          font-size: 13px;
-          color: var(--foreground-muted);
+          font-size: var(--text-label-size);
+          color: var(--text-muted);
           margin: 0;
           max-width: 300px;
-          margin-inline: auto;
-        }
+          margin-inline: auto; line-height: var(--text-label-line); }
 
         /* 网格 */
         .gallery-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
           gap: 16px;
         }
         .gallery-card {
-          border-radius: 12px;
+          border-radius: var(--shape-control);
           overflow: hidden;
           border: 1px solid var(--border-subtle);
           background: var(--space-panel);
@@ -314,12 +341,11 @@ export default function GalleryPanel() {
           top: 8px;
           right: 8px;
           padding: 2px 8px;
-          border-radius: 6px;
-          font-family: "GeistPixel-Square", var(--font-sans);
-          font-size: 9px;
+          border-radius: var(--shape-control);
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size);
           letter-spacing: 0.06em;
-          pointer-events: none;
-        }
+          pointer-events: none; line-height: var(--text-caption-line); }
         .gallery-badge.video {
           background: color-mix(in srgb, var(--glow-cool) 20%, transparent);
           color: var(--glow-cool);
@@ -339,23 +365,21 @@ export default function GalleryPanel() {
           gap: 6px;
         }
         .gallery-card-title {
-          font-size: 11px;
+          font-size: var(--text-caption-size);
           color: var(--foreground);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          flex: 1;
-        }
+          flex: 1; line-height: var(--text-caption-line); }
         .gallery-card-date {
-          font-size: 9px;
-          color: var(--foreground-muted);
-          opacity: 0.6;
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          opacity: 0.85;
           white-space: nowrap;
-          flex-shrink: 0;
-        }
+          flex-shrink: 0; line-height: var(--text-caption-line); }
 
         @media (max-width: 640px) {
-          .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+          .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; }
           .gallery-header { flex-direction: column; align-items: flex-start; }
         }
       `}</style>

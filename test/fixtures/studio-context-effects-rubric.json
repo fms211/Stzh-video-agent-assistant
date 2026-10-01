@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "limits": "Authored acceptance criteria, loaded only after both answers are frozen. No independent human or model blind judge. One sample per condition with provider temperature 0.7.",
+  "cases": {
+    "assistant-brand": {"equals":{"aspect":"16:9","layout":"留白"},"nonempty":["caption"],"maxCharacters":{"caption":12}},
+    "assistant-unverified": {"equals":{"factVerified":false,"nextAction":"核验任务结果"},"nonempty":["reason"]},
+    "workflow-new-approval": {"equals":{"canExecute":false,"planRevision":2,"nextAction":"重新批准"},"nonempty":["reason"]},
+    "workflow-history": {"equals":{"aspect":"16:9","layout":"留白","style":"油画"},"nonempty":["caption"],"maxCharacters":{"caption":12}},
+    "collaboration-project": {"equals":{"palette":"黑白","layout":"留白"},"nonempty":["caption"]},
+    "collaboration-approval": {"equals":{"deliveryApproved":false,"canGenerate":false,"nextAction":"等待人工确认"},"nonempty":["reason"]},
+    "coze-unknown-result": {"equals":{"businessCompleted":"unknown","retryAction":"核对业务结果"},"nonempty":["reason"]},
+    "coze-current-override": {"equals":{"style":"油画","layout":"留白","aspect":"16:9","canGenerate":false}}
+  }
+}

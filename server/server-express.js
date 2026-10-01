@@ -8,7 +8,6 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
 
 const app = express();
 
@@ -17,8 +16,17 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 
 // === 健康检查 ===
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+  const runtimeState = req.app.locals.taskRuntimeState;
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    taskRuntime: {
+      enabled: Boolean(req.app.locals.taskRuntime?.started),
+      active: Number(req.app.locals.taskRuntime?.activeCount) || 0,
+      reason: runtimeState?.reason || null,
+    },
+  });
 });
 
 // === JWT 中间件（非阻塞：有 token 就解析，没有也放行） ===
@@ -34,6 +42,13 @@ app.use(require("./routes/generations.js"));
 app.use(require("./routes/settings.js"));
 app.use(require("./routes/tasks.js"));
 app.use(require("./routes/devices.js"));
+app.use(require("./routes/attachments.js"));
+app.use(require("./routes/agent.js"));
+app.use(require("./routes/creative-agent.js"));
+app.use(require("./routes/research.js"));
+app.use(require("./routes/plugins.js"));
+app.use(require("./routes/studio-memory.js"));
+app.use(require("./routes/retrieval.js"));
 
 // === 静态文件服务（前端） ===
 // 优先使用环境变量，否则自动检测（兼容 Electron 打包和云服务器部署）
@@ -41,300 +56,17 @@ const OUT_DIR = process.env.STZH_OUT_DIR
   || (fs.existsSync(path.join(__dirname, "out")) ? path.join(__dirname, "out") : path.join(__dirname, "..", "out"));
 console.log("[Express] OUT_DIR:", OUT_DIR, "exists:", fs.existsSync(OUT_DIR));
 
-// === 工具函数 ===
-function generateId() {
-  try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; }
-}
-
-function buildMessages(prompt, history) {
-  const messages = [];
-  if (history && history.length > 0) {
-    const start = Math.max(0, history.length - 20);
-    for (let i = start; i < history.length; i++) {
-      const msg = history[i];
-      if (msg.role === "user" && msg.text) {
-        messages.push({ role: "user", content: msg.text, content_type: "text" });
-      } else if (msg.role === "agent") {
-        const content = msg.text || msg.payload?.raw?.text || "已生成结果";
-        messages.push({ role: "assistant", content, content_type: "text" });
-      }
-    }
-  }
-  messages.push({ role: "user", content: prompt, content_type: "text" });
-  return messages;
-}
-
-const MEDIA_URL_RE = /https?:\/\/[^\s"'<>]+\.(mp4|mov|avi|webm|jpg|jpeg|png|webp|gif)/gi;
-
-function extractMediaUrls(text) {
-  const result = {};
-  if (text.startsWith("{") || text.startsWith("[")) {
-    try {
-      const json = JSON.parse(text);
-      if (json.videoUrl || json.video_url) result.videoUrl = json.videoUrl || json.video_url;
-      if (Array.isArray(json.imageUrls) || Array.isArray(json.image_urls)) result.imageUrls = json.imageUrls || json.image_urls;
-      if (result.videoUrl || result.imageUrls) return result;
-    } catch {}
-  }
-  const matches = text.match(MEDIA_URL_RE);
-  if (matches) {
-    const videos = [], images = [];
-    for (const url of matches) {
-      if (/\.(mp4|mov|avi|webm)$/i.test(url)) videos.push(url);
-      else images.push(url);
-    }
-    if (videos.length > 0) result.videoUrl = videos[0];
-    if (images.length > 0) result.imageUrls = [...new Set(images)];
-  }
-  return result;
-}
-
-// === 并发控制 ===
-let activeRequests = 0;
-const MAX_CONCURRENT = 5;
-
-// === POST /api/agent ===
-app.post("/api/agent", async (req, res) => {
-  if (activeRequests >= MAX_CONCURRENT) {
-    return res.status(429).json({ error: { message: "服务器繁忙，请稍后再试" } });
-  }
-  activeRequests++;
-
-  const requestId = generateId();
-  const createdAt = new Date().toISOString();
-
-  try {
-    let { prompt, history } = req.body;
-    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return res.status(400).json({ error: { message: "prompt 不能为空" } });
-    }
-    if (prompt.length > 5000) {
-      return res.status(400).json({ error: { message: "prompt 过长（最多 5000 字符）" } });
-    }
-
-    console.log(`[Agent] 请求: id=${requestId}, prompt="${prompt.slice(0, 80)}"`);
-
-    const token = process.env.COZE_API_TOKEN;
-    const botId = process.env.COZE_BOT_ID;
-    const userId = process.env.COZE_USER_ID || "stzh_user";
-    const baseUrl = process.env.COZE_BASE_URL || "https://api.coze.cn";
-
-    const resp = await fetch(`${baseUrl}/v3/chat`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bot_id: botId,
-        user_id: userId,
-        stream: true,
-        auto_save_history: true,
-        additional_messages: buildMessages(prompt.trim(), history),
-      }),
-      signal: AbortSignal.timeout(10 * 60 * 1000),
-    });
-
-    console.log(`[Coze] 响应: ${resp.status}, content-type=${resp.headers.get("content-type")}`);
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`Coze API error: ${resp.status} ${text}`);
-    }
-    if (!resp.body) throw new Error("Coze API: no response body");
-
-    // 解析 SSE 流
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let lastCompletedContent = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-
-        for (const event of events) {
-          let currentEvent = "";
-          let dataStr = "";
-          for (const line of event.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            if (trimmed.startsWith("event:")) currentEvent = trimmed.slice(6).trim();
-            else if (trimmed.startsWith("data:")) dataStr = trimmed.slice(5).trim();
-          }
-          if (!dataStr) continue;
-          try {
-            const data = JSON.parse(dataStr);
-            if (currentEvent === "conversation.message.completed" && data.type === "answer") {
-              lastCompletedContent = data.content || "";
-            }
-          } catch {}
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    const media = extractMediaUrls(lastCompletedContent);
-    const response = { requestId, createdAt, ...media };
-    if (!media.videoUrl && !media.imageUrls) {
-      response.raw = { text: lastCompletedContent };
-    }
-
-    console.log(`[Agent] 响应: video=${!!media.videoUrl}, images=${media.imageUrls?.length || 0}`);
-    return res.json(response);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    console.error(`[Agent] 错误: ${message}`);
-    return res.status(502).json({ error: { message } });
-  } finally {
-    activeRequests--;
-  }
-});
-
-// === POST /api/agent/stream ===
-app.post("/api/agent/stream", async (req, res) => {
-  if (activeRequests >= MAX_CONCURRENT) {
-    return res.status(429).json({ error: { message: "服务器繁忙，请稍后再试" } });
-  }
-  activeRequests++;
-
-  try {
-    const { prompt, history, conversation_id: conversationId } = req.body;
-    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return res.status(400).json({ error: { message: "prompt 不能为空" } });
-    }
-    if (prompt.length > 5000) {
-      return res.status(400).json({ error: { message: "prompt 过长（最大 5000 字符）" } });
-    }
-
-    const token = process.env.COZE_API_TOKEN;
-    const botId = process.env.COZE_BOT_ID;
-    const userId = process.env.COZE_USER_ID || "stzh_user";
-    const baseUrl = process.env.COZE_BASE_URL || "https://api.coze.cn";
-    const requestBody = {
-      bot_id: botId,
-      user_id: userId,
-      stream: true,
-      auto_save_history: true,
-      additional_messages: buildMessages(prompt.trim(), history),
-    };
-    if (conversationId) requestBody.conversation_id = conversationId;
-
-    const upstream = await fetch(`${baseUrl}/v3/chat`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(10 * 60 * 1000),
-    });
-
-    if (!upstream.ok) {
-      return res.status(502).json({ error: { message: `Coze API error: ${upstream.status}` } });
-    }
-    if (!upstream.body) {
-      return res.status(502).json({ error: { message: "Coze API: no response body" } });
-    }
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders?.();
-
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let lastCompletedContent = "";
-    let doneSent = false;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-
-        for (const event of events) {
-          let eventName = "";
-          let eventData = "";
-          for (const line of event.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("event:")) eventName = trimmed.slice(6).trim();
-            else if (trimmed.startsWith("data:")) eventData = trimmed.slice(5).trim();
-          }
-          if (!eventData) continue;
-
-          try {
-            const data = JSON.parse(eventData);
-            if (
-              eventName === "conversation.message.delta" &&
-              data.role === "assistant" &&
-              data.type === "answer" &&
-              data.content
-            ) {
-              res.write(`event: delta\ndata: ${JSON.stringify({ content: data.content })}\n\n`);
-            }
-            if (eventName === "conversation.message.completed" && data.type === "answer") {
-              lastCompletedContent = data.content || "";
-            }
-            if (
-              eventName === "conversation.message.completed" &&
-              data.type === "follow_up" &&
-              data.content
-            ) {
-              res.write(`event: follow_up\ndata: ${JSON.stringify({ suggestions: [data.content] })}\n\n`);
-            }
-            if (eventName === "conversation.chat.completed") {
-              const media = extractMediaUrls(lastCompletedContent);
-              res.write(`event: done\ndata: ${JSON.stringify({
-                ...media,
-                text: lastCompletedContent,
-                done: true,
-              })}\n\n`);
-              doneSent = true;
-            }
-          } catch {}
-        }
-      }
-
-      if (!doneSent && lastCompletedContent) {
-        const media = extractMediaUrls(lastCompletedContent);
-        res.write(`event: done\ndata: ${JSON.stringify({
-          ...media,
-          text: lastCompletedContent,
-          done: true,
-        })}\n\n`);
-      }
-    } finally {
-      reader.releaseLock();
-      res.end();
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    if (!res.headersSent) {
-      return res.status(502).json({ error: { message } });
-    }
-    res.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`);
-    res.end();
-  } finally {
-    activeRequests--;
-  }
-});
-
 // === OPC 创作助手 API ===
 const db = require("./db");
 const { publish } = require("./events");
+const { encryptSecret, redactProvider } = require("./lib/secret-crypto.js");
 
 // 会话列表
 app.get("/api/opc/sessions", (req, res) => {
   const userId = req.user?.userId || 0;
-  const sessions = db.opcListSessions(userId);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+  const offset = Math.max(0, parseInt(req.query.offset) || 0);
+  const sessions = db.opcListSessions(userId, limit, offset);
   res.json({ sessions });
 });
 
@@ -344,6 +76,10 @@ app.post("/api/opc/sessions", (req, res) => {
   const { id, title } = req.body;
   if (!id) return res.status(400).json({ error: "id required" });
   db.opcCreateSession(id, title, userId);
+  if (!db.opcGetSession(id, userId)) return res.status(409).json({ error: "session ID unavailable" });
+  try { const scope=require("./studio-session-scope.js");scope.register(db,userId,id,scope.inferMode(db,userId,id)); }
+  catch(error){return res.status(error.status||400).json({error:error.message});}
+  if (typeof title === "string" && title.trim()) db.opcUpdateSession(id, { title: title.slice(0, 200) });
   res.json({ ok: true });
 });
 
@@ -360,8 +96,9 @@ app.get("/api/opc/sessions/:id/messages", (req, res) => {
   if (!db.opcGetSession(req.params.id, userId)) {
     return res.status(404).json({ error: "session not found" });
   }
-  const limit = parseInt(req.query.limit) || 200;
-  const messages = db.opcGetMessages(req.params.id, limit);
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200));
+  const offset = Math.max(0, parseInt(req.query.offset) || 0);
+  const messages = db.opcGetMessages(req.params.id, limit, offset);
   res.json({ messages });
 });
 
@@ -384,12 +121,17 @@ app.post("/api/opc/sessions/:id/messages/batch", (req, res) => {
     return res.status(404).json({ error: "session not found" });
   }
   const { messages } = req.body;
-  if (!Array.isArray(messages)) return res.status(400).json({ error: "messages array required" });
-  const ids = [];
-  for (const msg of messages) {
-    ids.push(db.opcAddMessage(req.params.id, msg.role, msg.content, msg.metadata));
+  if (!Array.isArray(messages) || messages.length > 200) return res.status(400).json({ error: "messages array required (maximum 200)" });
+  if (messages.some(msg => !msg || !["system", "user", "assistant", "workflow", "workflow-step", "action-cards"].includes(msg.role)
+    || typeof msg.content !== "string"
+    || (msg.id !== undefined && (typeof msg.id !== "string" || !msg.id || msg.id.length > 200))
+    || (msg.timestamp !== undefined && (!Number.isFinite(msg.timestamp) || msg.timestamp <= 0 || msg.timestamp > 8640000000000000))
+    || (msg.metadata !== undefined && (msg.metadata === null || typeof msg.metadata !== "object" || Array.isArray(msg.metadata))))) {
+    return res.status(400).json({ error: "invalid message" });
   }
-  res.json({ ids, count: ids.length });
+  const ids = db.opcSyncMessages(req.params.id, messages);
+  const memoryCandidates=require("./studio-memory-candidates.js").createStudioCandidateService(db).messages(userId,req.params.id,ids);
+  res.json({ ids, count: ids.length, memoryCandidates });
 });
 
 // 删除消息
@@ -407,8 +149,10 @@ app.post("/api/opc/sessions/:id/compress", (req, res) => {
   }
   const { summary, keepRecent } = req.body;
   if (!summary) return res.status(400).json({ error: "summary required" });
-  db.opcCompressSession(req.params.id, summary, keepRecent || 10);
-  res.json({ ok: true });
+  try {
+    const result=db.opcCompressSession(req.params.id,summary,keepRecent??10,userId);
+    res.json({ok:true,...result,originalMessagesPreserved:true});
+  } catch(error) { res.status(error.status||500).json({error:{code:error.code,message:error.message}}); }
 });
 
 // 获取跨会话记忆
@@ -438,18 +182,42 @@ app.delete("/api/opc/memory/:key", (req, res) => {
 // === LLM 模型配置 API ===
 
 app.get("/api/llm/providers", (req, res) => {
-  const userId = req.user?.userId || 0;
+  const userId = req.user.userId;
   const rows = db.llmGetProviders(userId);
-  const providers = rows.map((r) => ({ ...r, config: JSON.parse(r.config) }));
+  const providers = rows.map((row) => {
+    const safe = redactProvider(row);
+    return { id: safe.id, is_active: Number(safe.isActive), config: { name: safe.name, protocol: safe.protocol, baseUrl: safe.baseUrl, model: safe.model, hasSecret: safe.hasSecret, keyLast4: safe.keyLast4 } };
+  });
   res.json({ providers });
 });
 
 app.post("/api/llm/providers", (req, res) => {
-  const userId = req.user?.userId || 0;
+  const userId = req.user.userId;
   const { id, config, isActive } = req.body;
   if (!id || !config) return res.status(400).json({ error: "id and config required" });
-  db.llmSaveProvider(id, config, isActive, userId);
-  res.json({ ok: true });
+  try {
+    const metadata = { ...config };
+    const apiKey = typeof metadata.apiKey === "string" ? metadata.apiKey.trim() : "";
+    delete metadata.apiKey;
+    const existing = db.prepare("SELECT * FROM llm_providers WHERE id = ? AND user_id = ?").get(id, userId);
+    const previousConfig = existing ? JSON.parse(existing.config) : {};
+    const connectionChanged = Boolean(apiKey) || ["protocol", "baseUrl", "model"].some(key => previousConfig[key] !== metadata[key]);
+    const secret = apiKey ? encryptSecret(apiKey) : existing?.secret || null;
+    const keyLast4 = apiKey ? apiKey.slice(-4) : existing?.key_last4 || null;
+    const save = db.transaction(() => {
+      if (isActive) db.prepare("UPDATE llm_providers SET is_active = 0 WHERE user_id = ?").run(userId);
+      db.prepare(`INSERT INTO llm_providers (id, user_id, config, secret, key_last4, is_active, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+        ON CONFLICT(id, user_id) DO UPDATE SET config = excluded.config, secret = excluded.secret,
+          key_last4 = excluded.key_last4, is_active = excluded.is_active, updated_at = unixepoch()`)
+        .run(id, userId, JSON.stringify(metadata), secret, keyLast4, isActive ? 1 : 0);
+      if (connectionChanged) db.prepare("UPDATE llm_providers SET verified_at = NULL WHERE id = ? AND user_id = ?").run(id, userId);
+    });
+    save();
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.delete("/api/llm/providers/:id", (req, res) => {
@@ -465,9 +233,12 @@ app.post("/api/llm/providers/:id/activate", (req, res) => {
 });
 
 app.get("/api/llm/active", (req, res) => {
-  const userId = req.user?.userId || 0;
+  const userId = req.user.userId;
   const row = db.llmGetActive(userId);
-  if (row) res.json({ provider: { ...row, config: JSON.parse(row.config) } });
+  if (row) {
+    const safe = redactProvider(row);
+    res.json({ provider: { id: safe.id, is_active: Number(safe.isActive), config: { name: safe.name, protocol: safe.protocol, baseUrl: safe.baseUrl, model: safe.model, hasSecret: safe.hasSecret, keyLast4: safe.keyLast4 } } });
+  }
   else res.json({ provider: null });
 });
 
@@ -553,54 +324,6 @@ app.post("/api/app-settings/batch", (req, res) => {
     db.settingsSet(key, value);
   }
   res.json({ ok: true });
-});
-
-// === RAG 知识库代理（转发到 Python RAG 服务） ===
-
-const RAG_BASE = "http://localhost:5000";
-
-app.post("/api/rag/retrieve", async (req, res) => {
-  const { query, top_k, score_threshold } = req.body;
-  if (!query) return res.json({ results: [], query: "", total: 0 });
-  try {
-    const ragRes = await fetch(`${RAG_BASE}/rag/retrieve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: top_k || 5, score_threshold: score_threshold || 0.45 }),
-      signal: AbortSignal.timeout(120000),
-    });
-    if (!ragRes.ok) return res.json({ results: [], query, total: 0 });
-    const data = await ragRes.json();
-    res.json(data);
-  } catch {
-    res.json({ results: [], query, total: 0 });
-  }
-});
-
-app.get("/api/rag/health", async (_req, res) => {
-  try {
-    const ragRes = await fetch(`${RAG_BASE}/rag/health`, { signal: AbortSignal.timeout(2000) });
-    if (!ragRes.ok) return res.json({ ok: false, entries: 0 });
-    const data = await ragRes.json();
-    res.json(data);
-  } catch {
-    res.json({ ok: false, entries: 0 });
-  }
-});
-
-// === 网络搜索代理（多引擎：Google/SerpApi → 搜狗 → Bing + GitHub） ===
-
-const { search } = require("./search-engines");
-
-app.post("/api/search", async (req, res) => {
-  const query = req.body?.query?.trim();
-  if (!query) return res.json({ results: [] });
-  try {
-    const result = await search(query, { maxResults: 5 });
-    res.json(result);
-  } catch (err) {
-    res.json({ results: [], error: err instanceof Error ? err.message : "Search failed" });
-  }
 });
 
 // === 所有非 API 请求 → 静态文件 / index.html（SPA） ===

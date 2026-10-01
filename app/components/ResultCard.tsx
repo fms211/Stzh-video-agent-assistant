@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Image from "next/image";
+import { Download, RefreshCw, Pencil } from "lucide-react";
 import { needsUnoptimized } from "@/app/lib/needsUnoptimized";
 
 type AgentPayload = {
@@ -16,9 +17,10 @@ type Props = {
   payload: AgentPayload;
   originalPrompt?: string;
   onRegenerate?: (prompt: string) => void;
+  onModify?: (prompt: string) => void;
 };
 
-export default function ResultCard({ payload, originalPrompt, onRegenerate }: Props) {
+export default function ResultCard({ payload, originalPrompt, onRegenerate, onModify }: Props) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -52,20 +54,12 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
     }
   }, [originalPrompt, onRegenerate]);
 
-  // 基于此修改 — 将原始 prompt 填入输入框
+  // 基于此修改 — 通过回调把 prompt 交给上层，避免直接操纵 React 受控 textarea
   const handleModify = useCallback(() => {
-    if (!originalPrompt) return;
-    // 聚焦输入框并填入提示词前缀
-    const textarea = document.querySelector(".chat-input-textarea") as HTMLTextAreaElement | null;
-    if (textarea) {
-      const base = originalPrompt.replace(/^基于上面的结果[，,]\s*/, "");
-      textarea.value = `基于上面的结果，${base}，但是请`;
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      textarea.focus();
-      // 将光标移到末尾
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    }
-  }, [originalPrompt]);
+    if (!originalPrompt || !onModify) return;
+    const base = originalPrompt.replace(/^基于上面的结果[，,]\s*/, "");
+    onModify(`基于上面的结果，${base}，但是请`);
+  }, [originalPrompt, onModify]);
 
   const hasMedia = !!(payload.videoUrl || (payload.imageUrls && payload.imageUrls.length > 0));
 
@@ -120,7 +114,7 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
               disabled={downloading}
               aria-label="下载"
             >
-              <span className="result-action-icon">↓</span>
+              <span className="result-action-icon"><Download size={13} strokeWidth={1.8} /></span>
               <span className="result-action-label">{downloading ? "下载中…" : "下载"}</span>
             </button>
             {originalPrompt && onRegenerate && (
@@ -130,18 +124,18 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
                 onClick={handleRegenerate}
                 aria-label="重新生成"
               >
-                <span className="result-action-icon">↻</span>
+                <span className="result-action-icon"><RefreshCw size={13} strokeWidth={1.8} /></span>
                 <span className="result-action-label">重新生成</span>
               </button>
             )}
-            {originalPrompt && (
+            {originalPrompt && onModify && (
               <button
                 type="button"
                 className="result-action-btn"
                 onClick={handleModify}
                 aria-label="基于此修改"
               >
-                <span className="result-action-icon">✎</span>
+                <span className="result-action-icon"><Pencil size={13} strokeWidth={1.8} /></span>
                 <span className="result-action-label">基于此修改</span>
               </button>
             )}
@@ -193,18 +187,17 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
           align-items: center;
           gap: 5px;
           padding: 6px 12px;
-          border-radius: 8px;
+          border-radius: var(--shape-control);
           border: 1px solid var(--border-subtle);
           background: color-mix(in srgb, var(--space-surface) 60%, transparent);
-          color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--font-ui);
+          font-size: var(--text-label-size);
           letter-spacing: 0.03em;
           cursor: pointer;
           transition: all 0.2s var(--ease-out-quart);
           white-space: nowrap;
-          outline: none;
-        }
+          outline: none; line-height: var(--text-label-line); }
         .result-action-btn:hover {
           color: var(--glow-warm);
           border-color: color-mix(in srgb, var(--glow-warm) 40%, transparent);
@@ -224,8 +217,9 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
           cursor: not-allowed;
         }
         .result-action-icon {
-          font-size: 13px;
-          line-height: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .result-card-meta {
           display: flex;
@@ -233,12 +227,11 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
           justify-content: space-between;
           padding: 6px 12px;
           border-top: 1px solid var(--border-subtle);
-          font-size: 10px;
-          color: var(--foreground-muted);
-          opacity: 0.6;
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          opacity: 0.6; line-height: var(--text-caption-line); }
         .result-card-id {
-          font-family: "Geist Mono", monospace;
+          font-family: var(--font-code);
           letter-spacing: 0.04em;
         }
         .result-card-links {
@@ -248,10 +241,9 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate }: Pr
         .result-card-links a {
           color: var(--glow-cool);
           text-decoration: none;
-          font-size: 10px;
+          font-size: var(--text-caption-size);
           opacity: 0.7;
-          transition: opacity 0.15s;
-        }
+          transition: opacity 0.15s; line-height: var(--text-caption-line); }
         .result-card-links a:hover { opacity: 1; }
       `}</style>
     </>

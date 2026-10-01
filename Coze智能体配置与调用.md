@@ -179,7 +179,7 @@
 ### 请求示例
 ```JSON
 curl --location --request GET 'https://api.coze.cn/v1/bots/749865007353125***?is_published=true' \
---header 'Authorization: Bearer pat_OYDacMzM3WyOWV3Dtj2bHRMymzxP****' \
+--header 'Authorization: Bearer YOUR_COZE_API_TOKEN' \
 --header 'Content-Type: application/json'
 ```
 

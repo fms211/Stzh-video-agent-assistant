@@ -1,0 +1,61 @@
+/* v1.40 — one observation card becomes the conversation, without moving the composer. */
+body .product-shell .coze-dialogue-stage { position: relative; flex: 1; min-width: 0; min-height: 0; }
+body .product-shell .coze-dialogue-stage > .coze-dialogue-surface { position: absolute; left: 0; top: 0; overflow: hidden; }
+body .product-shell .coze-dialogue-stage--preview { height: 220px; flex: none; }
+body .product-shell .coze-dialogue-surface { --coze-shadow-tint: color-mix(in srgb, var(--coze-background, #3b4049) 88%, var(--glow-cool) 12%); }
+body .product-shell .coze-dialogue-surface__glow::before {
+  padding: var(--coze-border-width, 2px);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--coze-color-one) 82%, white), var(--coze-color-two) 50%, var(--coze-color-three));
+}
+body .product-shell .coze-dialogue-surface__glow::after {
+  padding: min(18px, calc(var(--coze-glow-radius, 56px) * .32));
+  box-shadow: inset 0 0 calc(var(--coze-glow-radius, 56px) * .12) var(--coze-color-one), inset 0 0 calc(var(--coze-glow-radius, 56px) * .32) color-mix(in srgb, var(--coze-color-three) 68%, transparent);
+  background: color-mix(in srgb, var(--coze-color-two) calc(var(--coze-fill-opacity, 0) * 100%), transparent);
+}
+body .product-shell .coze-dialogue-intro { flex: none; padding: 16px 20px 0; min-width: 0; }
+body .product-shell .coze-dialogue-intro h2 { margin: 0; font: 600 18px/26px var(--font-ui); letter-spacing: -.02em; transition: font-size 360ms var(--ease-out-expo), line-height 360ms var(--ease-out-expo); }
+body .product-shell .coze-dialogue-intro :is(.chat-welcome-eyebrow, p) { margin: 0; max-height: 0; opacity: 0; overflow: hidden; visibility: hidden; transition: opacity 160ms ease-out, transform 160ms ease-out, max-height 160ms ease-out, visibility 0s 160ms; transform: translateY(-6px); }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; overflow: auto; }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font: 700 28px/36px var(--font-ui); }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro :is(.chat-welcome-eyebrow, p) { flex: none; max-height: 160px; opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+body .product-shell .coze-dialogue-intro p { font: 400 14px/22px var(--font-ui); color: var(--text-muted); }
+body .product-shell .coze-dialogue-intro .chat-welcome-eyebrow { font: 400 13px/21px var(--font-ui); color: var(--glow-cool); }
+body .product-shell .coze-dialogue-intro h2 { max-width: 100%; overflow-wrap: anywhere; }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .chat-viewport { display: none; }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-context-header { padding-bottom: 12px; }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-context-toolbar { justify-content: center; }
+body .product-shell .coze-dialogue-surface[data-phase="opening"] .chat-message-group { animation: coze-first-message 180ms ease-out 240ms both; }
+@keyframes coze-first-message { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+body .product-shell .coze-dialogue-surface[data-phase="idle"] .coze-dialogue-intro > :is(span, h2, p) { animation: coze-welcome-line-enter 400ms var(--ease-out-expo) both; }
+body .product-shell .coze-dialogue-surface[data-phase="idle"] .coze-dialogue-intro > h2 { animation-delay: 90ms; }
+body .product-shell .coze-dialogue-surface[data-phase="idle"] .coze-dialogue-intro > p { animation-delay: 180ms; }
+.coze-glow-settings { display: grid; gap: 20px; min-width: 0; }
+.coze-glow-settings__preview { min-width: 0; }
+.coze-glow-settings__sample { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; height: 100%; padding: 28px; }
+.coze-glow-settings__sample span { color: var(--glow-cool); font-size: 13px; }
+.coze-glow-settings__sample strong { font-size: 22px; }
+.coze-glow-settings__sample p { font-size: 14px; color: var(--text-muted); }
+.coze-glow-settings__colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.coze-glow-settings__colors label { display: grid; gap: 8px; font-size: 13px; }
+.coze-glow-settings__colors input { width: 100%; height: 44px; padding: 4px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-reading); }
+@media (max-width: 720px) {
+  body .product-shell .coze-dialogue-intro { padding-inline: 12px; }
+  body .product-shell .coze-dialogue-intro h2 { font-size: 16px; line-height: 24px; }
+  body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro { padding: 16px; }
+  body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font-size: 24px; line-height: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body .product-shell .coze-dialogue-stage *, body .product-shell .coze-dialogue-stage *::before { animation: none !important; transition: none !important; }
+}
+:root[data-reduced-motion="true"] body .product-shell .coze-dialogue-stage *,
+body .product-shell .coze-dialogue-surface[data-reduced-motion="true"] * { animation: none !important; transition: none !important; }
+/* Secondary cues stay softer than the central border. */
+body .product-shell .cws-composer__tab.is-active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--glow-warm) 46%, transparent), 0 0 12px color-mix(in srgb, var(--glow-warm) 14%, transparent); }
+body .product-shell .wsd-dock__panel-layer[aria-hidden="false"] > .cws-glass,
+body .product-shell .cws-right[data-open="true"] .cws-right__inspector-layer > .cws-glass { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--glow-cool) 24%, transparent), 0 0 16px color-mix(in srgb, var(--glow-cool) 8%, transparent); }
+.status-signal { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; }
+.status-signal[data-success="true"]::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--glow-success, var(--glow-cool)); }
+.status-signal[data-pulse="true"] { animation: status-success-glow 900ms ease-out both; }
+@keyframes status-success-glow { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 30% { filter: drop-shadow(0 0 5px var(--glow-success, var(--glow-cool))); } }
+@media (prefers-reduced-motion: reduce) { .status-signal[data-pulse="true"] { animation: none; } }
+:root[data-reduced-motion="true"] .status-signal[data-pulse="true"] { animation: none; }

@@ -366,7 +366,8 @@ async function search(query, options = {}) {
     total: results.length,
   };
 
-  setCache(cacheKey, result);
+  // No provider evidence must not become a cached successful empty search.
+  if (result.provider !== "none") setCache(cacheKey, result);
   return result;
 }
 

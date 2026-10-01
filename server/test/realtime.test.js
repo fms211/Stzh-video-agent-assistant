@@ -106,3 +106,57 @@ test("socket rejects missing authentication", async () => {
   });
   assert.equal(closed.code, 4401);
 });
+
+test("socket task controls notify the attached server runtime to abort or wake", async () => {
+  const registered = await jsonRequest("/api/auth/register", null, {
+    method: "POST",
+    body: JSON.stringify({
+      username: "ws-runtime",
+      password: "secure-pass-123",
+      displayName: "运行时联动用户",
+    }),
+  });
+  const token = registered.body.token;
+  const created = await jsonRequest("/api/tasks", token, {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "video.generate",
+      title: "WebSocket 控制任务",
+      input: { prompt: "测试控制" },
+    }),
+  });
+  const taskId = created.body.task.id;
+  assert.ok(db.taskClaim(taskId, registered.body.user.id, "ws-runtime-worker"));
+  const previousRuntime = server.stzhTaskRuntime;
+  const aborts = [];
+  let wakes = 0;
+  server.stzhTaskRuntime = {
+    abortTask(id) { aborts.push(id); return true; },
+    wake() { wakes += 1; },
+  };
+  const wsUrl = baseUrl.replace("http://", "ws://");
+  const socket = new WebSocket(`${wsUrl}/ws/mobile?token=${encodeURIComponent(token)}`);
+  await waitForMessage(socket, (message) => message.type === "connection.ready");
+  try {
+    const paused = waitForMessage(socket, (message) => (
+      message.type === "task.updated"
+      && message.payload.task.id === taskId
+      && message.payload.task.status === "paused"
+    ));
+    socket.send(JSON.stringify({ type: "task.action", payload: { taskId, action: "pause" } }));
+    await paused;
+    assert.deepEqual(aborts, [taskId]);
+
+    const resumed = waitForMessage(socket, (message) => (
+      message.type === "task.updated"
+      && message.payload.task.id === taskId
+      && message.payload.task.status === "queued"
+    ));
+    socket.send(JSON.stringify({ type: "task.action", payload: { taskId, action: "resume" } }));
+    await resumed;
+    assert.equal(wakes, 1);
+  } finally {
+    socket.close();
+    server.stzhTaskRuntime = previousRuntime;
+  }
+});

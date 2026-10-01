@@ -17,6 +17,8 @@ export default function CursorTrail() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // 减少动画偏好：光标拖尾不渲染
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
@@ -119,15 +121,18 @@ export default function CursorTrail() {
         r.alpha -= RIPPLE_DECAY;
         if (r.alpha <= 0) continue;
 
-        // Main expanding ring — theme warm glow
-        ctx.strokeStyle = `rgba(${warm.r},${warm.g},${warm.b},${r.alpha})`;
-        ctx.lineWidth = 3;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = `rgba(${warm.r},${warm.g},${warm.b},${r.alpha * 0.5})`;
+        // Main expanding ring — theme warm glow（双层描边替代 shadowBlur，避免逐帧阴影开销）
+        ctx.strokeStyle = `rgba(${warm.r},${warm.g},${warm.b},${r.alpha * 0.3})`;
+        ctx.lineWidth = 7;
         ctx.beginPath();
         ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = `rgba(${warm.r},${warm.g},${warm.b},${r.alpha})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+        ctx.stroke();
 
         // Inner ring — cool color
         ctx.strokeStyle = `rgba(${cool.r},${cool.g},${cool.b},${r.alpha * 0.5})`;

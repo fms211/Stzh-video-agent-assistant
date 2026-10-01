@@ -20,9 +20,8 @@ export default function AuthEntryPage({ defaultView }: { defaultView: "login" | 
     <ProductShell
       phase="gateway"
       accessMode={null}
-      page="chat"
+      page="studio"
       onPageChange={() => {}}
-      cursorTrail={false}
     >
       <div className="entry-stage entry-stage--gateway">
         <EntryGateway

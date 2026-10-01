@@ -36,7 +36,7 @@ export default function NotificationsScreen() {
     wsClient.on('notification.created', onNotif);
     return () => { wsClient.off('notification.created', onNotif); };
   }, []);
-  const handleMarkRead = async (id: number) => {
+  const handleMarkRead = async (id: string) => {
     try { await markNotificationRead(id); setNotifications((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n))); }
     catch { Alert.alert('操作失败', '标记已读失败，请重试'); }
   };

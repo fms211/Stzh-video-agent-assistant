@@ -1,8 +1,8 @@
-import { getToken } from "./auth";
+import { getToken, resolveApiBase } from "./auth";
 import { currentDataOwner, workspaceDataKey, type DataOwner } from "./data-owner";
 
 const API_BASE = typeof window !== "undefined"
-  ? (process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin)
+  ? resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location)
   : "";
 
 type HistorySession = {
@@ -17,6 +17,7 @@ type ChatMessage = {
   role: "user" | "agent";
   text?: string;
   payload?: any;
+  contextTrace?: unknown;
   textIsPayload?: boolean;
   isError?: boolean;
   errorText?: string;
@@ -47,6 +48,13 @@ function activeKey(dataOwner = owner()) {
 
 function messagesKey(id: string, dataOwner = owner()) {
   return workspaceDataKey(dataOwner, "messages", id);
+}
+
+function captureSyncOwner() {
+  const token = getToken();
+  const dataOwner = owner();
+  const key = sessionsKey(dataOwner);
+  return { token, dataOwner, isCurrent: () => getToken() === token && sessionsKey() === key };
 }
 
 // === 会话管理 ===
@@ -98,6 +106,7 @@ export async function saveMessages(id: string, messages: ChatMessage[]) {
           role: m.role,
           text: m.text,
           payload: m.payload,
+          contextTrace: m.contextTrace,
           isError: m.isError,
           errorText: m.errorText,
         })),
@@ -132,15 +141,16 @@ export function setActiveSessionId(id: string | null) {
 
 // === 从服务端拉取会话列表（登录后首次加载） ===
 export async function fetchServerSessions(): Promise<HistorySession[]> {
-  const token = getToken();
+  const { token, isCurrent } = captureSyncOwner();
   if (!token) return [];
 
   try {
-    const res = await fetch(`${API_BASE}/api/conversations`, {
+    const res = await fetch(`${API_BASE}/api/conversations?mode=coze`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return [];
     const data = await res.json();
+    if (!isCurrent()) return [];
     return (data.conversations || []).map((c: any) => ({
       id: c.id,
       title: c.title,
@@ -154,7 +164,7 @@ export async function fetchServerSessions(): Promise<HistorySession[]> {
 
 // === 从服务端拉取消息 ===
 export async function fetchServerMessages(convId: string): Promise<ChatMessage[]> {
-  const token = getToken();
+  const { token, isCurrent } = captureSyncOwner();
   if (!token) return [];
 
   try {
@@ -163,11 +173,13 @@ export async function fetchServerMessages(convId: string): Promise<ChatMessage[]
     });
     if (!res.ok) return [];
     const data = await res.json();
+    if (!isCurrent()) return [];
     return (data.messages || []).map((m: any) => ({
       id: m.id,
       role: m.role,
       text: m.content,
       payload: m.payload,
+      contextTrace: m.contextTrace,
       textIsPayload: !m.content && m.payload,
       isError: !!m.is_error,
       errorText: m.error_text,
@@ -179,7 +191,7 @@ export async function fetchServerMessages(convId: string): Promise<ChatMessage[]
 
 // === 用户设置同步 ===
 export async function fetchServerSettings(): Promise<Record<string, any> | null> {
-  const token = getToken();
+  const { token, isCurrent } = captureSyncOwner();
   if (!token) return null;
 
   try {
@@ -187,7 +199,8 @@ export async function fetchServerSettings(): Promise<Record<string, any> | null>
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    return await res.json();
+    const settings = await res.json();
+    return isCurrent() ? settings : null;
   } catch {
     return null;
   }
@@ -208,11 +221,12 @@ export async function saveServerSettings(settings: Record<string, any>) {
 
 // === 登录后合并 localStorage 到服务端 ===
 export async function mergeLocalToServer(): Promise<{ ok: boolean; failed: number }> {
-  const token = getToken();
+  const { token, dataOwner, isCurrent } = captureSyncOwner();
   if (!token) return { ok: true, failed: 0 };
 
   let failed = 0;
   const attempt = async (url: string, body: unknown) => {
+    if (!isCurrent()) throw new Error("账户已切换，停止旧账户同步");
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -227,7 +241,6 @@ export async function mergeLocalToServer(): Promise<{ ok: boolean; failed: numbe
 
   try {
     // 合并会话
-    const dataOwner = owner();
     const localSessions = lsGet<HistorySession[]>(sessionsKey(dataOwner), []);
     if (localSessions.length > 0) {
       for (const s of localSessions) {
@@ -242,17 +255,13 @@ export async function mergeLocalToServer(): Promise<{ ok: boolean; failed: numbe
         await attempt(`${API_BASE}/api/conversations/${s.id}/messages`, {
           messages: msgs.map((m) => ({
             id: m.id, role: m.role, text: m.text,
-            payload: m.payload, isError: m.isError, errorText: m.errorText,
+            payload: m.payload, contextTrace: m.contextTrace, isError: m.isError, errorText: m.errorText,
           })),
         });
       }
     }
 
-    // 合并主题
-    const theme = lsGet<string>("tszh_theme", "");
-    if (theme) {
-      await saveServerSettings({ theme });
-    }
+    // 旧 tszh_theme 没有账户归属；主题由账户设置界面单独读取和保存。
   } catch {
     failed += 1;
   }
@@ -262,20 +271,15 @@ export async function mergeLocalToServer(): Promise<{ ok: boolean; failed: numbe
 
 // === 登录后从服务端覆盖 localStorage ===
 export async function syncServerToLocal() {
-  const token = getToken();
+  const { token, dataOwner, isCurrent } = captureSyncOwner();
   if (!token) return;
 
   try {
     // 拉取会话
     const serverSessions = await fetchServerSessions();
+    if (!isCurrent()) return;
     if (serverSessions.length > 0) {
-      lsSet(sessionsKey(), serverSessions);
-    }
-
-    // 拉取设置
-    const settings = await fetchServerSettings();
-    if (settings) {
-      if (settings.theme) lsSet("tszh_theme", settings.theme);
+      lsSet(sessionsKey(dataOwner), serverSessions);
     }
   } catch {}
 }

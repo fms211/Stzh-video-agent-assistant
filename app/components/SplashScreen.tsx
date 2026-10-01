@@ -57,7 +57,7 @@ export default function SplashScreen({ onEnter }: Props) {
     <section ref={scope} className="entry-stage entry-stage--splash" aria-label="产品启动入口">
       <div className="entry-stage__copy">
         <div className="entry-eyebrow"><CircleDot size={13} /> 腾昇智和 · 视频智能体</div>
-        <h1>点火，进入创作工作区</h1>
+        <h1 className="page-title">点火，进入创作工作区</h1>
         <p>从一句话到分镜、素材与成片，智能体一次完成。</p>
         <button
           type="button"

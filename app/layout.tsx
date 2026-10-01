@@ -1,31 +1,41 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, ZCOOL_QingKe_HuangYou } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
+import "./typography.css";
+import "./rounding.css";
+import "./studio-context-ui.css";
+import "./squish-switch.css";
+import "./coze-dialogue.css";
 import ServiceWorkerRegister from "./components/ServiceWorkerRegister";
 import LayerStack from "./components/LayerStack";
 import ClientProviders from "./ClientProviders";
 import ToastContainer from "./components/Toast";
 
-const geistSans = Geist({
+const geistSans = localFont({
+  src: "../public/fonts/Geist-100.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "../public/fonts/GeistMono-100.woff2",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const zcoolDisplay = ZCOOL_QingKe_HuangYou({
+const displayFont = localFont({
+  src: "../public/fonts/FusionPixel-12px-proportional-zh_hans.woff2",
   weight: "400",
   variable: "--font-display",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "腾昇智和 · 短视频智能体展示与调用",
+  title: "Stzh·video agent assistant · 1.40",
   description:
-    "腾昇智和短视频智能体交互演示：输入需求，调用智能体生成视频/图片素材并在页面展示结果。",
+    "AI视频创作工作台：连接模型与Coze、组织角色与工作流、管理项目记忆和创作结果。",
   applicationName: "腾昇智和",
   manifest: "/manifest.json",
   icons: {
@@ -57,7 +67,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} ${zcoolDisplay.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${displayFont.variable} h-full antialiased`}
     >
       <body className="relative isolate min-h-full flex flex-col bg-background text-foreground font-sans">
         <ServiceWorkerRegister />

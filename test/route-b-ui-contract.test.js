@@ -20,7 +20,15 @@ test("desktop exposes a task center and secure device pairing", () => {
   assert.match(pairing, /tszh-remote:\/\/connection/);
   assert.match(pairing, /getPairingNetworkTargets/);
   assert.match(api, /\/api\/devices\/pairing-codes/);
-  assert.match(read("app/components/TaskCenter.tsx"), /executeTask/);
+  assert.match(api, /\/api\/devices\/register/);
+  const taskCenter = read("app/components/TaskCenter.tsx");
+  assert.doesNotMatch(taskCenter, /executeTask\(claimed\.task,\s*claimed\.leaseToken/);
+  assert.doesNotMatch(taskCenter, /claimTask\(/);
+  assert.match(taskCenter, /服务器自动执行/);
+  assert.match(taskCenter, /ensureDesktopDevice\(\)/);
+  assert.match(taskCenter, /deviceId=/);
+  assert.match(api, /body:\s*JSON\.stringify\(\{\s*progress,\s*stage,\s*leaseToken/);
+  assert.match(api, /taskAction\(task\.id,\s*"complete",\s*\{[\s\S]*leaseToken/);
 });
 
 test("mobile process screen uses unified tasks, realtime updates, and real controls", () => {

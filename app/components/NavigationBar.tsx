@@ -2,33 +2,33 @@
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { motion } from "motion/react";
-import { LogIn } from "lucide-react";
+import { LogIn, UserRound } from "lucide-react";
 import type { AccessMode } from "@/app/lib/entry-flow";
-import { getToken } from "@/app/lib/auth";
+import { getToken, resolveApiBase } from "@/app/lib/auth";
+import { captureNotificationClient, createNotificationFeed, notificationTaskId } from "@/app/lib/notification-client";
+import { connectAccountEvents } from "@/app/lib/account-realtime";
 import { useAuth } from "./AuthProvider";
 import { fetchWeather, getWeatherIcon, getWeatherMood, getWeatherGlowColor, type WeatherData } from "@/app/lib/weather";
 import {
-  MessageSquare,
   Film,
   BarChart3,
-  ImageIcon,
   Palette,
   Bell,
   Check,
   X,
   Info,
   ListTodo,
+  SlidersHorizontal,
 } from "lucide-react";
 
-export type Page = "chat" | "opc" | "tasks" | "stats" | "libtv" | "gallery";
+export type Page = "studio" | "modelCenter" | "tasks" | "stats" | "gallery";
 export type WorkspacePage = Page;
 
 const PAGE_TABS: { key: Page; label: string; icon: ReactNode }[] = [
-  { key: "chat", label: "对话工作区", icon: <MessageSquare size={15} strokeWidth={1.8} /> },
-  { key: "opc", label: "OPC 工作模式", icon: <Film size={15} strokeWidth={1.8} /> },
+  { key: "studio", label: "创意工坊", icon: <Film size={15} strokeWidth={1.8} /> },
+  { key: "modelCenter", label: "模型与角色", icon: <SlidersHorizontal size={15} strokeWidth={1.8} /> },
   { key: "tasks", label: "任务中心", icon: <ListTodo size={15} strokeWidth={1.8} /> },
   { key: "stats", label: "工作统计", icon: <BarChart3 size={15} strokeWidth={1.8} /> },
-  { key: "libtv", label: "LibTV 生图", icon: <ImageIcon size={15} strokeWidth={1.8} /> },
   { key: "gallery", label: "创作画廊", icon: <Palette size={15} strokeWidth={1.8} /> },
 ];
 
@@ -41,13 +41,30 @@ type Notification = {
   type: "success" | "error" | "info";
 };
 
+function normalizeNotification(value: unknown): Notification | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || typeof row.title !== "string" || typeof row.message !== "string") return null;
+  const sourceTime = row.time ?? row.created_at;
+  const timestamp = typeof sourceTime === "number" && sourceTime < 10_000_000_000
+    ? sourceTime * 1000
+    : sourceTime as string | number;
+  const time = new Date(timestamp || Date.now());
+  const type = ["success", "error", "info"].includes(String(row.type))
+    ? row.type as Notification["type"]
+    : "info";
+  return { id: row.id, title: row.title, message: row.message, time, read: Boolean(row.read), type };
+}
+
 type Props = {
+  onOpenTask?: (id: string) => void;
   page: Page;
   onPageChange: (page: Page) => void;
   locked?: boolean;
   accessMode?: AccessMode | null;
   showBrandCore?: boolean;
   onAuthOpen?: () => void;
+  reducedMotion?: boolean;
 };
 
 // 弹簧物理参数
@@ -92,15 +109,17 @@ class SpringValue {
   }
 }
 
-const WINDOW_SIZE = 4; // 导航栏一次显示的标签数
+const WINDOW_SIZE = PAGE_TABS.length; // 五个页面始终可达，无需滚轮发现隐藏入口。
 
 export default function NavigationBar({
+  onOpenTask,
   page,
   onPageChange,
   locked = false,
   accessMode = null,
   showBrandCore = true,
   onAuthOpen,
+  reducedMotion = false,
 }: Props) {
   const { user } = useAuth();
   const [hovered, setHovered] = useState<Page | null>(null);
@@ -122,15 +141,15 @@ export default function NavigationBar({
   const [glowColor, setGlowColor] = useState<string>("var(--glow-warm)");
 
   // 通知状态
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const notificationOwner = user ? `user:${user.id}` : "guest";
+  const [notificationState, setNotificationState] = useState({ owner: notificationOwner, rows: [] as Notification[], busy: false, error: "" });
+  const notifications = notificationState.owner === notificationOwner ? notificationState.rows : [];
+  const notificationError = notificationState.owner === notificationOwner ? notificationState.error : "";
+  const notificationBusy = notificationState.owner === notificationOwner && notificationState.busy;
+  const notificationFeed = useRef<ReturnType<typeof createNotificationFeed> | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter((n) => !n.read).length;
-
-  // 导航栏状态
-  const [isExpanded, setIsExpanded] = useState(false);
-  const expandProgress = useRef(new SpringValue(0)); // 0=缩短, 1=伸长
-  const [expandValue, setExpandValue] = useState(0);
 
   // 按钮弹簧动画
   const buttonSprings = useRef<Map<string, SpringValue>>(new Map());
@@ -144,8 +163,9 @@ export default function NavigationBar({
     return buttonSprings.current.get(key)!;
   }, []);
 
-  // 动画循环
+  // 动画循环（reducedMotion 时跳过 RAF，直接落到目标值）
   useEffect(() => {
+    if (reducedMotion) return;
     let lastTime = performance.now();
 
     const animate = (currentTime: number) => {
@@ -154,14 +174,8 @@ export default function NavigationBar({
 
       let needsUpdate = false;
 
-      // 更新展开进度
-      if (expandProgress.current.update(dt)) {
-        needsUpdate = true;
-        setExpandValue(expandProgress.current.current);
-      }
-
       // 更新按钮弹簧
-      const newStates = new Map(buttonStates);
+      const newStates = new Map<string, { scale: number; glow: number }>();
       buttonSprings.current.forEach((spring, key) => {
         if (spring.update(dt)) {
           needsUpdate = true;
@@ -181,45 +195,37 @@ export default function NavigationBar({
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []);
-
-  // 导航栏鼠标事件（锁定态不响应 hover，避免入口阶段展开）
-  const handleNavMouseEnter = useCallback(() => {
-    if (locked) return;
-    setIsExpanded(true);
-    expandProgress.current.setTarget(1);
-  }, [locked]);
-
-  const handleNavMouseLeave = useCallback(() => {
-    setIsExpanded(false);
-    expandProgress.current.setTarget(0);
-  }, []);
+  }, [reducedMotion]);
 
   // 按钮鼠标事件
   const handleButtonEnter = useCallback((key: Page) => {
     setHovered(key);
     const spring = getButtonSpring(key);
+    if (reducedMotion) { setButtonStates((m) => new Map(m).set(key, { scale: 1.08, glow: 0.8 })); return; }
     spring.setTarget(1.08);
     spring.velocity = 2;
-  }, [getButtonSpring]);
+  }, [getButtonSpring, reducedMotion]);
 
   const handleButtonLeave = useCallback((key: Page) => {
     setHovered(null);
     const spring = getButtonSpring(key);
+    if (reducedMotion) { setButtonStates((m) => new Map(m).set(key, { scale: 1, glow: 0 })); return; }
     spring.setTarget(1);
-  }, [getButtonSpring]);
+  }, [getButtonSpring, reducedMotion]);
 
   const handleButtonDown = useCallback((key: Page) => {
     const spring = getButtonSpring(key);
+    if (reducedMotion) { setButtonStates((m) => new Map(m).set(key, { scale: 0.92, glow: 0 })); return; }
     spring.setTarget(0.92);
     spring.velocity = -3;
-  }, [getButtonSpring]);
+  }, [getButtonSpring, reducedMotion]);
 
   const handleButtonUp = useCallback((key: Page) => {
     const spring = getButtonSpring(key);
+    if (reducedMotion) { setButtonStates((m) => new Map(m).set(key, { scale: 1, glow: 0 })); return; }
     spring.setTarget(1.05);
     spring.velocity = 5;
-  }, [getButtonSpring]);
+  }, [getButtonSpring, reducedMotion]);
 
   // 实时时钟
   useEffect(() => {
@@ -251,66 +257,63 @@ export default function NavigationBar({
 
   // 读取通知
   useEffect(() => {
-    const loadNotifications = () => {
-      const stored = localStorage.getItem("tszh_notifications");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored).map((n: any) => ({ ...n, time: new Date(n.time) }));
-          setNotifications(parsed);
-        } catch {}
-      }
-    };
-    loadNotifications();
-    const handleNewNotif = () => loadNotifications();
+    const client = captureNotificationClient();
+    const feed = createNotificationFeed(client, state => setNotificationState({ ...state, owner: notificationOwner, rows: state.rows.map(normalizeNotification).filter((item): item is Notification => Boolean(item)) }));
+    notificationFeed.current = feed;
+    feed.start();
+    const handleNewNotif = () => { void feed.refresh(); };
     window.addEventListener("tszh_notification_added", handleNewNotif);
+    const fallback = window.setInterval(handleNewNotif, 30000);
 
     // WS 实时推送：服务端 notification.created 时触发本地刷新（登录才建连）
-    let ws: WebSocket | null = null;
+    let stopRealtime: (() => void) | undefined;
     const token = getToken();
     if (token) {
       try {
-        const backendUrl = new URL(
-          process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin
-        );
+        const backendUrl = new URL(resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location));
         const protocol = backendUrl.protocol === "https:" ? "wss:" : "ws:";
-        ws = new WebSocket(`${protocol}//${backendUrl.host}/ws/desktop?token=${encodeURIComponent(token)}`);
-        ws.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data) as { type?: string };
-            if (message.type === "notification.created") handleNewNotif();
-          } catch {}
-        };
+        stopRealtime = connectAccountEvents({
+          url: `${protocol}//${backendUrl.host}/ws/desktop?token=${encodeURIComponent(token)}`,
+          current: client.current,
+          onMessage: message => { if (message.type === "notification.created" || message.type === "connection.ready") handleNewNotif(); },
+        });
       } catch {}
     }
 
     return () => {
       window.removeEventListener("tszh_notification_added", handleNewNotif);
-      ws?.close();
+      window.clearInterval(fallback);
+      feed.dispose(); notificationFeed.current = null;
+      stopRealtime?.();
     };
-  }, []);
+  }, [notificationOwner]);
 
-  // 点击外部关闭通知面板
+  // 点击外部关闭通知面板 + ESC 关闭
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifications(false);
       }
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowNotifications(false);
+    };
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, []);
 
   // 标记全部已读
   const markAllRead = () => {
-    const updated = notifications.map((n) => ({ ...n, read: true }));
-    setNotifications(updated);
-    localStorage.setItem("tszh_notifications", JSON.stringify(updated));
+    void notificationFeed.current?.mutate("read");
   };
 
   // 清空通知
   const clearNotifications = () => {
-    setNotifications([]);
-    localStorage.removeItem("tszh_notifications");
+    void notificationFeed.current?.mutate("clear");
   };
 
   // 格式化时间
@@ -331,35 +334,40 @@ export default function NavigationBar({
 
     const handleWheel = (e: WheelEvent) => {
       if (locked) return;
-      e.preventDefault();
       const currentIndex = PAGE_TABS.findIndex((t) => t.key === page);
 
-      if (e.deltaY > 0 && currentIndex < PAGE_TABS.length - 1) {
-        // 向下 → 下一页
+      // 仅当滚轮方向还能有效切页时才拦截，否则放行页面滚动
+      const canNext = e.deltaY > 0 && currentIndex < PAGE_TABS.length - 1;
+      const canPrev = e.deltaY < 0 && currentIndex > 0;
+      if (!canNext && !canPrev) return;
+
+      e.preventDefault();
+
+      if (canNext) {
         const nextIndex = currentIndex + 1;
         onPageChange(PAGE_TABS[nextIndex].key);
+        setScrollPulse(PAGE_TABS[nextIndex].key);
         // 窗口跟随：确保新页面在可视范围内
         if (nextIndex >= windowStart + WINDOW_SIZE) {
           setWindowStart(Math.min(nextIndex - WINDOW_SIZE + 1, maxWindowStart));
         }
-      } else if (e.deltaY < 0 && currentIndex > 0) {
-        // 向上 → 上一页
+      } else {
         const prevIndex = currentIndex - 1;
         onPageChange(PAGE_TABS[prevIndex].key);
+        setScrollPulse(PAGE_TABS[prevIndex].key);
         // 窗口跟随：确保新页面在可视范围内
         if (prevIndex < windowStart) {
           setWindowStart(Math.max(prevIndex, 0));
         }
       }
 
-      setScrollPulse(page);
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
       scrollTimerRef.current = setTimeout(() => setScrollPulse(null), 500);
     };
 
     nav.addEventListener("wheel", handleWheel, { passive: false });
     return () => nav.removeEventListener("wheel", handleWheel);
-  }, [page, onPageChange, windowStart]);
+  }, [page, onPageChange, windowStart, locked]);
 
   // 点击标签：切页面 + 窗口平滑跟随
   const handleTabClick = useCallback((key: Page) => {
@@ -377,16 +385,15 @@ export default function NavigationBar({
   }, []);
 
   // 计算左右区域的偏移量（缩短时靠拢中间）
-  const sideOffset = (1 - expandValue) * 60; // 缩短时向中间偏移 60%
+  const sideOffset = 0;
 
   return (
     <>
       <nav
         ref={navRef}
-        className={`nav-bar ${isExpanded ? "expanded" : "collapsed"} ${locked ? "is-locked" : ""}`}
+        className={`nav-bar ${locked ? "collapsed is-locked" : "expanded"}`}
         style={{ "--weather-glow": glowColor } as React.CSSProperties}
-        onMouseEnter={handleNavMouseEnter}
-        onMouseLeave={handleNavMouseLeave}
+        aria-label="主导航"
       >
         <div className="nav-bar-inner">
           {/* 品牌恒星标记（与 splash 共享 layoutId 动画） */}
@@ -407,9 +414,9 @@ export default function NavigationBar({
             className="nav-info-left"
             style={{
               transform: `translateX(${sideOffset}%)`,
-              opacity: 0.3 + expandValue * 0.7,
-              width: expandValue > 0.01 ? "auto" : 0,
-              minWidth: expandValue > 0.01 ? undefined : 0,
+              opacity: locked ? 0.3 : 1,
+              width: locked ? 0 : "auto",
+              minWidth: 0,
               overflow: "hidden",
             }}
           >
@@ -432,8 +439,8 @@ export default function NavigationBar({
           <div
             className="nav-tabs-viewport"
             style={{
-              "--label-w": expandValue > 0.5 ? "100px" : "0px",
-              "--tab-gap": expandValue > 0.5 ? "16px" : "8px",
+              "--label-w": locked ? "0px" : "100px",
+              "--tab-gap": "4px",
             } as React.CSSProperties}
           >
             <div
@@ -462,14 +469,17 @@ export default function NavigationBar({
                     onMouseLeave={() => handleButtonLeave(tab.key)}
                     onMouseDown={() => handleButtonDown(tab.key)}
                     onMouseUp={() => handleButtonUp(tab.key)}
+                    aria-label={tab.label}
+                    aria-current={isActive ? "page" : undefined}
+                    title={tab.label}
                   >
                     <span className="nav-tab-icon">{tab.icon}</span>
                     <span
                       className="nav-tab-label"
                       style={{
-                        maxWidth: expandValue > 0.5 ? 100 : 0,
-                        opacity: expandValue > 0.5 ? 1 : 0,
-                        marginLeft: expandValue > 0.5 ? 4 : 0,
+                        maxWidth: locked ? 0 : 100,
+                        opacity: locked ? 0 : 1,
+                        marginLeft: locked ? 0 : 4,
                       }}
                     >
                       {tab.label}
@@ -486,11 +496,11 @@ export default function NavigationBar({
             ref={notifRef}
             style={{
               transform: `translateX(-${sideOffset}%)`,
-              opacity: expandValue > 0.01 || showNotifications ? 0.3 + expandValue * 0.7 : 0,
-              width: expandValue > 0.01 || showNotifications ? "auto" : 0,
-              minWidth: expandValue > 0.01 || showNotifications ? "fit-content" : 0,
+              opacity: locked ? 0.3 : 1,
+              width: "auto",
+              minWidth: "fit-content",
               overflow: showNotifications ? "visible" : "hidden",
-              pointerEvents: expandValue > 0.01 || showNotifications ? "auto" : "none",
+              pointerEvents: "auto",
             }}
           >
             {!locked && accessMode === "guest" && (
@@ -504,9 +514,9 @@ export default function NavigationBar({
               </button>
             )}
             {!locked && accessMode === "authenticated" && user && (
-              <span className="nav-user-chip" title={user.displayName || user.username}>
-                {user.displayName || user.username}
-              </span>
+              <button type="button" className="nav-user-chip" title={user.displayName || user.username} aria-label="管理账户" onClick={onAuthOpen}>
+                <UserRound size={13} aria-hidden="true" /><span className="nav-user-name">{user.displayName || user.username}</span>
+              </button>
             )}
 
             <button
@@ -514,6 +524,7 @@ export default function NavigationBar({
               className={`nav-notif-btn pixel-corners ${showNotifications ? "active" : ""}`}
               onClick={() => setShowNotifications(!showNotifications)}
               aria-label="通知"
+              aria-expanded={showNotifications}
             >
               <span className="nav-notif-icon"><Bell size={15} strokeWidth={1.8} /></span>
               {unreadCount > 0 && <span className="nav-notif-badge">{unreadCount}</span>}
@@ -525,13 +536,14 @@ export default function NavigationBar({
                   <span className="nav-notif-title">通知</span>
                   <div className="nav-notif-actions">
                     {unreadCount > 0 && (
-                      <button type="button" className="nav-notif-action" onClick={markAllRead}>全部已读</button>
+                      <button type="button" disabled={notificationBusy} className="nav-notif-action" onClick={markAllRead}>全部已读</button>
                     )}
                     {notifications.length > 0 && (
-                      <button type="button" className="nav-notif-action" onClick={clearNotifications}>清空</button>
+                      <button type="button" disabled={notificationBusy} className="nav-notif-action" onClick={clearNotifications}>清空</button>
                     )}
                   </div>
                 </div>
+                {notificationError && <div className="nav-notif-empty" role="alert">{notificationError} <button type="button" disabled={notificationBusy} onClick={() => void notificationFeed.current?.refresh()}>重新读取</button></div>}
                 <div className="nav-notif-list">
                   {notifications.length === 0 ? (
                     <div className="nav-notif-empty">暂无通知</div>
@@ -542,8 +554,9 @@ export default function NavigationBar({
                           {n.type === "success" ? <Check size={8} strokeWidth={2.5} /> : n.type === "error" ? <X size={8} strokeWidth={2.5} /> : <Info size={8} strokeWidth={2.5} />}
                         </span>
                         <div className="nav-notif-content">
-                          <span className="nav-notif-item-title">{n.title}</span>
-                          <span className="nav-notif-item-msg">{n.message}</span>
+                          <span className="nav-notif-item-title" title={n.title}>{n.title}</span>
+                          <span className="nav-notif-item-msg" title={n.message}>{n.message}</span>
+                          {onOpenTask && notificationTaskId(n.id) && <button type="button" className="nav-notif-action" onClick={() => { onOpenTask(notificationTaskId(n.id)!); setShowNotifications(false); }}>查看任务</button>}
                         </div>
                         <span className="nav-notif-time">{formatNotifTime(n.time)}</span>
                       </div>
@@ -580,7 +593,6 @@ export default function NavigationBar({
             0 0 100px color-mix(in srgb, var(--glow-warm) 6%, transparent),
             inset 0 1px 0 rgba(255, 255, 255, 0.08);
           pointer-events: none;
-          will-change: width;
           width: fit-content;
           max-width: 96%;
         }
@@ -625,25 +637,31 @@ export default function NavigationBar({
           border-radius: 9px;
           background: color-mix(in srgb, var(--glow-warm) 7%, transparent);
           color: var(--glow-warm-soft);
-          font-size: 10px;
+          font-size: var(--text-label-size);
           cursor: pointer;
           transition: background var(--motion-fast), color var(--motion-fast);
-          outline: none;
-        }
+          outline: none; line-height: var(--text-label-line); }
         .nav-login-btn:hover { background: color-mix(in srgb, var(--glow-warm) 14%, transparent); color: var(--glow-warm); }
         .nav-login-btn:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 40%, transparent); }
         .nav-user-chip {
           display: inline-flex;
           align-items: center;
+          gap: 5px;
+          background: var(--space-panel);
+          cursor: pointer;
           min-height: 30px;
           padding: 0 10px;
           margin-right: 4px;
-          border: 1px solid color-mix(in srgb, #8bcda4 25%, transparent);
+          border: 1px solid color-mix(in srgb, var(--glow-success) 25%, transparent);
           border-radius: 999px;
-          color: #8bcda4;
-          font-size: 10px;
+          color: var(--glow-success);
+          background: color-mix(in srgb, var(--glow-success) 6%, var(--space-panel));
+          font-size: var(--text-label-size);
           white-space: nowrap;
-        }
+          cursor: pointer;
+          transition: background 150ms, border-color 150ms; line-height: var(--text-label-line); }
+        .nav-user-chip:hover { background: color-mix(in srgb, var(--glow-success) 12%, var(--space-panel)); }
+        .nav-user-chip:focus-visible { outline: 2px solid var(--glow-success); outline-offset: 2px; }
 
         /* locked（身份交接/入口阶段）—— 低亮度锁定 */
         .nav-bar.is-locked { opacity: .72; }
@@ -700,17 +718,15 @@ export default function NavigationBar({
         }
 
         .nav-time {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 12px;
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size);
           color: var(--glow-warm-soft);
           letter-spacing: 0.06em;
-          text-shadow: 0 0 6px color-mix(in srgb, var(--glow-warm) 40%, transparent);
-        }
+          text-shadow: 0 0 6px color-mix(in srgb, var(--glow-warm) 40%, transparent); line-height: var(--text-caption-line); }
         .nav-date {
-          font-size: 9px;
-          color: var(--foreground-muted);
-          letter-spacing: 0.03em;
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted);
+          letter-spacing: 0.03em; line-height: var(--text-caption-line); }
 
         /* 天气块 */
         .nav-weather-block {
@@ -731,9 +747,8 @@ export default function NavigationBar({
         }
 
         .nav-weather-icon {
-          font-size: 14px;
-          filter: drop-shadow(0 0 4px color-mix(in srgb, var(--weather-glow, var(--glow-warm)) 50%, transparent));
-        }
+          font-size: var(--text-body-size);
+          filter: drop-shadow(0 0 4px color-mix(in srgb, var(--weather-glow, var(--glow-warm)) 50%, transparent)); line-height: var(--text-body-line); }
         .nav-weather-info {
           display: flex;
           flex-direction: row;
@@ -741,25 +756,22 @@ export default function NavigationBar({
           gap: 3px;
         }
         .nav-weather-temp {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 11px;
+          font-family: var(--font-ui);
+          font-size: var(--text-caption-size);
           color: var(--foreground);
-          letter-spacing: 0.04em;
-        }
+          letter-spacing: 0.04em; line-height: var(--text-caption-line); }
         .nav-weather-text {
-          font-size: 9px;
-          color: var(--foreground-muted);
-        }
+          font-size: var(--text-caption-size);
+          color: var(--text-muted); line-height: var(--text-caption-line); }
 
         /* 中间标签 — 旋转木马传送带 */
         .nav-tabs-viewport {
           --label-w: 0px;
           --tab-gap: 6px;
           overflow: hidden;
-          flex-shrink: 0;
-          /* 4个标签宽度 + 标签文字宽度 + 3个间距 */
-          width: calc(4 * 68px + 4 * var(--label-w) + 3 * var(--tab-gap));
-          transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          flex: 1 1 600px;
+          min-width: 0;
+          width: min(600px, calc(100vw - 230px));
         }
         .nav-tabs-track {
           display: flex;
@@ -775,7 +787,8 @@ export default function NavigationBar({
           align-items: center;
           justify-content: center;
           gap: 4px;
-          flex: 0 0 calc(25% - var(--tab-gap) * 3 / 4);
+          flex: 1 1 0;
+          min-width: 0;
           min-height: 44px;
           padding: 8px 12px;
           border: 1px solid transparent;
@@ -784,19 +797,17 @@ export default function NavigationBar({
             color-mix(in srgb, var(--space-surface) 50%, transparent) 0%,
             color-mix(in srgb, var(--space-panel) 70%, transparent) 100%
           );
-          color: var(--foreground-muted);
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 12px;
+          color: var(--text-muted);
+          font-family: var(--font-ui);
+          font-size: var(--text-label-size);
           letter-spacing: 0.04em;
           cursor: pointer;
           transition: color 0.15s, border-color 0.15s, background 0.15s;
           white-space: nowrap;
-          will-change: transform, box-shadow;
           transform-origin: center center;
           text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
           overflow: hidden;
-          outline: none;
-        }
+          outline: none; line-height: var(--text-label-line); }
 
         /* 焦点状态 - 键盘导航 */
         .nav-tab:focus-visible {
@@ -859,18 +870,18 @@ export default function NavigationBar({
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+          transition: transform 0.2s var(--ease-out-expo);
           flex-shrink: 0;
           color: inherit;
         }
-        .nav-tab:hover .nav-tab-icon { transform: scale(1.15); }
+        .nav-tab:hover .nav-tab-icon { transform: scale(1.12); }
         .nav-tab.active .nav-tab-icon {
           filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow-warm) 60%, transparent));
           color: var(--glow-warm-soft);
         }
 
         .nav-tab-label {
-          transition: max-width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s, margin 0.3s;
+          transition: max-width 0.28s var(--ease-out-expo), opacity 0.2s var(--ease-out-expo);
           overflow: hidden;
           white-space: nowrap;
         }
@@ -897,10 +908,9 @@ export default function NavigationBar({
           background: color-mix(in srgb, var(--glow-warm) 6%, transparent);
           color: var(--foreground-muted);
           cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+          transition: background 0.2s var(--ease-out-expo), color 0.2s var(--ease-out-expo), border-color 0.2s, transform 0.2s var(--ease-out-expo);
           box-shadow: 0 0 6px color-mix(in srgb, var(--glow-warm) 10%, transparent);
           animation: notif-glow 4s ease-in-out infinite;
-          will-change: transform;
           outline: none;
         }
 
@@ -948,20 +958,19 @@ export default function NavigationBar({
           position: absolute;
           top: 0px;
           right: 0px;
-          min-width: 12px;
-          height: 12px;
+          min-width: 16px;
+          height: 16px;
           padding: 0 2px;
-          border-radius: 6px;
+          border-radius: 8px;
           background: var(--error);
-          color: #fff;
-          font-size: 7px;
-          font-weight: 600;
+          color: var(--primary-foreground);
+          font-size: var(--text-caption-size);
+          font-weight: var(--weight-semibold);
           display: flex;
           align-items: center;
           justify-content: center;
           box-shadow: 0 0 5px color-mix(in srgb, var(--error) 60%, transparent);
-          animation: badge-pulse 2s ease-in-out infinite;
-        }
+          animation: badge-pulse 2s ease-in-out infinite; line-height: var(--text-caption-line); }
 
         @keyframes badge-pulse {
           0%, 100% { transform: scale(1); }
@@ -973,14 +982,14 @@ export default function NavigationBar({
           position: absolute;
           top: calc(100% + 6px);
           right: 0;
-          width: 280px;
-          max-height: 360px;
+          width: min(360px, calc(100vw - 32px));
+          max-height: 420px;
           border-radius: 12px;
           background: var(--space-panel);
           border: 1px solid var(--border-subtle);
           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px color-mix(in srgb, var(--glow-warm) 8%, transparent);
           overflow: hidden;
-          animation: notif-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+          animation: notif-in 0.22s var(--ease-out-expo);
           z-index: 100;
         }
 
@@ -997,41 +1006,41 @@ export default function NavigationBar({
           border-bottom: 1px solid var(--border-subtle);
         }
         .nav-notif-title {
-          font-family: "GeistPixel-Line", var(--font-sans);
-          font-size: 11px;
+          font-family: var(--font-sans);
+          font-size: var(--text-label-size);
+          font-weight: var(--weight-semibold);
           color: var(--foreground);
-          letter-spacing: 0.04em;
-        }
+          letter-spacing: 0.04em; line-height: var(--text-label-line); }
         .nav-notif-actions { display: flex; gap: 5px; }
         .nav-notif-action {
-          padding: 2px 5px;
+          min-height: 28px;
+          padding: 4px 7px;
           border-radius: 4px;
           border: none;
           background: transparent;
-          color: var(--foreground-muted);
-          font-size: 9px;
+          color: var(--text-muted);
+          font-size: var(--text-label-size);
           cursor: pointer;
-          transition: all 0.15s;
-        }
+          transition: background 0.15s, color 0.15s; line-height: var(--text-label-line); }
         .nav-notif-action:hover {
           color: var(--glow-warm);
           background: color-mix(in srgb, var(--glow-warm) 8%, transparent);
         }
+        .nav-notif-action:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: 2px; }
 
-        .nav-notif-list { max-height: 280px; overflow-y: auto; }
+        .nav-notif-list { max-height: 350px; overflow-y: auto; }
 
         .nav-notif-empty {
           padding: 24px 12px;
           text-align: center;
-          color: var(--foreground-muted);
-          font-size: 10px;
-        }
+          color: var(--text-muted);
+          font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 
         .nav-notif-item {
           display: flex;
           align-items: flex-start;
           gap: 7px;
-          padding: 8px 10px;
+          padding: 12px;
           border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent);
           transition: background 0.15s;
         }
@@ -1047,7 +1056,7 @@ export default function NavigationBar({
           justify-content: center;
           flex-shrink: 0;
         }
-        .nav-notif-type.success { background: color-mix(in srgb, #4ade80 20%, transparent); color: #4ade80; }
+        .nav-notif-type.success { background: color-mix(in srgb, var(--glow-success) 20%, transparent); color: var(--glow-success); }
         .nav-notif-type.error { background: color-mix(in srgb, var(--error) 20%, transparent); color: var(--error); }
         .nav-notif-type.info { background: color-mix(in srgb, var(--glow-cool) 20%, transparent); color: var(--glow-cool); }
 
@@ -1055,28 +1064,45 @@ export default function NavigationBar({
           flex: 1;
           display: flex;
           flex-direction: column;
-          gap: 1px;
+          gap: 3px;
           min-width: 0;
         }
-        .nav-notif-item-title { font-size: 10px; color: var(--foreground); font-weight: 500; }
+        .nav-notif-item-title { font-size: var(--text-label-size); line-height: var(--text-label-line); color: var(--foreground); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
         .nav-notif-item-msg {
-          font-size: 9px;
-          color: var(--foreground-muted);
+          font-size: var(--text-caption-size);
+          line-height: var(--text-caption-line);
+          color: var(--text-muted);
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          line-clamp: 3;
+          -webkit-box-orient: vertical;
           overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         .nav-notif-time {
-          font-size: 8px;
-          color: var(--foreground-muted);
-          opacity: 0.7;
+          font-size: var(--text-caption-size);
+          line-height: var(--text-caption-line);
+          color: var(--text-muted);
           white-space: nowrap;
           flex-shrink: 0;
         }
+        :root[data-reduced-motion="true"] .nav-notif-panel,
+        :root[data-reduced-motion="true"] .nav-notif-badge { animation: none; }
+        @media (prefers-reduced-motion: reduce) {
+          .nav-notif-panel, .nav-notif-badge { animation: none; }
+        }
 
         /* 响应式 */
+        @media (max-width: 1100px) {
+          .nav-info-left { display: none !important; }
+        }
         @media (max-width: 768px) {
-          .nav-info-left, .nav-info-right { display: none !important; }
+          .nav-user-name { display: none; }
+          .nav-user-chip { padding: 0 8px; }
+          .nav-bar-inner { padding: 5px 8px; gap: 4px; }
+          .nav-tabs-viewport { width: calc(100vw - 140px); }
+          .nav-tab { padding: 8px 6px; }
           .nav-tab-label { display: none; }
         }
       `}</style>

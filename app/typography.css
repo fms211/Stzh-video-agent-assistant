@@ -1,0 +1,103 @@
+/* Shared Web type roles. Existing theme and branding remain authoritative.
+   Values use rem so browser text preferences can scale the entire interface. */
+:root {
+  --font-ui: var(--font-geist-sans), "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-code: var(--font-geist-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --text-caption-size: .75rem;
+  --text-caption-line: 1.125rem;
+  --text-label-size: .8125rem;
+  --text-label-line: 1.3125rem;
+  --text-body-size: .875rem;
+  --text-body-line: 1.375rem;
+  --text-subheading-size: 1rem;
+  --text-subheading-line: 1.5rem;
+  --text-heading-size: 1.125rem;
+  --text-heading-line: 1.625rem;
+  --text-dialog-size: 1.25rem;
+  --text-dialog-line: 1.75rem;
+  --text-section-size: 1.5rem;
+  --text-section-line: 2rem;
+  --text-page-size: 1.75rem;
+  --text-page-line: 2.25rem;
+  --text-metric-size: 2rem;
+  --text-metric-line: 2.5rem;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --text-primary: var(--foreground);
+  --text-secondary: color-mix(in srgb, var(--foreground) 75%, var(--foreground-muted));
+  --text-muted: color-mix(in srgb, var(--foreground-muted) 85%, var(--foreground));
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  font-weight: var(--weight-regular);
+  line-height: var(--text-body-line);
+  letter-spacing: normal;
+  font-kerning: normal;
+}
+
+/* Include portalled dialogs and links styled as controls, not only five pages. */
+body :is(button, input, textarea, select, label, summary, dialog, [role="dialog"], [role="alert"], [role="status"]) {
+  font-family: var(--font-ui);
+}
+body :is(button, label, summary, [role="tab"]) { letter-spacing: normal; }
+body :is(input, textarea, select) { font-size: var(--text-body-size); line-height: var(--text-body-line); }
+body :is(input, textarea)::placeholder { color: var(--text-muted); opacity: 1; font-weight: var(--weight-regular); }
+body :is(pre, code, kbd, samp) { font-family: var(--font-code); font-variant-numeric: tabular-nums; }
+body small { font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+.product-shell :is(.page-title, .model-center__hero h1) {
+  font-family: var(--font-ui);
+  font-size: var(--text-page-size);
+  font-weight: var(--weight-semibold);
+  line-height: var(--text-page-line);
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.product-shell :is(.model-center__hero > div > span, .task-center__eyebrow) {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  font-weight: var(--weight-medium);
+  line-height: var(--text-caption-line);
+  letter-spacing: normal;
+}
+.product-shell :is(.cws-studio__header h2, .qr-panel__header h3),
+body :is(.studio-memory-dialog, .research-history-dialog) h2 {
+  font-family: var(--font-ui);
+  font-size: var(--text-dialog-size);
+  font-weight: var(--weight-semibold);
+  line-height: var(--text-dialog-line);
+}
+.product-shell :is(.stats-total-num, .stats-total-num-sm, .stats-insight-val, .gallery-stat-num, .task-center__telemetry strong, .nav-time) {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+}
+.product-shell :is(.stats-total-num, .stats-insight-val, .gallery-stat-num) {
+  font-size: var(--text-metric-size);
+  line-height: var(--text-metric-line);
+}
+.product-shell .gallery-filter-btn { font-family: var(--font-ui); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+.product-shell .stats-chart-wrap canvas { font-family: var(--font-code); font-size: var(--text-caption-size); color: var(--text-muted); }
+.product-shell .nav-notif-badge { min-width: 18px; height: auto; min-height: 18px; font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.product-shell .nav-notif-item .nav-notif-item-title { font-size: var(--text-label-size); line-height: var(--text-label-line); font-weight: var(--weight-semibold); }
+.product-shell .nav-notif-item .nav-notif-item-msg { font-size: var(--text-body-size); line-height: var(--text-body-line); overflow-wrap: anywhere; }
+.product-shell :is(.settings-section-label, .settings-row-label, .sidebar-tab, .studio-wf-label, .opc-param-label) { letter-spacing: normal; }
+.product-shell :is(.settings-section-desc, .sidebar-empty-desc, .cws-theme-card small, .model-center__hero p) { opacity: 1; }
+
+/* Prose can wrap long URLs/identifiers without breaking normal Chinese words. */
+body :is(.msg-agent, .studio-message, .research-workbench, .studio-memory-dialog) :is(p, li, dd) {
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+body :is(.msg-agent, .studio-message) :is(h1, h2, h3, h4) { font-family: var(--font-ui); font-weight: var(--weight-semibold); }
+body :is(.msg-agent, .studio-message) :is(p, li) { max-width: 75ch; }
+body :is(.msg-agent, .studio-message) pre { max-width: 100%; overflow-x: auto; }

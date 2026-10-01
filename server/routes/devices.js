@@ -36,6 +36,25 @@ router.get("/api/devices", (req, res) => {
   res.json({ devices: db.deviceList(req.user.userId).map(serializeDevice) });
 });
 
+router.post("/api/devices/register", (req, res) => {
+  const id = String(req.body?.id || "").trim();
+  const type = req.body?.type === "web" ? "web" : "desktop";
+  const name = String(req.body?.name || "桌面创作中心").trim().slice(0, 80) || "桌面创作中心";
+  if (!/^(desktop|web)_[A-Za-z0-9_-]{8,120}$/.test(id)) {
+    return res.status(400).json({ error: { message: "设备标识格式不正确" } });
+  }
+  const result = db.deviceRegister({ id, name, type }, req.user.userId);
+  if (result.reason === "owned_by_another_account") {
+    return res.status(409).json({ error: { message: "该设备已属于另一账户" } });
+  }
+  if (result.reason === "revoked") {
+    return res.status(409).json({ error: { message: "该设备已被撤销，请清除本地设备标识后重新配对" } });
+  }
+  const device = serializeDevice(result.device);
+  publish(req.user.userId, "device.updated", { device });
+  res.status(result.created ? 201 : 200).json({ device });
+});
+
 router.get("/api/devices/network-targets", (req, res) => {
   const port = Number(req.socket.localPort || process.env.PORT || 8080);
   const targets = [];

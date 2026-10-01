@@ -1,0 +1,135 @@
+/* Context controls belong to every studio mode, including Coze and collaboration.
+   Keep them independent of the ModelAssistantPanel's mounted inline stylesheet. */
+body .product-shell .studio-context-section {
+  display: block;
+  min-width: 0;
+  margin: 12px 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--shape-card);
+  background: var(--surface-reading);
+  font: var(--weight-regular) var(--text-body-size)/var(--text-body-line) var(--font-ui);
+}
+.studio-context-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--foreground);
+  font-weight: var(--weight-medium);
+}
+.studio-context-section > summary::-webkit-details-marker { display: none; }
+.studio-context-section > summary::after { content: "⌄"; flex: none; color: var(--glow-warm); transition: transform 140ms var(--ease-out-expo); }
+.studio-context-section[open] > summary::after { transform: rotate(180deg); }
+.studio-context-section[open] > summary { margin-bottom: 14px; }
+.studio-context-section > fieldset { display: block; min-width: 0; width: 100%; margin: 0; padding: 0; border: 0; }
+.studio-project-field { display: grid; gap: 8px; min-width: 0; }
+body .studio-project-field > label { display: block; margin: 0; color: var(--text-secondary); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+body .studio-project-field > small { display: block; margin: 0; max-width: 72ch; color: var(--text-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
+.studio-project-field > .studio-select { width: min(100%, 32rem); }
+.studio-select { display: block; min-width: 0; max-width: none; width: 100%; }
+body .studio-select .creative-select__trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; width: 100%; min-width: 0; min-height: 42px; padding: 9px 14px;
+  border: 1px solid var(--border-subtle); border-radius: var(--shape-control);
+  background: var(--surface-field); color: var(--foreground);
+  font: var(--weight-regular) var(--text-body-size)/var(--text-body-line) var(--font-ui);
+  cursor: pointer; text-align: left;
+  transition: border-color 140ms var(--ease-out-expo), background-color 140ms var(--ease-out-expo);
+}
+.studio-select .creative-select__trigger > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.studio-select .creative-select__trigger[data-disabled] { cursor: not-allowed; color: var(--text-muted); }
+.studio-select .creative-select__trigger[data-pressed] { border-color: var(--glow-warm); }
+body .product-shell .studio-provider-select { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.studio-provider-select > label { flex: none; color: var(--text-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+.studio-provider-select > .studio-select { width: clamp(150px, 17vw, 240px); }
+.studio-select--collab-project { flex: 0 1 210px; align-self: center; }
+.collab-panel__budgets b { white-space: nowrap; }
+.collab-panel__budgets small { text-wrap: balance; }
+
+/* The native project/model option popup cannot share Web styling, so these
+   controls use the already installed React Aria menu instead. */
+body .creative-select__popover { border-radius: var(--shape-card); transform-origin: var(--trigger-anchor-point, top center); }
+body .creative-select__option { font-family: var(--font-ui); font-size: var(--text-label-size); line-height: var(--text-label-line); padding: 9px 12px; }
+.creative-select__option > span { min-width: 0; overflow-wrap: anywhere; }
+.creative-select__option[data-disabled] { opacity: .55; cursor: not-allowed; }
+.creative-select__popover[data-entering] { animation: studio-popup-enter 180ms var(--ease-out-expo) both; }
+.creative-select__popover[data-exiting] { animation: studio-popup-exit 120ms var(--ease-out-expo) both; }
+
+body .product-shell .studio-session-history {
+  min-width: 0; margin: 12px 14px; padding: 0;
+  border: 1px solid var(--border-subtle); border-radius: var(--shape-control);
+  background: color-mix(in srgb, var(--surface-reading) 82%, transparent);
+  font: var(--weight-regular) var(--text-body-size)/var(--text-body-line) var(--font-ui);
+}
+.studio-context-section .studio-session-history { margin-inline: 0; }
+body .product-shell .studio-session-history > button {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  width: 100%; min-height: 40px; padding: 10px 14px;
+  border: 0; border-radius: inherit; background: transparent; color: var(--foreground);
+  font: var(--weight-medium) var(--text-label-size)/var(--text-label-line) var(--font-ui);
+  cursor: pointer; text-align: left;
+}
+.studio-session-history > button[aria-expanded]::after { content: "⌄"; color: var(--glow-warm); transition: transform 140ms var(--ease-out-expo); }
+.studio-session-history > button[aria-expanded="true"]::after { transform: rotate(180deg); }
+.studio-disclosure-content { display: grid; gap: 12px; min-width: 0; padding: 0 14px 14px; animation: studio-content-enter 180ms var(--ease-out-expo) both; }
+body .product-shell .studio-disclosure-content p { margin: 0; color: var(--text-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
+.studio-disclosure-content fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.studio-disclosure-content label { display: grid; gap: 7px; min-width: 0; color: var(--text-secondary); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+body .product-shell .studio-disclosure-content textarea { box-sizing: border-box; min-height: 76px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--shape-control); background: var(--surface-field); color: var(--foreground); font-family: var(--font-ui); }
+body .product-shell .studio-session-tools { gap: 8px; align-items: center; min-width: 0; }
+body .product-shell .studio-session-history .studio-session-tools { display: flex; flex-wrap: wrap; padding: 0; }
+body .product-shell :is(.studio-disclosure-content button, .studio-context-action) {
+  min-height: 36px; padding: 8px 14px; border: 1px solid var(--border-subtle);
+  border-radius: var(--shape-control); background: var(--surface-field); color: var(--foreground);
+  font: var(--weight-medium) var(--text-label-size)/var(--text-label-line) var(--font-ui);
+  cursor: pointer; transition: border-color 140ms var(--ease-out-expo), background-color 140ms var(--ease-out-expo);
+}
+body .product-shell :is(.studio-disclosure-content button, .studio-context-action):disabled { opacity: .5; cursor: not-allowed; }
+.studio-disclosure-content input[type="checkbox"] + span { min-width: 0; }
+.studio-disclosure-content label:has(> input[type="checkbox"]) { display: flex; align-items: flex-start; gap: 10px; }
+
+body .product-shell .collab-team {
+  min-width: 0; margin: 14px; padding: 16px; border: 1px solid var(--border-subtle);
+  border-radius: var(--shape-card); background: var(--surface-reading);
+}
+.collab-team header { display: grid; gap: 4px; margin-bottom: 12px; }
+.collab-team h3 { margin: 0; font: var(--weight-semibold) var(--text-body-size)/var(--text-body-line) var(--font-ui); color: var(--foreground); }
+.collab-team header p { margin: 0; color: var(--text-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+.collab-team__roles { display: grid; gap: 8px; }
+.collab-team__role { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--shape-control); background: var(--surface-field); }
+.collab-team__role > span { flex: 1; min-width: 140px; color: var(--foreground); font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
+.collab-team__role > small { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.collab-team__role.is-disabled > span { color: var(--text-muted); }
+.collab-team__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+body .product-shell .studio-context-action--primary { color: var(--glow-warm-soft); border-color: color-mix(in srgb, var(--glow-warm) 38%, var(--border-subtle)); background: color-mix(in srgb, var(--glow-warm) 8%, var(--surface-field)); }
+.collab-team input[type="checkbox"] {
+  appearance: none; flex: none; width: 18px; height: 18px; margin: 2px 0 0;
+  border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--space-panel);
+}
+.collab-team input[type="checkbox"]:checked {
+  border-color: var(--glow-warm); background-color: var(--glow-warm);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='m4 9 3 3 7-7' fill='none' stroke='%23050a14' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.collab-team input[type="checkbox"]:disabled { opacity: .5; }
+body .product-shell .studio-session-history > button:disabled { opacity: .5; cursor: not-allowed; }
+
+.studio-context-section[open] > :not(summary) { animation: studio-content-enter 180ms var(--ease-out-expo) both; }
+body :is(.cws-studio[open], .studio-memory-dialog, .research-history-dialog, .pc-drawer) { animation: studio-popup-enter 180ms var(--ease-out-expo) both; }
+@keyframes studio-content-enter { from { opacity: 0; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }
+@keyframes studio-popup-enter { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+@keyframes studio-popup-exit { to { opacity: 0; translate: 0 4px; } }
+@media (max-width: 720px) {
+  body .product-shell :is(.studio-context-section, .studio-session-history, .collab-team) { margin-inline: 8px; }
+  .studio-select--collab-project { flex-basis: 100%; }
+  .studio-provider-select > .studio-select { width: min(100%, 190px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.creative-select__popover, .studio-disclosure-content, .studio-context-section[open] > :not(summary), .cws-studio, .studio-memory-dialog, .research-history-dialog, .pc-drawer) { animation: none !important; translate: none !important; }
+  :is(.studio-context-section > summary::after, .studio-session-history > button::after) { transition: none; }
+}
+:root[data-reduced-motion="true"] :is(.creative-select__popover, .studio-disclosure-content, .studio-context-section[open] > :not(summary), .cws-studio, .studio-memory-dialog, .research-history-dialog, .pc-drawer) { animation: none !important; translate: none !important; }
+:root[data-reduced-motion="true"] :is(.studio-context-section > summary::after, .studio-session-history > button::after) { transition: none; }

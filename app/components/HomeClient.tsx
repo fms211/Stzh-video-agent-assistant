@@ -1,21 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import SplashScreen from "./SplashScreen";
 import ChatFlow from "./ChatFlow";
 import StatsDashboard from "./StatsDashboard";
 import PageTransition from "./PageTransition";
-import SettingsDrawer from "./SettingsDrawer";
 import { usePreferences } from "@/app/hooks/usePreferences";
 import GalleryPanel from "./GalleryPanel";
-import OpcAgentPanel from "./opc-agent/OpcAgentPanel";
 import TaskCenter from "./TaskCenter";
 import ProductShell from "./ProductShell";
 import EntryGateway from "./EntryGateway";
+import WorkspaceAuthDialog from "./WorkspaceAuthDialog";
+import CreativeStudio from "./CreativeStudio";
+import CreativeWorkspace from "./CreativeWorkspace";
+import ModelRoleCenter from "./ModelRoleCenter";
 import { useAuth } from "./AuthProvider";
 import { loadSessions } from "@/app/lib/sync";
-import { dataOwnerFromUser, migrateLegacyWorkspaceData } from "@/app/lib/data-owner";
+import { dataOwnerFromUser, migrateLegacyWorkspaceData, ownerScope, workspaceDataKey } from "@/app/lib/data-owner";
+import { getWallpaper } from "@/app/lib/wallpaper-store";
+import { DEFAULT_WALLPAPER_APPEARANCE, type WallpaperAppearance, type WallpaperAsset } from "@/app/lib/appearance-types";
+import { createHttpResearchRuntimeAdapter } from "@/app/lib/research-runtime/http-adapter";
+import { creativeApi } from "@/app/lib/creative-agent-api";
+import type { ResearchRuntimeAdapter } from "@/app/lib/research-runtime/adapter";
+import { createHttpPluginCenterAdapter } from "@/app/lib/plugin-center/http-adapter";
+import type { PluginCenterAdapter } from "@/app/lib/plugin-center/adapter";
 import {
   ENTRY_SESSION_KEY,
   createInitialEntryState,
@@ -26,16 +34,12 @@ import {
   type EntryState,
 } from "@/app/lib/entry-flow";
 import type { WorkspacePage } from "./NavigationBar";
+import { migrateStartPage } from "@/app/lib/appearance-types";
 
-const OPCPanel = dynamic(() => import("./OPCPanel"), {
-  ssr: false,
-  loading: () => <div className="opc-loading">加载 OPC 工作区…</div>,
-});
-
-const LibTVPanel = dynamic(() => import("./LibTVPanel"), {
-  ssr: false,
-  loading: () => <div className="opc-loading">加载 LibTV 面板…</div>,
-});
+// 兼容存量 localStorage 的 chat/opc 和已移除页面的起始页值。
+function migratePageFromPrefs(startPage: string): WorkspacePage {
+  return migrateStartPage(startPage) as WorkspacePage;
+}
 
 export default function HomeClient() {
   const { prefs } = usePreferences();
@@ -48,23 +52,89 @@ export default function HomeClient() {
   });
   const [showWelcome, setShowWelcome] = useState(true);
   const [authPromptOpen, setAuthPromptOpen] = useState(false);
-  const [page, setPage] = useState<WorkspacePage>(prefs.startPage as WorkspacePage);
+  const [page, setPage] = useState<WorkspacePage>(migratePageFromPrefs(prefs.startPage as string));
+  const [taskFocus, setTaskFocus] = useState<{ id: string; owner: number; revision: number } | null>(null);
+  const [conversationFocus, setConversationFocus] = useState<{ id: string; owner: number; revision: number } | null>(null);
   const [thinkingMode, setThinkingMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [burstKey, setBurstKey] = useState(0);
-  const [templateFill, setTemplateFill] = useState("");
-  const [stylePrefix, setStylePrefix] = useState("");
   const submitPromptRef = useRef<((prompt: string) => void) | null>(null);
-
-  const [opcAgentOpen, setOpcAgentOpen] = useState(false);
-  const [opcStyle, setOpcStyle] = useState<string | null>(null);
-  const [opcCameraMove, setOpcCameraMove] = useState("");
-  const [opcSelectedParams, setOpcSelectedParams] = useState<string[]>([]);
-  const [opcDuration, setOpcDuration] = useState(8);
-  const [opcAspect, setOpcAspect] = useState("16:9");
   const effectiveEntryState = entryState.accessMode === "authenticated" && !user
     ? reduceEntryState(entryState, { type: "RETURN_TO_GATEWAY", authenticated: false })
     : entryState;
+
+  // ---- 研究运行工作台 HTTP Adapter（页面生命周期单例，owner-scoped）----
+  // 规划 Task 7 Step 3：组件卸载只关订阅不停 Run；账号切换时 dispose 旧实例并按新 owner 重建。
+  const researchOwner = dataOwnerFromUser(user);
+  const researchOwnerKind = researchOwner.kind;
+  const researchOwnerUserId = researchOwner.kind === "account" ? researchOwner.userId : null;
+  const wallpaperOwnerScope = ownerScope(researchOwner);
+  const wallpaperAppearanceKey = workspaceDataKey(researchOwner, "wallpaper-appearance");
+  const researchAdapterRef = useRef<{ ownerKind: string; ownerUserId: number | null; adapter: ResearchRuntimeAdapter } | null>(null);
+  const [researchAdapter, setResearchAdapter] = useState<ResearchRuntimeAdapter | null>(null);
+  const [wallpaperAppearance, setWallpaperAppearance] = useState<WallpaperAppearance>(DEFAULT_WALLPAPER_APPEARANCE);
+  const [wallpaperAsset, setWallpaperAsset] = useState<WallpaperAsset | null>(null);
+
+  useEffect(() => {
+    const current = researchAdapterRef.current;
+    if (current && current.ownerKind === researchOwnerKind && current.ownerUserId === researchOwnerUserId) return;
+
+    current?.adapter.dispose();
+    const adapter = createHttpResearchRuntimeAdapter({ request: creativeApi });
+    researchAdapterRef.current = { ownerKind: researchOwnerKind, ownerUserId: researchOwnerUserId, adapter };
+    setResearchAdapter(adapter);
+  }, [researchOwnerKind, researchOwnerUserId]);
+
+  // 卸载时释放（页面生命周期结束）
+  useEffect(() => {
+    return () => {
+      researchAdapterRef.current?.adapter.dispose();
+      researchAdapterRef.current = null;
+      pluginAdapterRef.current?.adapter.dispose();
+      pluginAdapterRef.current = null;
+    };
+  }, []);
+
+  // ---- 插件中心 Mock Adapter（owner-scoped，与研究 Adapter 同生命周期模式）----
+  const pluginAdapterRef = useRef<{ ownerKind: string; ownerUserId: number | null; adapter: PluginCenterAdapter } | null>(null);
+  const [pluginCenterAdapter, setPluginCenterAdapter] = useState<PluginCenterAdapter | null>(null);
+
+  useEffect(() => {
+    const current = pluginAdapterRef.current;
+    if (current && current.ownerKind === researchOwnerKind && current.ownerUserId === researchOwnerUserId) return;
+
+    current?.adapter.dispose();
+    const adapter = createHttpPluginCenterAdapter({ request: creativeApi });
+    pluginAdapterRef.current = { ownerKind: researchOwnerKind, ownerUserId: researchOwnerUserId, adapter };
+    setPluginCenterAdapter(adapter);
+  }, [researchOwnerKind, researchOwnerUserId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      const raw = localStorage.getItem(wallpaperAppearanceKey);
+      setWallpaperAppearance(raw ? { ...DEFAULT_WALLPAPER_APPEARANCE, ...JSON.parse(raw) } : DEFAULT_WALLPAPER_APPEARANCE);
+    } catch {
+      setWallpaperAppearance(DEFAULT_WALLPAPER_APPEARANCE);
+    }
+  }, [hydrated, wallpaperAppearanceKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hydrated || !wallpaperAppearance.assetId) {
+      setWallpaperAsset(null);
+      return;
+    }
+    void getWallpaper(wallpaperAppearance.assetId, wallpaperOwnerScope).then((asset) => {
+      if (!cancelled) setWallpaperAsset(asset);
+    });
+    return () => { cancelled = true; };
+  }, [hydrated, wallpaperAppearance.assetId, wallpaperOwnerScope]);
+
+  const onWallpaperAppearanceChange = useCallback((next: WallpaperAppearance) => {
+    setWallpaperAppearance(next);
+    localStorage.setItem(wallpaperAppearanceKey, JSON.stringify(next));
+  }, [wallpaperAppearanceKey]);
 
   useEffect(() => {
     if (authLoading || hydrated) return;
@@ -87,9 +157,17 @@ export default function HomeClient() {
 
   useEffect(() => {
     document.documentElement.dataset.reducedMotion = prefs.reducedMotion ? "true" : "false";
-    document.documentElement.dataset.cursorTrail = prefs.cursorTrail ? "true" : "false";
+    document.documentElement.dataset.cursorTrail = "false";
     document.documentElement.dataset.particleEffects = prefs.particleEffects ? "true" : "false";
-  }, [prefs.cursorTrail, prefs.particleEffects, prefs.reducedMotion]);
+  }, [prefs.particleEffects, prefs.reducedMotion]);
+
+  // 登录面板 ESC 关闭
+  useEffect(() => {
+    if (!authPromptOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAuthPromptOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [authPromptOpen]);
 
   const sendEntryEvent = useCallback((event: EntryEvent) => {
     setEntryState((current) => reduceEntryState(current, event));
@@ -127,7 +205,14 @@ export default function HomeClient() {
   }, [sendEntryEvent]);
 
   if (!hydrated) {
-    return <div className="product-shell product-shell--loading" aria-busy="true" />;
+    return (
+      <div className="product-shell product-shell--loading" aria-busy="true">
+        <div className="loading-brand" role="status" aria-label="正在加载">
+          <span className="loading-brand-core" aria-hidden="true" />
+          <span className="loading-brand-text">正在同步天文台…</span>
+        </div>
+      </div>
+    );
   }
 
   const workspaceMode = effectiveEntryState.accessMode || "guest";
@@ -138,13 +223,17 @@ export default function HomeClient() {
       accessMode={effectiveEntryState.accessMode}
       page={page}
       onPageChange={setPage}
-      onAuthOpen={() => setAuthPromptOpen(true)}
+      onOpenTask={id => { if (user) { setTaskFocus({ id, owner: user.id, revision: Date.now() }); setPage("tasks"); } }}
+      onAuthOpen={() => { if (user) setAuthView("account"); setAuthPromptOpen(true); }}
       reducedMotion={prefs.reducedMotion}
       particleEffects={prefs.particleEffects}
-      cursorTrail={prefs.cursorTrail}
+      galaxySettings={prefs.galaxySettings}
       thinkingMode={thinkingMode}
       resetKey={resetKey}
       burstKey={burstKey}
+      wallpaperAppearance={wallpaperAppearance}
+      wallpaperAsset={wallpaperAsset}
+      videoWallpaperActive={wallpaperAsset?.kind === "video"}
     >
       {effectiveEntryState.phase === "splash" && (
         <SplashScreen
@@ -168,83 +257,42 @@ export default function HomeClient() {
 
       {effectiveEntryState.phase === "workspace" && (
         <div className="workspace-wrapper">
-          <SettingsDrawer />
-          <OpcAgentPanel
-            open={opcAgentOpen}
-            onClose={() => setOpcAgentOpen(false)}
-            opcContext={{
-              activeStyle: opcStyle,
-              cameraMove: opcCameraMove,
-              selectedParams: opcSelectedParams,
-              duration: opcDuration,
-              aspect: opcAspect,
-              stylePrefix: stylePrefix || "",
-            }}
-          />
-
           <PageTransition page={page}>
-            <ChatFlow
-              accessMode={workspaceMode}
-              onAuthRequired={() => setAuthPromptOpen(true)}
-              onThinkingChange={setThinkingMode}
-              onReset={handleReset}
-              onMessageSent={() => setBurstKey((key) => key + 1)}
-              templateFill={stylePrefix + templateFill}
-              onGoHome={goHome}
-              onSubmitRef={submitPromptRef}
-              onNewChat={() => setShowWelcome(true)}
-              showWelcome={showWelcome}
-              onWelcomeStart={handleWelcomeStart}
-            />
-            <section className="opc-section">
-              <div className="opc-section-divider" />
-              <h2 className="opc-section-title">OPC 工作模式</h2>
-              <p className="opc-section-sub">在线个人创作配置</p>
-              <OPCPanel
-                onTemplateClick={setTemplateFill}
-                onStyleClick={(prefix) => {
-                  setStylePrefix(prefix);
-                  setOpcStyle(prefix ? prefix.split("，")[0] : null);
-                }}
-                onParamsChange={(params) => {
-                  setOpcCameraMove(params.cameraMove);
-                  setOpcSelectedParams(params.selectedParams);
-                  setOpcDuration(params.duration);
-                  setOpcAspect(params.aspect);
-                }}
-                onOpenAgent={() => setOpcAgentOpen(true)}
+            <>
+              <CreativeWorkspace
+                accessMode={workspaceMode}
+                onAuthRequired={() => setAuthPromptOpen(true)}
+                onOpenModelCenter={() => setPage("modelCenter")}
+                focusConversation={conversationFocus?.owner === user?.id ? conversationFocus : null}
+                researchAdapter={researchAdapter}
+                pluginCenterAdapter={pluginCenterAdapter}
+                wallpaperAppearance={wallpaperAppearance}
+                onWallpaperAppearanceChange={onWallpaperAppearanceChange}
               />
-            </section>
-            <TaskCenter accessMode={workspaceMode} onAuthRequired={() => setAuthPromptOpen(true)} />
+            </>
+            <ModelRoleCenter accessMode={workspaceMode} key={wallpaperOwnerScope} onAuthRequired={() => setAuthPromptOpen(true)} pluginCenterAdapter={pluginCenterAdapter} />
+            <TaskCenter accessMode={workspaceMode} onAuthRequired={() => setAuthPromptOpen(true)} focusTask={taskFocus?.owner === user?.id ? taskFocus : null}
+              onOpenConversation={id => { if (user) { setConversationFocus({ id, owner: user.id, revision: Date.now() }); setPage("studio"); } }} />
             <section className="opc-section"><div className="opc-section-divider" /><StatsDashboard /></section>
             <section className="opc-section">
               <div className="opc-section-divider" />
-              <h2 className="opc-section-title">LibTV · AI 生图/生视频</h2>
-              <p className="opc-section-sub">接入 LibLib.tv 的 AIGC 能力</p>
-              <LibTVPanel />
-            </section>
-            <section className="opc-section">
-              <div className="opc-section-divider" />
-              <h2 className="opc-section-title">创作画廊</h2>
+              <h2 className="opc-section-title page-title">创作画廊</h2>
               <p className="opc-section-sub">当前数据仓中的视频和图片</p>
               <GalleryPanel />
             </section>
           </PageTransition>
 
           {authPromptOpen && (
-            <div className="workspace-auth-overlay" role="dialog" aria-modal="true" aria-label="登录后继续创作">
-              <button type="button" className="workspace-auth-overlay__backdrop" onClick={() => setAuthPromptOpen(false)} aria-label="关闭登录面板" />
-              <div className="workspace-auth-overlay__panel">
+            <WorkspaceAuthDialog label={user ? "管理账户" : "登录后继续创作"} onClose={() => setAuthPromptOpen(false)}>
                 <EntryGateway
                   compact
                   authView={effectiveEntryState.authView === "account" && !user ? "login" : effectiveEntryState.authView}
                   onAuthViewChange={setAuthView}
                   onAuthenticated={handleAuthenticated}
-                  onGuest={() => setAuthPromptOpen(false)}
+                  onGuest={handleGuest}
                   onCancel={() => setAuthPromptOpen(false)}
                 />
-              </div>
-            </div>
+            </WorkspaceAuthDialog>
           )}
         </div>
       )}

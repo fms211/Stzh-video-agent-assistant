@@ -1,0 +1,343 @@
+{
+  "scope": "native browser UI with local no-network fixture",
+  "checks": [
+    {
+      "check": "history-restore",
+      "result": {
+        "paragraphs": 4,
+        "phase": "active",
+        "statusRows": 0
+      }
+    },
+    {
+      "check": "first-submission",
+      "result": {
+        "height": 900,
+        "inputBottom": 860,
+        "phase": "active",
+        "stageWidth": 684,
+        "statusRows": 0,
+        "titleSize": "18px",
+        "userWidth": 35.3828125
+      }
+    },
+    {
+      "check": "context-escape",
+      "result": {
+        "focus": "项目：未关联",
+        "panel": true
+      }
+    },
+    {
+      "check": "queued",
+      "result": {
+        "phase": "active",
+        "rows": 1,
+        "text": "已排队，等待服务器调度"
+      }
+    },
+    {
+      "check": "glow-live-update",
+      "result": {
+        "slider": "2.9",
+        "values": [
+          "2.9",
+          "2.9"
+        ]
+      }
+    },
+    {
+      "check": "official-default",
+      "result": {
+        "cone": "25",
+        "intensity": "1"
+      }
+    },
+    {
+      "check": "running",
+      "result": {
+        "focus": "打开个性化设置",
+        "rows": 1,
+        "text": "正在整理分镜"
+      }
+    },
+    {
+      "check": "paused",
+      "result": {
+        "rows": 1,
+        "text": "任务已暂停，可在任务中心继续"
+      }
+    },
+    {
+      "check": "390-active-failed",
+      "result": {
+        "height": 844,
+        "input": {
+          "bottom": 804,
+          "height": 54,
+          "left": 80,
+          "right": 306,
+          "top": 750,
+          "width": 226,
+          "x": 80,
+          "y": 750
+        },
+        "phase": "active",
+        "rows": 0,
+        "scroll": 390,
+        "width": 390
+      }
+    },
+    {
+      "check": "960-active",
+      "result": {
+        "height": 900,
+        "inputBottom": 860,
+        "scroll": 960,
+        "width": 960
+      }
+    },
+    {
+      "check": "retry-success",
+      "result": {
+        "errors": 0,
+        "phase": "active",
+        "reply": true,
+        "statusRows": 0
+      }
+    },
+    {
+      "check": "accessibility-preferences",
+      "result": {
+        "blur": "none",
+        "reduced": "true",
+        "surfaces": [
+          "true"
+        ],
+        "transparency": "true"
+      }
+    },
+    {
+      "check": "theme-solar-forge",
+      "result": {
+        "background": "color(srgb 0.231373 0.31451 0.371922 / 0.52)",
+        "theme": "solar-forge"
+      }
+    },
+    {
+      "check": "theme-crystal-cave",
+      "result": {
+        "background": "color(srgb 0.261961 0.286745 0.371922 / 0.52)",
+        "theme": "crystal-cave"
+      }
+    },
+    {
+      "check": "assistant-draft-restored",
+      "result": {
+        "draft": "保留助手草稿",
+        "hiddenCore": true
+      }
+    },
+    {
+      "check": "provider-preset",
+      "result": {
+        "api": "https://api.xiaomimimo.com/v1",
+        "website": "https://platform.xiaomimimo.com"
+      }
+    },
+    {
+      "check": "model-advanced",
+      "result": [
+        {
+          "open": false,
+          "summary": "手动填写模型标识"
+        },
+        {
+          "open": true,
+          "summary": "高级设置 · 回复长度与对话容量"
+        }
+      ]
+    },
+    {
+      "check": "stats-width-start",
+      "time": 1790862532970,
+      "result": {
+        "scroll": 1274,
+        "width": 1274
+      }
+    },
+    {
+      "check": "stats-width-end",
+      "time": 1790862566249,
+      "result": {
+        "scroll": 1274,
+        "width": 1274
+      }
+    },
+    {
+      "check": "preview-size-and-tracking",
+      "result": {
+        "opacity": "0.9869337979094076",
+        "surfaceWidth": 656,
+        "tracking": "true",
+        "width": 656
+      }
+    },
+    {
+      "check": "welcome-default-theme",
+      "result": {
+        "box": {
+          "bottom": 480,
+          "height": 240.00001525878903,
+          "left": 350,
+          "right": 950,
+          "top": 239.99998474121097,
+          "width": 600,
+          "x": 350,
+          "y": 239.99998474121097
+        },
+        "glow": "color(srgb 0.909804 0.596078 0.25098 / 0.46) 0px 0px 0px 1px inset, color(srgb 0.909804 0.596078 0.25098 / 0.14) 0px 0px 12px 0px",
+        "phase": "idle",
+        "theme": "deep-space"
+      }
+    },
+    {
+      "check": "390-idle",
+      "result": {
+        "input": {
+          "bottom": 804,
+          "height": 54,
+          "left": 80,
+          "right": 306,
+          "top": 750,
+          "width": 226,
+          "x": 80,
+          "y": 750
+        },
+        "scroll": 390,
+        "stage": {
+          "bottom": 613,
+          "height": 270,
+          "left": 12,
+          "right": 378,
+          "top": 343,
+          "width": 366,
+          "x": 12,
+          "y": 343
+        },
+        "surface": {
+          "bottom": 583,
+          "height": 240,
+          "left": 23.99999237060547,
+          "right": 365.9999923706054,
+          "top": 343,
+          "width": 342,
+          "x": 23.99999237060547,
+          "y": 343
+        },
+        "width": 390
+      }
+    },
+    {
+      "check": "390-idle-context-open",
+      "result": {
+        "inputBottom": 804,
+        "panel": {
+          "bottom": 601,
+          "height": 170,
+          "left": 35.99999237060547,
+          "right": 353.99999237060547,
+          "top": 431,
+          "width": 318,
+          "x": 35.99999237060547,
+          "y": 431
+        },
+        "scroll": 390,
+        "surface": {
+          "bottom": 613,
+          "height": 270,
+          "left": 23.99999237060547,
+          "right": 365.9999923706054,
+          "top": 343,
+          "width": 342,
+          "x": 23.99999237060547,
+          "y": 343
+        },
+        "viewportHeight": 844,
+        "width": 390
+      }
+    },
+    {
+      "check": "390-glow-settings",
+      "result": {
+        "dialog": {
+          "bottom": 793.359375,
+          "height": 742.71875,
+          "left": 17,
+          "right": 373,
+          "top": 50.640625,
+          "width": 356,
+          "x": 17,
+          "y": 50.640625
+        },
+        "scroll": 390,
+        "sliders": [
+          {
+            "label": "边缘敏感度",
+            "right": 331
+          },
+          {
+            "label": "圆角",
+            "right": 331
+          },
+          {
+            "label": "辉光范围",
+            "right": 331
+          },
+          {
+            "label": "辉光强度",
+            "right": 331
+          },
+          {
+            "label": "光锥展开",
+            "right": 331
+          },
+          {
+            "label": "发光边宽",
+            "right": 331
+          },
+          {
+            "label": "内侧染色",
+            "right": 331
+          }
+        ],
+        "width": 390
+      }
+    },
+    {
+      "check": "task-success-glow",
+      "result": [
+        {
+          "pulse": "true",
+          "success": "true"
+        }
+      ]
+    },
+    {
+      "check": "task-success-glow-settled",
+      "result": [
+        {
+          "pulse": "false",
+          "success": "true"
+        }
+      ]
+    }
+  ],
+  "unverified": [
+    "physical touch device",
+    "200% text-only enlargement",
+    "real IME confirmation",
+    "real provider verification success animation"
+  ],
+  "capturedAt": "2026-10-01T13:55:31.593Z"
+}

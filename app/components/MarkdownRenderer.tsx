@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
+import SquishSwitch from "./SquishSwitch";
 
 export default function MarkdownRenderer({ content }: { content: string }) {
   return (
@@ -11,6 +12,11 @@ export default function MarkdownRenderer({ content }: { content: string }) {
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight, rehypeSanitize]}
       components={{
+        // GFM task lists are read-only; share the site's switch appearance.
+        input({ node: _node, type, ...props }) {
+          if (type === "checkbox") return <SquishSwitch {...props} disabled aria-label={props.checked ? "已完成的任务" : "未完成的任务"} />;
+          return <input type={type} {...props} />;
+        },
         // 代码块样式
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");

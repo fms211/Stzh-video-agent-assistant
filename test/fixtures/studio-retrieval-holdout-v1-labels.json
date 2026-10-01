@@ -1,0 +1,89 @@
+{
+  "cases": [
+    {
+      "caseId": "assistant-film-cn",
+      "relevant": ["film-camera", "film-pacing", "film-frame", "film-captions", "film-sound", "film-cuts"],
+      "mustExclude": ["foreign-film", "disabled-film", "unverified-film-result"],
+      "uncertain": [],
+      "reason": "六条共享偏好分别提供所需镜头、节奏、画幅、字幕、声音和转场规范，与慢动作、浅景深及仅文字要求相容。其他账户、停用记录不可用；未经核验的完成陈述不是设计规范或批准。"
+    },
+    {
+      "caseId": "assistant-film-en",
+      "relevant": ["film-camera", "film-pacing", "film-frame", "film-captions", "film-sound", "film-cuts"],
+      "mustExclude": ["foreign-film", "disabled-film", "unverified-film-result"],
+      "uncertain": [],
+      "reason": "英文任务与中文电影预告任务用途等义，六条共享规范均适用；不能因语言不同缩减相关集。其他账户、停用记录及无结果证据的完成陈述不得充当规范。"
+    },
+    {
+      "caseId": "workflow-lesson-cn",
+      "relevant": ["lesson-language", "lesson-example", "lesson-steps", "lesson-type", "lesson-diagram", "lesson-check"],
+      "mustExclude": ["deleted-lesson", "other-session-lesson"],
+      "uncertain": [],
+      "reason": "六条course项目规范分别支持表达、例子、讲解顺序、版式、插图和自测；引用规范不授予工具执行权限。已删除记录不可用，其他会话的临时要求不能跨会话注入。"
+    },
+    {
+      "caseId": "workflow-lesson-en",
+      "relevant": ["lesson-language", "lesson-example", "lesson-steps", "lesson-type", "lesson-diagram", "lesson-check"],
+      "mustExclude": ["deleted-lesson", "other-session-lesson"],
+      "uncertain": [],
+      "reason": "英文任务明确检索课程讲义的六类保存偏好，与中文任务相关集一致。用英文提出任务不等于要求讲义只能用英文，中文解释术语的规范仍适用。删除及会话隔离边界有效。"
+    },
+    {
+      "caseId": "collaboration-poster-cn",
+      "relevant": ["poster-frame", "poster-space", "poster-title", "poster-palette", "poster-texture", "poster-info"],
+      "mustExclude": ["poster-old-ink", "other-project-poster", "candidate-poster"],
+      "uncertain": [],
+      "reason": "六条exhibition项目规范支持工业极简、油画、留白及所需画幅、标题、配色、肌理和信息布局。旧水墨满版偏好违反当前要求，其他项目和待审建议不可用；确认规范不批准媒体任务。"
+    },
+    {
+      "caseId": "collaboration-poster-en",
+      "relevant": ["poster-frame", "poster-space", "poster-title", "poster-palette", "poster-texture", "poster-info"],
+      "mustExclude": ["poster-old-ink", "other-project-poster", "candidate-poster"],
+      "uncertain": [],
+      "reason": "英文任务的framing、negative-space、title、palette、texture和footer对应六条当前项目规范，与中文任务等义。旧水墨满版、其他项目和未确认建议应排除；讨论不代表生成批准。"
+    },
+    {
+      "caseId": "coze-book-cn",
+      "relevant": ["book-palette", "book-space", "book-frame", "book-caption", "book-texture", "book-details"],
+      "mustExclude": ["book-old-ink", "foreign-book", "expired-book"],
+      "uncertain": [],
+      "reason": "六条bookshop项目规范提供所需配色、留白、画幅、短文案、纸张材质及次级信息布局。旧水墨满版违反当前要求，其他账户不可用，临时活动规范在asOf前已过期；仅限文字参考。"
+    },
+    {
+      "caseId": "coze-book-en",
+      "relevant": ["book-palette", "book-space", "book-frame", "book-caption", "book-texture", "book-details"],
+      "mustExclude": ["book-old-ink", "foreign-book", "expired-book"],
+      "uncertain": [],
+      "reason": "英文书店宣传任务与中文任务用途等义，六条当前项目规范均相关。无水墨、无满版限制排除旧偏好；外国账户记录和过期活动规范不可注入，规范确认不构成生成批准。"
+    },
+    {
+      "caseId": "assistant-unrelated",
+      "relevant": [],
+      "mustExclude": [],
+      "uncertain": [],
+      "reason": "现有40条记忆没有量子纠错编码研究规范；其他领域偏好不能迁作研究规范。应保留零相关结论，不用无关条目填充。"
+    },
+    {
+      "caseId": "workflow-candidate-only",
+      "relevant": [],
+      "mustExclude": ["candidate-only"],
+      "uncertain": [],
+      "reason": "唯一涉及无人机竞赛徽标的记录尚未确认，且当前明确拒绝待审建议。其余记忆不提供该任务规范。"
+    },
+    {
+      "caseId": "collaboration-foreign-only",
+      "relevant": [],
+      "mustExclude": ["foreign-only"],
+      "uncertain": [],
+      "reason": "唯一陶艺展签规范属于owner=2，未共享给当前账户；exhibition项目没有可用的相关记录。主题相关不能替代账户权限。"
+    },
+    {
+      "caseId": "coze-disabled-only",
+      "relevant": [],
+      "mustExclude": ["disabled-only"],
+      "uncertain": [],
+      "reason": "唯一合唱团服装偏好已停用，当前任务也明确禁止使用停用记录；其余记忆无关，不能补足相关集。"
+    }
+  ],
+  "scope": "有限合成相关性与权限边界标注；以asOf核对有效期，mode仅表示来源。mustExclude列出任务指向的失效、越权或冲突条目，未穷举其他不适用记录；未列入relevant的条目不算相关。不判断排序、实际检索表现、创作质量或发布批准。"
+}

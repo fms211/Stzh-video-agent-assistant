@@ -22,11 +22,13 @@ export function usePreferences() {
     };
 
     window.addEventListener(PREFS_EVENT, handleChange);
+    window.addEventListener("tszh_data_owner_changed", handleChange);
     // 也监听 storage 事件（跨标签页同步）
     window.addEventListener("storage", handleChange);
 
     return () => {
       window.removeEventListener(PREFS_EVENT, handleChange);
+      window.removeEventListener("tszh_data_owner_changed", handleChange);
       window.removeEventListener("storage", handleChange);
     };
   }, []);

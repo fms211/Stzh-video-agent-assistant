@@ -1,0 +1,66 @@
+/* One shape scale for Web surfaces. The main navigation retains its own shape. */
+:root {
+  --shape-panel: 32px;
+  --shape-card: 24px;
+  --shape-control: 18px;
+  --shape-small: 12px;
+  --shape-pill: 999px;
+}
+
+/* Controls cover empty, disabled, loading and error states as well. Preserve
+   circles/pills explicitly below; native radio/checkbox indicators stay native. */
+body :is(.product-shell, [role="dialog"]) :is(button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select, [role="tab"]):not(:where(nav[aria-label="主导航"], nav[aria-label="主导航"] *)) {
+  border-radius: var(--shape-control);
+}
+
+body :is(.entry-gateway, .workspace-auth-overlay__panel, .settings-drawer, .cws-studio, .studio-memory-dialog, .research-history-dialog, .qr-panel) {
+  border-radius: var(--shape-panel);
+}
+
+body .product-shell :is(.cws-glass, .wsd-dock__panel, .wsd-dock__rail, .cws-inspector, .cws-composer) {
+  border-radius: var(--shape-panel);
+}
+
+body .product-shell :is(.center-card, .task-card, .task-detail, .stats-chart-wrap, .stats-total, .stats-insight, .ac-body, .gallery-card, .role-form, .role-generator, .candidate-card, .studio-assistant, .collab-panel, .collab-result, .cws-research-shell) {
+  border-radius: var(--shape-card);
+}
+
+/* Internal backgrounds follow their parent rather than painting square corners.
+   Clip only image/text-bearing surfaces already owning their scroll region;
+   do not clip every panel, which would cut off focus rings and dropdown menus. */
+body .product-shell :is(.gallery-media, .gallery-media img, .gallery-media video) {
+  border-radius: calc(var(--shape-card) - 1px);
+}
+body .product-shell .gallery-media { overflow: hidden; }
+body .product-shell .sidebar-panel--docked {
+  border-radius: inherit;
+  background: transparent;
+}
+body .product-shell :is(.cws-inspector__tab, .studio-message, .msg-user, .msg-agent, .msg-thinking, .collab-result__timeline) {
+  border-radius: var(--shape-control);
+}
+body .product-shell :is(.role-form, .role-generator) { background-clip: padding-box; }
+body :is(.product-shell, [role="dialog"]) :is(.md-code-header, .wf-card-references, .studio-wf-item, .studio-memory-stage, .msg-agent blockquote) {
+  border-radius: var(--shape-control);
+}
+body :is(.rworkbench, .rworkbench-inspector, .pc-drawer) { border-radius: var(--shape-panel); }
+body .product-shell :is(.task-card__progress, .task-detail__progress) > i { border-radius: inherit; }
+
+/* Remove square corner ornaments outside the deliberately retained navigation. */
+body .product-shell .pixel-corners:not(:where(nav[aria-label="主导航"] *))::before,
+body .product-shell .pixel-corners:not(:where(nav[aria-label="主导航"] *))::after {
+  display: none;
+}
+body .product-shell :is(.status-halftone, .ac-cell) { border-radius: 50%; }
+
+body .product-shell :is(.cws-composer__tab, .cws-composer__active-pill, .studio-configure-model, .stats-period-btn, .gallery-filter-btn, .task-status, .rworkbench-status, .studio-memory-tag, .studio-memory-badge) {
+  border-radius: var(--shape-pill);
+}
+body .product-shell :is(.sidebar-toggle, .send-btn, .stats-dot, .stats-nav-btn, .cws-inspector-rail__toggle) {
+  border-radius: 50%;
+}
+
+/* Portalled descendants may sit outside the product shell. */
+body :is(.studio-memory-dialog, .research-history-dialog, .cws-studio) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select, button) {
+  border-radius: var(--shape-control);
+}

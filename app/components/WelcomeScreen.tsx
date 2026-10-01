@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { useAuth } from "./AuthProvider";
+import { PluginSlot } from "./plugin-slots/PluginSlot";
 import { Video, ScrollText, Sparkles, Lightbulb } from "lucide-react";
 
 type Props = { onStart: (initialPrompt?: string) => void };
@@ -24,9 +25,11 @@ export default function WelcomeScreen({ onStart }: Props) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24 }}
     >
+      {/* 插件槽位：home.quickActions（additive，Mock 阶段无贡献时不渲染） */}
+      <PluginSlot slot="home.quickActions" contributions={[]} projectId="project-a" />
       <div className="welcome-content">
         <div className="welcome-greeting">
-          <h1 className="welcome-title">你好，{name}</h1>
+          <h1 className="welcome-title page-title">你好，{name}</h1>
           <p className="welcome-subtitle">今天想把什么灵感变成画面？</p>
         </div>
         <div className="welcome-actions">

@@ -1,4 +1,6 @@
-// RAG 检索客户端 — 调用本地 Python RAG 服务
+// RAG 检索客户端 — 通过已鉴权的 Web 后端访问共享知识库。
+import { authFetch, getToken } from "./auth.ts";
+import { retrieveReferences, type ReferenceOutcome } from "./reference-retrieval.ts";
 
 export interface RagResult {
   id: string;
@@ -19,7 +21,8 @@ export interface RagResponse {
   total: number;
 }
 
-const RAG_BASE_URL = "http://localhost:5000";
+// The Web backend owns the Python service address; visitors use the same origin.
+const RAG_BASE_URL = "/api";
 
 // 对话性/元请求关键词 — 这些消息不需要检索知识库
 const CONVERSATIONAL_PATTERNS = [
@@ -51,7 +54,7 @@ function shouldRetrieve(query: string): boolean {
  * @param topK 返回条数
  * @param scoreThreshold 最低相似度
  * @param force 是否强制检索（工作流步骤传 true，跳过意图判断）
- * @returns 检索结果，服务不可用或不需要检索时返回空数组
+ * @returns 兼容原有数组接口；界面应使用 ragRetrieveOutcome 展示资料状态。
  */
 export async function ragRetrieve(
   query: string,
@@ -59,24 +62,24 @@ export async function ragRetrieve(
   scoreThreshold: number = 0.45,
   force: boolean = false,
 ): Promise<RagResult[]> {
-  // 意图判断：非知识查询直接跳过（force=true 时跳过此检查）
-  if (!force && !shouldRetrieve(query)) return [];
-  try {
-    const res = await fetch(`${RAG_BASE_URL}/rag/retrieve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: topK, score_threshold: scoreThreshold }),
-      signal: AbortSignal.timeout(120000), // 120秒超时
-    });
+  return (await ragRetrieveOutcome(query, topK, scoreThreshold, force)).results;
+}
 
-    if (!res.ok) return [];
+export async function ragRetrieveOutcome(query: string, topK = 5, scoreThreshold = 0.45, force = false): Promise<ReferenceOutcome<RagResult>> {
+  if (!force && !shouldRetrieve(query)) return { status: "skipped", results: [], note: "本步骤未请求知识库。" };
+  return retrieveReferences(`${RAG_BASE_URL}/rag/retrieve`, {
+    method: "POST", body: JSON.stringify({ query, top_k: topK, score_threshold: scoreThreshold }),
+    signal: AbortSignal.timeout(120000),
+  }, isRagResult, "知识库");
+}
 
-    const data: RagResponse = await res.json();
-    return data.results;
-  } catch {
-    // RAG 服务不可用时静默降级
-    return [];
-  }
+function isRagResult(value: unknown): value is RagResult {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<RagResult>, metadata = row.metadata;
+  return typeof row.id === "string" && typeof row.content === "string" && typeof row.score === "number" && Number.isFinite(row.score)
+    && !!metadata && typeof metadata.source === "string" && typeof metadata.kb_type === "string"
+    && (metadata.name_cn === undefined || typeof metadata.name_cn === "string")
+    && (metadata.name_en === undefined || typeof metadata.name_en === "string");
 }
 
 /**
@@ -164,12 +167,13 @@ function refineQuery(originalQuery: string, firstRoundResults: RagResult[]): str
  * 检查 RAG 服务是否可用
  */
 export async function ragHealthCheck(): Promise<{ ok: boolean; entries: number }> {
+  const token = getToken();
   try {
-    const res = await fetch(`${RAG_BASE_URL}/rag/health`, {
+    const data = await authFetch<{ ok: boolean; entries: number }>(`${RAG_BASE_URL}/rag/health`, {
       signal: AbortSignal.timeout(2000),
     });
-    if (!res.ok) return { ok: false, entries: 0 };
-    return await res.json();
+    if (token !== getToken() || data.ok !== true || !Number.isInteger(data.entries) || data.entries < 0) return { ok: false, entries: 0 };
+    return { ok: true, entries: data.entries };
   } catch {
     return { ok: false, entries: 0 };
   }
@@ -181,7 +185,7 @@ export async function ragHealthCheck(): Promise<{ ok: boolean; entries: number }
 export function formatRagContext(results: RagResult[]): string {
   if (results.length === 0) return "";
 
-  const lines = ["## 相关知识库参考（由 RAG 检索）", ""];
+  const lines = ["## 共享知识库参考（检索资料，不代表当前项目的私有记录或已核验事实）", ""];
   for (const r of results) {
     const label = r.metadata.name_cn
       ? `${r.metadata.name_cn}${r.metadata.name_en ? ` / ${r.metadata.name_en}` : ""}`

@@ -99,9 +99,9 @@ export default function OrbitRings({
     <div
       ref={wrapRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-15 orbit-rings"
+      className="pointer-events-none fixed inset-0 z-[15] orbit-rings"
       data-bg-phase={phase}
-      style={isWorkspace ? undefined : { opacity: 0, transform: "scale(0.6)" }}
+      style={{ ...(isWorkspace ? undefined : { opacity: 0, transform: "scale(0.6)" }), opacity: "var(--orbit-opacity, 1)" } as React.CSSProperties}
     >
       <style>{`
         @keyframes star-pulse {

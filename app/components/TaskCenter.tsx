@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   Activity,
   CheckCircle2,
@@ -19,24 +19,31 @@ import {
   WifiOff,
 } from "lucide-react";
 import {
-  claimTask,
-  executeTask,
-  getDesktopDeviceId,
+  ensureDesktopDevice,
+  getConversation,
   getTasks,
+  getTask,
   getToken,
   startDesktopHeartbeat,
   taskAction,
+  resolveApiBase,
   type LinkedTask,
+  ApiRequestError,
 } from "@/app/lib/auth";
+import { loadMessages } from "@/app/lib/sync";
 import QRCodeAccess from "./QRCodeAccess";
+import { PluginSlot } from "./plugin-slots/PluginSlot";
 import type { AccessMode } from "@/app/lib/entry-flow";
+import { createTaskList, type TaskFilter } from "@/app/lib/task-list";
+import { useAuth } from "./AuthProvider";
+import { StatusGlow } from "./StatusGlow";
+import { connectAccountEvents } from "@/app/lib/account-realtime";
 
 type TaskStatus = LinkedTask["status"];
-type TaskFilter = "all" | "active" | "queued" | "running" | "paused" | "completed" | "failed" | "cancelled" | "archive";
 type ConnectionState = "signed-out" | "connecting" | "live" | "fallback";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  queued: "等待桌面接手",
+  queued: "等待服务器调度",
   running: "正在执行",
   paused: "已暂停",
   completed: "已完成",
@@ -47,7 +54,7 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 const FILTERS: { key: TaskFilter; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "active", label: "活跃" },
-  { key: "queued", label: "待接手" },
+  { key: "queued", label: "待调度" },
   { key: "completed", label: "已完成" },
   { key: "failed", label: "异常" },
   { key: "archive", label: "历史归档" },
@@ -55,6 +62,15 @@ const FILTERS: { key: TaskFilter; label: string }[] = [
 
 function isActiveTask(task: LinkedTask) {
   return task.status === "queued" || task.status === "running" || task.status === "paused";
+}
+
+function displayStage(task: LinkedTask) {
+  return task.status === "completed" ? "执行流程已结束" : task.stage || String(task.input?.prompt || "等待补充执行信息");
+}
+
+function linkedConversationId(task: LinkedTask) {
+  const value = task.input?.conversationId;
+  return task.kind === "video.generate" && typeof value === "string" && value.trim() && value.length <= 200 ? value.trim() : null;
 }
 
 function formatTime(value: string) {
@@ -76,104 +92,72 @@ function statusIcon(status: TaskStatus) {
   return <Clock3 size={16} strokeWidth={1.7} />;
 }
 
-export default function TaskCenter({ accessMode = "authenticated", onAuthRequired }: { accessMode?: AccessMode; onAuthRequired?: () => void }) {
+type Props = { accessMode?: AccessMode; onAuthRequired?: () => void; focusTask?: { id: string; revision: number } | null; onOpenConversation?: (id: string) => void };
+export default function TaskCenter(props: Props) {
+  const { user } = useAuth();
+  return <TaskCenterView key={`${user?.id ?? "guest"}:${props.accessMode}`} {...props} />;
+}
+
+function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTask, onOpenConversation }: Props) {
   const authenticated = accessMode === "authenticated" && Boolean(getToken());
-  const [tasks, setTasks] = useState<LinkedTask[]>([]);
-  const [totalTasks, setTotalTasks] = useState(0);
-  const [page, setPage] = useState(0);
+  const list = useMemo(() => createTaskList(getTasks), []);
+  const { tasks, total: totalTasks, filter, nextCursor, loading: listBusy, error: loadError } = useSyncExternalStore(list.subscribe, list.getSnapshot, list.getSnapshot);
+  const loading = listBusy && tasks.length === 0;
   const [connection, setConnection] = useState<ConnectionState>(
     authenticated ? "connecting" : "signed-out"
   );
-  const [filter, setFilter] = useState<TaskFilter>("all");
-  const filterRef = useRef<TaskFilter>("all");
   const [selectedId, setSelectedId] = useState("");
-  const [loading, setLoading] = useState(authenticated);
-  const [error, setError] = useState("");
+  const [focusedRecord, setFocusedRecord] = useState<LinkedTask | null>(null);
+  const [actionError, setActionError] = useState("");
+  const error = actionError || loadError;
   const [busyId, setBusyId] = useState("");
-  const controllers = useRef(new Map<string, AbortController>());
 
-  const PAGE_SIZE = 20;
-
-  const loadTasks = useCallback(async (statusFilter?: string, loadMore = false) => {
-    if (!authenticated || !getToken()) return;
-    try {
-      const offset = loadMore ? page * PAGE_SIZE : 0;
-      const data = await getTasks({ status: statusFilter, limit: PAGE_SIZE, offset });
-      if (loadMore) {
-        setTasks((current) => {
-          const seen = new Set(current.map((t) => t.id));
-          return [...current, ...data.tasks.filter((t) => !seen.has(t.id))];
-        });
-      } else {
-        setTasks(data.tasks);
-      }
-      setTotalTasks(data.total);
-      setError("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "任务加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [authenticated, page]);
+  useEffect(() => {
+    if (!authenticated || !focusTask) return;
+    let cancelled = false;
+    const token = getToken();
+    setActionError(""); setSelectedId(focusTask.id); setFocusedRecord(null);
+    void list.setFilter("all");
+    void getTask(focusTask.id).then(({ task }) => {
+      if (!cancelled && getToken() === token) { setFocusedRecord(task); list.applyTask(task); }
+    }).catch(error => { if (!cancelled && getToken() === token) setActionError(error instanceof Error ? error.message : "无法读取通知关联任务"); });
+    return () => { cancelled = true; };
+  }, [authenticated, focusTask, list]);
 
   useEffect(() => {
     if (!authenticated) return;
     const token = getToken();
     if (!token) return;
 
-    const archiveStatus = filterRef.current === "archive" ? "completed,failed,cancelled" : undefined;
-    const initialLoad = window.setTimeout(() => void loadTasks(archiveStatus), 0);
-    const fallback = window.setInterval(() => void loadTasks(archiveStatus), 15000);
+    void list.connect();
+    const fallback = window.setInterval(() => void list.refresh(), 15000);
     const stopHeartbeat = startDesktopHeartbeat(20);
-    const backendUrl = new URL(
-      process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin
-    );
-    const protocol = backendUrl.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(
-      `${protocol}//${backendUrl.host}/ws/desktop?token=${encodeURIComponent(token)}`
-    );
+    let disposed = false;
+    const stopRealtime = connectAccountEvents({
+      url: async () => {
+        const backendUrl = new URL(resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location));
+        const protocol = backendUrl.protocol === "https:" ? "wss:" : "ws:";
+        const { device } = await ensureDesktopDevice();
+        return `${protocol}//${backendUrl.host}/ws/desktop?token=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(device.id)}`;
+      },
+      current: () => !disposed && getToken() === token,
+      retryOnError: error => !(error instanceof ApiRequestError && [401, 403].includes(error.status)),
+      onStatus: live => setConnection(live ? "live" : "fallback"),
+      onMessage: message => {
+        if (message.type === "connection.ready") void list.refresh();
+        const payload = message.payload as { task?: LinkedTask } | undefined;
+        if (message.type === "task.updated" && payload?.task) list.applyTask(payload.task);
+      },
+    });
 
-    ws.onopen = () => setConnection("live");
-    ws.onerror = () => setConnection("fallback");
-    ws.onclose = () => setConnection("fallback");
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data) as {
-          type?: string;
-          payload?: { task?: LinkedTask };
-        };
-        if (message.type !== "task.updated" || !message.payload?.task) return;
-        const task = message.payload.task;
-        setTasks((current) => {
-          const exists = current.some((item) => item.id === task.id);
-          return exists
-            ? current.map((item) => (item.id === task.id ? task : item))
-            : [task, ...current];
-        });
-      } catch {
-        setConnection("fallback");
-      }
-    };
-
-    const activeControllers = controllers.current;
-    // 页面关闭/隐藏时：停止心跳（服务端 reaper 60s 内回收僵尸任务）
-    const onPageHide = () => {
-      activeControllers.forEach((controller) => controller.abort());
-      activeControllers.clear();
-    };
-    window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("beforeunload", onPageHide);
     return () => {
-      window.clearTimeout(initialLoad);
+      list.close();
       window.clearInterval(fallback);
       stopHeartbeat();
-      window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("beforeunload", onPageHide);
-      ws.close();
-      activeControllers.forEach((controller) => controller.abort());
-      activeControllers.clear();
+      disposed = true;
+      stopRealtime();
     };
-  }, [authenticated, loadTasks]);
+  }, [authenticated, list]);
 
   const counts = useMemo(() => ({
     active: tasks.filter(isActiveTask).length,
@@ -182,47 +166,51 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
     completed: tasks.filter((task) => task.status === "completed").length,
   }), [tasks]);
 
-  const filteredTasks = useMemo(() => tasks.filter((task) => {
-    if (filter === "all") return true;
-    if (filter === "active") return isActiveTask(task);
-    if (filter === "failed") return task.status === "failed" || task.status === "cancelled";
-    if (filter === "archive") return ["completed", "failed", "cancelled"].includes(task.status);
-    return task.status === filter;
-  }), [filter, tasks]);
-
-  const selectedTask = tasks.find((task) => task.id === selectedId)
-    || filteredTasks[0]
+  const filteredTasks = tasks;
+  const selectedTask = filteredTasks.find((task) => task.id === selectedId)
+    || (focusedRecord?.id === selectedId ? focusedRecord : null)
+    || (selectedId === focusTask?.id ? null : filteredTasks[0])
     || null;
 
-  const updateTask = useCallback((next: LinkedTask) => {
-    setTasks((current) => current.map((item) => (item.id === next.id ? next : item)));
-  }, []);
-
-  async function run(id: string, action: "claim" | "pause" | "resume" | "cancel" | "retry") {
+  async function run(id: string, action: "pause" | "resume" | "cancel" | "retry") {
     setBusyId(id);
-    setError("");
+    setActionError("");
     try {
-      if (action === "claim") {
-        const claimed = await claimTask(id, getDesktopDeviceId());
-        updateTask(claimed.task);
-        const controller = new AbortController();
-        controllers.current.set(id, controller);
-        const completed = await executeTask(claimed.task, controller.signal);
-        controllers.current.delete(id);
-        if (completed) updateTask(completed);
-        return;
-      }
-
       const result = await taskAction(id, action);
-      if (action === "pause" || action === "cancel") {
-        controllers.current.get(id)?.abort();
-        controllers.current.delete(id);
-      }
-      updateTask(result.task);
+      list.applyTask(result.task);
+      setFocusedRecord(previous => previous?.id === id ? result.task : previous);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      setActionError(cause instanceof Error ? cause.message : "操作失败，请重试");
     } finally {
       setBusyId("");
+    }
+  }
+
+  async function openConversation(task: LinkedTask) {
+    const id = linkedConversationId(task);
+    const token = getToken();
+    if (!id || !token || !onOpenConversation) return;
+    setBusyId(task.id);
+    setActionError("");
+    try {
+      const result = await getConversation(id);
+      if (getToken() !== token) return;
+      if (result.conversation?.mode !== "coze") {
+        setActionError("关联会话不是 Coze 创作对话，已保留当前任务记录。");
+        return;
+      }
+      onOpenConversation(id);
+    } catch (cause) {
+      if (getToken() !== token) return;
+      if (cause instanceof ApiRequestError && cause.status === 404 && loadMessages(id).length) {
+        onOpenConversation(id);
+      } else {
+        setActionError(cause instanceof ApiRequestError && cause.status === 404
+          ? "关联对话已删除或尚未同步；任务记录仍可查看。"
+          : cause instanceof Error ? cause.message : "暂时无法核对关联对话，请稍后重试。");
+      }
+    } finally {
+      if (getToken() === token) setBusyId("");
     }
   }
 
@@ -236,11 +224,13 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
 
   return (
     <section className="task-center">
+      {/* 插件槽位：taskCenter.detailActions（additive，Mock 阶段无贡献时不渲染） */}
+      <PluginSlot slot="taskCenter.detailActions" contributions={[]} projectId="project-a" />
       <header className="task-center__header">
         <div className="task-center__title-block">
           <div className="task-center__eyebrow"><Radio size={13} strokeWidth={1.7} /> 任务联动</div>
-          <h2>任务中心</h2>
-          <p>桌面负责创作执行，手机负责远程发起与控制，所有状态保持实时一致。</p>
+          <h2 className="page-title">任务中心</h2>
+          <p>服务器负责可靠执行，桌面与手机都可实时观察、暂停、取消或重新排队。</p>
         </div>
         <div className="task-center__header-actions">
           <span className={`task-center__live is-${connection}`}>
@@ -251,15 +241,15 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
         </div>
       </header>
 
-      <div className="task-center__telemetry" aria-label="任务状态概览">
+      <div className="task-center__telemetry" aria-label="当前已加载任务状态概览">
         <div><span>活跃</span><strong>{counts.active}</strong></div>
         <i />
-        <div><span>待接手</span><strong>{counts.queued}</strong></div>
+        <div><span>待调度</span><strong>{counts.queued}</strong></div>
         <i />
         <div><span>手机发起</span><strong>{counts.mobile}</strong></div>
         <i />
         <div><span>已完成</span><strong>{counts.completed}</strong></div>
-        <span className="task-center__sync"><Link2 size={13} strokeWidth={1.7} /> 15 秒自动校准</span>
+        <span className="task-center__sync"><Link2 size={13} strokeWidth={1.7} /> 当前已加载 · 15 秒自动校准</span>
       </div>
 
       {!authenticated ? (
@@ -282,17 +272,16 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                   className={filter === item.key ? "is-active" : ""}
                   aria-pressed={filter === item.key}
                   onClick={() => {
-                    filterRef.current = item.key;
-                    setFilter(item.key);
-                    setPage(0);
-                    void loadTasks(item.key === "archive" ? "completed,failed,cancelled" : undefined);
+                    setSelectedId("");
+                    setActionError("");
+                    void list.setFilter(item.key);
                   }}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
-            <button type="button" className="task-center__refresh" onClick={() => void loadTasks()}>
+            <button type="button" disabled={listBusy} className="task-center__refresh" onClick={() => void list.refresh()}>
               <RotateCcw size={13} strokeWidth={1.7} /> 校准状态
             </button>
           </div>
@@ -301,12 +290,15 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
             <div className="task-center__error" role="status">
               <TriangleAlert size={15} strokeWidth={1.7} />
               <span>{error}</span>
-              <button type="button" onClick={() => void loadTasks()}>重试</button>
+              <button type="button" disabled={!actionError && listBusy} onClick={() => {
+                if (actionError) setActionError("");
+                else void list.refresh();
+              }}>{actionError ? "关闭提示" : "刷新列表"}</button>
             </div>
           )}
 
           <div className="task-center__workspace">
-            <div className="task-center__list" aria-busy={loading}>
+            <div className="task-center__list" aria-busy={listBusy}>
               {loading && Array.from({ length: 3 }, (_, index) => (
                 <div className="task-card task-card--skeleton" key={index}>
                   <span /><span /><span />
@@ -326,16 +318,16 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                   type="button"
                   className={`task-card status-${task.status} ${selectedTask?.id === task.id ? "is-selected" : ""}`}
                   key={task.id}
-                  onClick={() => setSelectedId(task.id)}
+                  onClick={() => { setSelectedId(task.id); setActionError(""); }}
                 >
-                  <span className="task-card__icon">{statusIcon(task.status)}</span>
+                  <span className="task-card__icon"><StatusGlow value={task.status} success={task.status === "completed"}>{statusIcon(task.status)}</StatusGlow></span>
                   <span className="task-card__body">
                     <span className="task-card__meta">
                       <span>{task.origin === "mobile" ? "手机远程" : task.origin === "migration" ? "历史迁移" : "桌面"}</span>
                       <span>{formatTime(task.updatedAt)}</span>
                     </span>
                     <strong>{task.title}</strong>
-                    <span className="task-card__stage">{task.stage || String(task.input?.prompt || "等待补充执行信息")}</span>
+                    <span className="task-card__stage">{displayStage(task)}</span>
                     <span className="task-card__progress" aria-label={`进度 ${task.progress}%`}>
                       <i style={{ width: `${Math.min(100, Math.max(0, task.progress))}%` }} />
                     </span>
@@ -344,11 +336,12 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                 </button>
               ))}
 
-              {!loading && tasks.length < totalTasks && (
+              {!loading && nextCursor && (
                 <button
                   type="button"
                   className="task-center__loadmore"
-                  onClick={() => { setPage((p) => p + 1); void loadTasks(filterRef.current === "archive" ? "completed,failed,cancelled" : undefined, true); }}
+                  disabled={listBusy}
+                  onClick={() => void list.loadMore()}
                 >
                   加载更多（{tasks.length}/{totalTasks}）
                 </button>
@@ -365,7 +358,7 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                     <span>{selectedTask.id.slice(-8).toUpperCase()}</span>
                   </div>
                   <h3>{selectedTask.title}</h3>
-                  <p className="task-detail__stage">{selectedTask.stage || "等待桌面创作中心处理"}</p>
+                  <p className="task-detail__stage">{displayStage(selectedTask)}</p>
 
                   <div className="task-detail__progress">
                     <div><span>执行进度</span><strong>{selectedTask.progress}%</strong></div>
@@ -390,10 +383,13 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
                   )}
 
                   <div className="task-detail__actions">
-                    {selectedTask.status === "queued" && (
-                      <button disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "claim")}>
-                        <CirclePlay size={15} /> 接手执行
+                    {linkedConversationId(selectedTask) && onOpenConversation && (
+                      <button type="button" disabled={Boolean(busyId)} onClick={() => void openConversation(selectedTask)}>
+                        返回创作对话
                       </button>
+                    )}
+                    {selectedTask.status === "queued" && (
+                      <span className="task-detail__auto-run">服务器自动执行</span>
                     )}
                     {selectedTask.status === "running" && (
                       <button disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "pause")}>
@@ -433,82 +429,83 @@ export default function TaskCenter({ accessMode = "authenticated", onAuthRequire
         .task-center { min-height:100svh; padding:116px clamp(24px,7vw,108px) 80px; color:var(--foreground); }
         .task-center__header { display:flex; justify-content:space-between; gap:32px; align-items:flex-end; max-width:1180px; margin:0 auto 24px; }
         .task-center__title-block { max-width:680px; }
-        .task-center__eyebrow { display:flex; align-items:center; gap:7px; color:var(--glow-cool); font:600 11px/1.4 var(--font-display), var(--font-geist-mono), monospace; letter-spacing:.1em; }
+        .task-center__eyebrow { display:flex; align-items:center; gap:7px; color:var(--glow-cool); font: var(--weight-semibold) var(--text-caption-size)/var(--text-caption-line) var(--font-ui); letter-spacing:.1em; }
         .task-center h2 { margin:8px 0 6px; font:480 clamp(30px,3.4vw,42px)/1.15 var(--font-display), var(--font-geist-sans), sans-serif; letter-spacing:-.04em; }
-        .task-center__header p { margin:0; color:var(--foreground-muted); font-size:13px; line-height:1.7; }
+        .task-center__header p { margin:0; color: var(--text-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); }
         .task-center__header-actions { display:flex; align-items:center; gap:9px; }
-        .task-center__live { display:flex; align-items:center; gap:7px; min-height:38px; padding:0 12px; border:1px solid var(--border-subtle); border-radius:10px; background:color-mix(in srgb,var(--space-panel) 92%,transparent); color:var(--foreground-muted); font-size:11px; white-space:nowrap; }
-        .task-center__live.is-live { color:#7cc79a; border-color:color-mix(in srgb,#7cc79a 30%,transparent); }
+        .task-center__live { display:flex; align-items:center; gap:7px; min-height:38px; padding:0 12px; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:color-mix(in srgb,var(--space-panel) 92%,transparent); color: var(--text-muted); font-size: var(--text-caption-size); white-space:nowrap; line-height: var(--text-caption-line); }
+        .task-center__live.is-live { color:var(--glow-success); border-color:color-mix(in srgb,var(--glow-success) 30%,transparent); }
         .task-center__live.is-connecting { color:var(--glow-warm); }
-        .task-center__telemetry { max-width:1180px; min-height:52px; margin:0 auto 16px; padding:0 16px; display:flex; align-items:center; gap:18px; border:1px solid var(--border-subtle); border-radius:12px; background:color-mix(in srgb,var(--space-panel) 92%,transparent); }
+        .task-center__telemetry { max-width:1180px; min-height:52px; margin:0 auto 16px; padding:0 16px; display:flex; align-items:center; gap:18px; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:color-mix(in srgb,var(--space-panel) 92%,transparent); }
         .task-center__telemetry > div { display:flex; align-items:baseline; gap:8px; }
-        .task-center__telemetry span { color:var(--foreground-muted); font-size:10px; letter-spacing:.04em; }
-        .task-center__telemetry strong { color:var(--foreground); font:600 18px "Geist Mono",monospace; }
+        .task-center__telemetry span { color: var(--text-muted); font-size: var(--text-caption-size); letter-spacing:.04em; line-height: var(--text-caption-line); }
+        .task-center__telemetry strong { color:var(--foreground); font: var(--weight-semibold) var(--text-heading-size)/var(--text-heading-line) var(--font-code); }
         .task-center__telemetry > i { width:1px; height:18px; background:var(--border-subtle); }
         .task-center__sync { margin-left:auto; display:flex; align-items:center; gap:6px; }
         .task-center__toolbar { max-width:1180px; margin:0 auto 14px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
         .task-center__filters { display:flex; flex-wrap:wrap; gap:6px; }
-        .task-center__filters button,.task-center__refresh { min-height:34px; padding:0 12px; display:inline-flex; align-items:center; gap:6px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--foreground-muted); font-size:11px; cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1); }
-        .task-center__loadmore { min-height:38px; margin-top:10px; display:flex; align-items:center; justify-content:center; border:1px dashed var(--border-subtle); border-radius:10px; background:transparent; color:var(--foreground-muted); font-size:11px; cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1); }
+        .task-center__filters button,.task-center__refresh { min-height:34px; padding:0 12px; display:inline-flex; align-items:center; gap:6px; border:1px solid transparent; border-radius: var(--shape-control); background:transparent; color: var(--text-muted); font-size: var(--text-label-size); cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1); line-height: var(--text-label-line); }
+        .task-center__loadmore { min-height:38px; margin-top:10px; display:flex; align-items:center; justify-content:center; border:1px dashed var(--border-subtle); border-radius: var(--shape-control); background:transparent; color: var(--text-muted); font-size: var(--text-caption-size); cursor:pointer; transition:color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1); line-height: var(--text-caption-line); }
         .task-center__loadmore:hover { color:var(--foreground); border-color:color-mix(in srgb,var(--glow-cool) 35%,transparent); }
         .task-center__filters button:hover,.task-center__refresh:hover { color:var(--foreground); border-color:var(--border-subtle); }
         .task-center__filters button.is-active { color:var(--glow-warm); border-color:color-mix(in srgb,var(--glow-warm) 30%,transparent); background:color-mix(in srgb,var(--glow-warm) 8%,transparent); }
         .task-center__workspace { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; align-items:start; }
         .task-center__list { display:flex; flex-direction:column; gap:9px; min-width:0; }
-        .task-card { position:relative; width:100%; min-height:112px; padding:16px; display:grid; grid-template-columns:38px minmax(0,1fr) auto; gap:12px; align-items:start; overflow:hidden; text-align:left; border:1px solid var(--border-subtle); border-radius:13px; background:color-mix(in srgb,var(--space-panel) 92%,transparent); color:var(--foreground); cursor:pointer; transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1),background 180ms cubic-bezier(.16,1,.3,1); animation:task-card-enter 220ms cubic-bezier(.16,1,.3,1) both; }
+        .task-card { position:relative; width:100%; min-height:112px; padding:16px; display:grid; grid-template-columns:38px minmax(0,1fr) auto; gap:12px; align-items:start; overflow:hidden; text-align:left; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:color-mix(in srgb,var(--space-panel) 92%,transparent); color:var(--foreground); cursor:pointer; transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1),background 180ms cubic-bezier(.16,1,.3,1); animation:task-card-enter 220ms cubic-bezier(.16,1,.3,1) both; }
         .task-card:hover { transform:translateY(-1px); border-color:color-mix(in srgb,var(--glow-cool) 30%,transparent); }
         .task-card.is-selected { border-color:color-mix(in srgb,var(--glow-warm) 35%,transparent); background:color-mix(in srgb,var(--glow-warm) 8%,var(--space-panel)); }
-        .task-card__icon { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--border-subtle); border-radius:10px; color:var(--glow-cool); background:color-mix(in srgb,var(--space-surface) 92%,transparent); }
-        .task-card.status-running .task-card__icon { color:#7cc79a; }
+        .task-card__icon { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--border-subtle); border-radius: var(--shape-control); color:var(--glow-cool); background:color-mix(in srgb,var(--space-surface) 92%,transparent); }
+        .task-card.status-running .task-card__icon { color:var(--glow-success); }
         .task-card.status-completed .task-card__icon { color:var(--glow-warm); }
         .task-card.status-failed .task-card__icon,.task-card.status-cancelled .task-card__icon { color:var(--error); }
         .task-card__body { min-width:0; display:flex; flex-direction:column; }
-        .task-card__meta { display:flex; gap:14px; color:var(--foreground-muted); font:9px "Geist Mono",monospace; }
-        .task-card__body > strong { margin-top:7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:560; }
-        .task-card__stage { margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground-muted); font-size:11px; }
-        .task-card__progress { height:3px; margin-top:12px; overflow:hidden; border-radius:3px; background:rgba(255,255,255,.05); }
+        .task-card__meta { display:flex; flex-wrap:wrap; gap:4px 14px; color:var(--foreground-muted); font: var(--weight-regular) var(--text-caption-size)/var(--text-caption-line) var(--font-code); }
+        .task-card__body > strong { margin-top:7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size: var(--text-body-size); font-weight: var(--weight-medium); line-height: var(--text-body-line); }
+        .task-card__stage { margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .task-card__progress { height:3px; margin-top:12px; overflow:hidden; border-radius: 50%; background:rgba(255,255,255,.05); }
         .task-card__progress i { display:block; height:100%; border-radius:inherit; background:var(--glow-cool); transition:width 220ms cubic-bezier(.16,1,.3,1); }
-        .task-card.status-running .task-card__progress i { background:#7cc79a; }
+        .task-card.status-running .task-card__progress i { background:var(--glow-success); }
         .task-card.status-completed .task-card__progress i { background:var(--glow-warm); }
-        .task-card__status { display:flex; flex-direction:column; align-items:flex-end; gap:8px; color:var(--foreground-muted); font-size:10px; white-space:nowrap; }
-        .task-card__status b { color:var(--foreground); font:500 15px "Geist Mono",monospace; }
-        .task-detail { position:sticky; top:96px; min-height:364px; padding:18px; border:1px solid var(--border-subtle); border-radius:14px; background:color-mix(in srgb,var(--space-panel) 96%,transparent); }
-        .task-detail__head { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--foreground-muted); font:9px "Geist Mono",monospace; }
+        .task-card__status { display:flex; flex-direction:column; align-items:flex-end; gap:8px; color: var(--text-muted); font-size: var(--text-caption-size); white-space:nowrap; line-height: var(--text-caption-line); }
+        .task-card__status b { color:var(--foreground); font: var(--weight-medium) var(--text-body-size)/var(--text-body-line) var(--font-code); }
+        .task-detail { position:sticky; top:96px; min-height:364px; padding:18px; border:1px solid var(--border-subtle); border-radius: var(--shape-card); background:color-mix(in srgb,var(--space-panel) 96%,transparent); }
+        .task-detail__head { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--foreground-muted); font: var(--weight-regular) var(--text-caption-size)/var(--text-caption-line) var(--font-code); }
         .task-detail__signal { display:flex; align-items:center; gap:6px; color:var(--glow-cool); }
-        .task-detail__signal.status-running { color:#7cc79a; }
+        .task-detail__signal.status-running { color:var(--glow-success); }
         .task-detail__signal.status-failed,.task-detail__signal.status-cancelled { color:var(--error); }
-        .task-detail h3 { margin:18px 0 7px; font-size:18px; font-weight:560; line-height:1.35; }
-        .task-detail__stage { min-height:34px; margin:0; color:var(--foreground-muted); font-size:11px; line-height:1.55; }
+        .task-detail h3 { margin:18px 0 7px; font-size: var(--text-heading-size); font-weight: var(--weight-medium); line-height: var(--text-heading-line); }
+        .task-detail__stage { min-height:34px; margin:0; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .task-detail__progress { margin:18px 0; }
-        .task-detail__progress > div { display:flex; justify-content:space-between; color:var(--foreground-muted); font-size:10px; }
-        .task-detail__progress strong { color:var(--foreground); font:500 13px "Geist Mono",monospace; }
-        .task-detail__progress > span { display:block; height:4px; margin-top:8px; overflow:hidden; border-radius:4px; background:rgba(255,255,255,.05); }
+        .task-detail__progress > div { display:flex; justify-content:space-between; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .task-detail__progress strong { color:var(--foreground); font: var(--weight-medium) var(--text-label-size)/var(--text-label-line) var(--font-code); }
+        .task-detail__progress > span { display:block; height:4px; margin-top:8px; overflow:hidden; border-radius: var(--shape-control); background:rgba(255,255,255,.05); }
         .task-detail__progress i { display:block; height:100%; background:var(--glow-warm); }
         .task-detail dl { margin:0; padding:12px 0; border-block:1px solid var(--border-subtle); }
         .task-detail dl div { display:flex; justify-content:space-between; gap:18px; padding:5px 0; }
-        .task-detail dt { color:var(--foreground-muted); font-size:10px; }
-        .task-detail dd { margin:0; display:flex; align-items:center; gap:5px; color:var(--foreground); font-size:10px; text-align:right; }
+        .task-detail dt { flex-shrink:0; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .task-detail dd { min-width:0; margin:0; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:5px; color:var(--foreground); font-size: var(--text-caption-size); text-align:right; overflow-wrap:anywhere; line-height: var(--text-caption-line); }
         .task-detail__prompt { margin-top:14px; }
-        .task-detail__prompt > span { color:var(--foreground-muted); font-size:10px; }
-        .task-detail__prompt p { max-height:84px; margin:6px 0 0; overflow:auto; color:var(--foreground); font-size:11px; line-height:1.65; }
-        .task-detail__failure { margin-top:12px; padding:9px; display:flex; gap:7px; border:1px solid color-mix(in srgb,var(--error) 30%,transparent); border-radius:8px; color:var(--error); font-size:10px; }
+        .task-detail__prompt > span { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .task-detail__prompt p { max-height:84px; margin:6px 0 0; overflow:auto; color:var(--foreground); font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap:anywhere; }
+        .task-detail__failure { margin-top:12px; padding:9px; display:flex; gap:7px; border:1px solid color-mix(in srgb,var(--error) 30%,transparent); border-radius: var(--shape-control); color:var(--error); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .task-detail__actions { margin-top:18px; display:flex; flex-wrap:wrap; gap:7px; }
-        .task-detail__actions button { min-height:34px; padding:0 11px; display:flex; align-items:center; gap:6px; border:1px solid var(--border-subtle); border-radius:8px; background:transparent; color:var(--foreground); font-size:10px; cursor:pointer; transition:border-color 150ms cubic-bezier(.16,1,.3,1),color 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1); }
+        .task-detail__actions button { min-height:34px; padding:0 11px; display:flex; align-items:center; gap:6px; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:transparent; color:var(--foreground); font-size: var(--text-label-size); cursor:pointer; transition:border-color 150ms cubic-bezier(.16,1,.3,1),color 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1); line-height: var(--text-label-line); }
         .task-detail__actions button:hover { transform:translateY(-1px); border-color:var(--glow-warm); color:var(--glow-warm); }
         .task-detail__actions button.danger:hover { border-color:var(--error); color:var(--error); }
+        .task-card:focus-visible,.task-detail__actions button:focus-visible { outline:2px solid var(--glow-warm); outline-offset:2px; }
         .task-detail__actions button:disabled { opacity:.45; cursor:wait; transform:none; }
-        .task-center__empty,.task-detail__empty { min-height:260px; padding:42px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; border:1px dashed var(--border-subtle); border-radius:14px; color:var(--foreground-muted); text-align:center; }
-        .task-center__empty strong,.task-detail__empty strong { color:var(--foreground); font-size:13px; }
-        .task-center__empty span,.task-detail__empty span { max-width:320px; font-size:11px; line-height:1.6; }
+        .task-center__empty,.task-detail__empty { min-height:260px; padding:42px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; border:1px dashed var(--border-subtle); border-radius: var(--shape-card); color:var(--foreground-muted); text-align:center; }
+        .task-center__empty strong,.task-detail__empty strong { color:var(--foreground); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+        .task-center__empty span,.task-detail__empty span { max-width:320px; font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .task-detail__empty { min-height:326px; padding:20px; border:0; }
-        .task-center__auth-gate { max-width:1180px; min-height:260px; margin:0 auto; padding:36px; display:flex; align-items:center; justify-content:center; gap:18px; border:1px dashed var(--border-subtle); border-radius:14px; background:color-mix(in srgb,var(--space-panel) 88%,transparent); }
-        .task-center__auth-icon { width:48px; height:48px; display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--glow-warm) 20%,transparent); border-radius:12px; color:var(--glow-warm); }
-        .task-center__auth-gate strong { font-size:15px; }
-        .task-center__auth-gate p { margin:6px 0 0; color:var(--foreground-muted); font-size:11px; }
-        .task-center__error { max-width:1180px; margin:0 auto 12px; padding:10px 12px; display:flex; align-items:center; gap:8px; border:1px solid color-mix(in srgb,var(--error) 35%,transparent); color:var(--error); border-radius:9px; font-size:11px; }
+        .task-center__auth-gate { max-width:1180px; min-height:260px; margin:0 auto; padding:36px; display:flex; align-items:center; justify-content:center; gap:18px; border:1px dashed var(--border-subtle); border-radius: var(--shape-card); background:color-mix(in srgb,var(--space-panel) 88%,transparent); }
+        .task-center__auth-icon { width:48px; height:48px; display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--glow-warm) 20%,transparent); border-radius: var(--shape-control); color:var(--glow-warm); }
+        .task-center__auth-gate strong { font-size: var(--text-body-size); line-height: var(--text-body-line); }
+        .task-center__auth-gate p { margin:6px 0 0; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .task-center__error { max-width:1180px; margin:0 auto 12px; padding:10px 12px; display:flex; align-items:center; gap:8px; border:1px solid color-mix(in srgb,var(--error) 35%,transparent); color:var(--error); border-radius: var(--shape-control); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .task-center__error button { margin-left:auto; border:0; background:transparent; color:inherit; cursor:pointer; text-decoration:underline; }
         .task-card--skeleton { display:flex; flex-direction:column; gap:10px; pointer-events:none; }
-        .task-card--skeleton span { display:block; height:10px; border-radius:6px; background:rgba(255,255,255,.05); animation:skeleton-breathe 1.4s cubic-bezier(.16,1,.3,1) infinite alternate; }
+        .task-card--skeleton span { display:block; height:10px; border-radius: var(--shape-control); background:rgba(255,255,255,.05); animation:skeleton-breathe 1.4s cubic-bezier(.16,1,.3,1) infinite alternate; }
         .task-card--skeleton span:nth-child(1) { width:28%; }.task-card--skeleton span:nth-child(2) { width:72%; }.task-card--skeleton span:nth-child(3) { width:100%; height:3px; margin-top:18px; }
         @keyframes task-card-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         @keyframes skeleton-breathe { from { opacity:.45; } to { opacity:1; } }

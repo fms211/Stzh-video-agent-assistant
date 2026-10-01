@@ -1,4 +1,5 @@
 const Database = require("better-sqlite3");
+const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 
@@ -14,7 +15,20 @@ if (process.env.STZH_DATA_DIR) {
   // 开发模式：使用当前目录
   DB_PATH = path.join(__dirname, "stzh.db");
 }
-const db = new Database(DB_PATH);
+let databaseOptions = {};
+if (process.versions.electron) {
+  const electronBinding = path.join(
+    __dirname,
+    "native",
+    `electron-v${process.versions.modules}`,
+    "better_sqlite3.node"
+  );
+  if (!fs.existsSync(electronBinding)) {
+    throw new Error(`Electron SQLite 原生绑定缺失：${electronBinding}`);
+  }
+  databaseOptions = { nativeBinding: electronBinding };
+}
+const db = new Database(DB_PATH, databaseOptions);
 
 // 启用 WAL 模式（提升并发性能）
 db.pragma("journal_mode = WAL");
@@ -245,6 +259,45 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_task_user
     ON tasks(user_id, updated_at DESC);
 
+  CREATE TABLE IF NOT EXISTS task_attachments (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    task_id TEXT,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    bound_at INTEGER,
+    cleanup_token TEXT,
+    cleanup_started_at INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_task_attachment_stored_name
+    ON task_attachments(user_id, stored_name);
+  CREATE INDEX IF NOT EXISTS idx_task_attachment_user_task
+    ON task_attachments(user_id, task_id);
+  CREATE INDEX IF NOT EXISTS idx_task_attachment_cleanup
+    ON task_attachments(task_id, created_at, bound_at);
+  CREATE INDEX IF NOT EXISTS idx_task_attachment_cleanup_claim
+    ON task_attachments(cleanup_token, cleanup_started_at);
+
+  CREATE TABLE IF NOT EXISTS attachment_cleanup_queue (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    stored_name TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    cleanup_token TEXT,
+    cleanup_started_at INTEGER,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_attachment_cleanup_queue_path
+    ON attachment_cleanup_queue(user_id, stored_name);
+  CREATE INDEX IF NOT EXISTS idx_attachment_cleanup_queue_claim
+    ON attachment_cleanup_queue(cleanup_token, cleanup_started_at, created_at);
+
   CREATE TABLE IF NOT EXISTS devices (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -269,13 +322,194 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS creative_projects (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_creative_projects_user ON creative_projects(user_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS agent_roles (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    capabilities TEXT NOT NULL DEFAULT '[]',
+    default_provider_id TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_roles_user ON agent_roles(user_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS project_role_team (
+    project_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    overrides TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (project_id, role_id),
+    FOREIGN KEY (project_id) REFERENCES creative_projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES agent_roles(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    task TEXT NOT NULL,
+    budget TEXT NOT NULL DEFAULT 'standard',
+    status TEXT NOT NULL DEFAULT 'draft',
+    team_snapshot TEXT NOT NULL DEFAULT '[]',
+    final_instruction TEXT,
+    rationale TEXT,
+    risks TEXT,
+    task_id TEXT,
+    coze_delivered_at INTEGER,
+    error TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES creative_projects(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_user ON agent_runs(user_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS agent_run_events (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_run_events_run ON agent_run_events(run_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS plugin_manifests (
+    id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    name TEXT NOT NULL,
+    entrypoint TEXT NOT NULL,
+    integrity TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    installed_by INTEGER NOT NULL,
+    change_note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (installed_by) REFERENCES users(id) ON DELETE RESTRICT
+  );
 `);
 
-// === OPC 创作助手数据库操作 ===
+// Task2B 附件清理租约：兼容已存在的 task_attachments 表，不重建或删除旧数据。
+for (const [column, declaration] of [
+  ["cleanup_token", "TEXT"],
+  ["cleanup_started_at", "INTEGER"],
+]) {
+  const columns = db.prepare("PRAGMA table_info(task_attachments)").all();
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE task_attachments ADD COLUMN ${column} ${declaration}`);
+  }
+}
+
+for (const [column, declaration] of [
+  ["task_id", "TEXT"],
+  ["creative_constraints", "TEXT NOT NULL DEFAULT '{}'"],
+]) {
+  const columns = db.prepare("PRAGMA table_info(agent_runs)").all();
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE agent_runs ADD COLUMN ${column} ${declaration}`);
+  }
+}
+db.exec("CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id)");
+
+// 新模型中心使用独立密文列；旧 config 仍保留以避免静默迁移或删除用户数据。
+for (const [column, declaration] of [
+  ["secret", "TEXT"],
+  ["key_last4", "TEXT"],
+  ["verified_at", "INTEGER"],
+]) {
+  const columns = db.prepare("PRAGMA table_info(llm_providers)").all();
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE llm_providers ADD COLUMN ${column} ${declaration}`);
+  }
+}
+
+const TASK_LEASE_MIGRATION = "2026-08-10-task-lease-runtime";
+
+function createDatabaseSnapshot() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = attempt === 0 ? "" : `-${attempt}`;
+    const snapshotPath = `${DB_PATH}.snapshot-${timestamp}${suffix}`;
+    if (fs.existsSync(snapshotPath)) continue;
+    const escapedPath = snapshotPath.replace(/'/g, "''");
+    db.exec(`VACUUM INTO '${escapedPath}'`);
+    return snapshotPath;
+  }
+  throw new Error("无法创建不覆盖旧文件的 SQLite 迁移快照");
+}
+
+db.applyTaskLeaseMigrations = function () {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      snapshot_path TEXT
+    )
+  `);
+  if (db.prepare("SELECT 1 FROM schema_migrations WHERE name = ?").get(TASK_LEASE_MIGRATION)) {
+    return [];
+  }
+
+  const snapshotPath = createDatabaseSnapshot();
+  const apply = db.transaction(() => {
+    const existingColumns = new Set(
+      db.prepare("PRAGMA table_info(tasks)").all().map((column) => column.name)
+    );
+    const additions = [
+      ["worker_id", "TEXT"],
+      ["lease_token", "TEXT"],
+      ["lease_expires_at", "INTEGER"],
+      ["attempt_count", "INTEGER NOT NULL DEFAULT 0"],
+      ["execution_mode", "TEXT NOT NULL DEFAULT 'server'"],
+    ];
+    for (const [name, declaration] of additions) {
+      if (!existingColumns.has(name)) {
+        db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${declaration}`);
+      }
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_task_claimable
+        ON tasks(status, scheduled_at, created_at, user_id);
+      CREATE INDEX IF NOT EXISTS idx_task_lease_expiry
+        ON tasks(status, lease_expires_at);
+      UPDATE tasks
+      SET status = 'queued', worker_device_id = NULL, worker_id = NULL,
+          lease_token = NULL, lease_expires_at = NULL, progress = 0, stage = '',
+          started_at = NULL, updated_at = unixepoch(), revision = revision + 1
+      WHERE status = 'running';
+    `);
+    db.prepare(
+      "INSERT INTO schema_migrations (name, snapshot_path) VALUES (?, ?)"
+    ).run(TASK_LEASE_MIGRATION, snapshotPath);
+  });
+  apply();
+  return [TASK_LEASE_MIGRATION];
+};
+
+db.applyTaskLeaseMigrations();
 
 // === OPC 创作助手数据库操作 ===
 
-const crypto = require("crypto");
+// === OPC 创作助手数据库操作 ===
 
 function opcGenerateId(prefix = "opc") {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
@@ -288,8 +522,13 @@ db.opcCreateSession = function (id, title, userId) {
   return id;
 };
 
-db.opcListSessions = function (userId, limit = 50) {
-  return db.prepare("SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?").all(userId || 0, limit);
+db.opcListSessions = function (userId, limit = 50, offset = 0) {
+  const scope = require("./studio-session-scope.js");
+  return db.prepare("SELECT * FROM opc_sessions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?")
+    .all(userId || 0, limit, offset).map(session => {
+      const mode = scope.inferMode(db, userId || 0, session.id);
+      return { ...session, mode: mode === "assistant" ? "chat" : mode };
+    });
 };
 
 db.opcGetSession = function (id, userId) {
@@ -328,10 +567,29 @@ db.opcAddMessage = function (sessionId, role, content, metadata) {
   return id;
 };
 
-db.opcGetMessages = function (sessionId, limit = 200) {
+// Stable client IDs let completed replies update their earlier placeholder without duplicates.
+db.opcSyncMessages = db.transaction(function (sessionId, messages) {
+  const ids = messages.map((message) => {
+    if (!message.id) return db.opcAddMessage(sessionId, message.role, message.content, message.metadata);
+    const existing = db.prepare("SELECT id FROM opc_messages WHERE id = ? AND session_id = ?").get(message.id, sessionId);
+    const id = existing?.id || `opc_sync_${crypto.createHash("sha256").update(JSON.stringify([sessionId, message.id])).digest("hex")}`;
+    const metadata = JSON.stringify({ ...message.metadata, clientMessageId: message.id });
+    db.prepare(`INSERT INTO opc_messages (id, session_id, role, content, metadata, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
+      role = excluded.role, content = excluded.content, metadata = excluded.metadata
+      WHERE opc_messages.session_id = excluded.session_id`)
+      .run(id, sessionId, message.role, message.content, metadata, message.timestamp ? Math.floor(message.timestamp / 1000) : Math.floor(Date.now() / 1000));
+    return id;
+  });
+  const count = db.prepare("SELECT COUNT(*) as c FROM opc_messages WHERE session_id = ?").get(sessionId).c;
+  db.opcUpdateSession(sessionId, { message_count: count });
+  return ids;
+});
+
+db.opcGetMessages = function (sessionId, limit = 200, offset = 0) {
   return db.prepare(
-    "SELECT * FROM opc_messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?"
-  ).all(sessionId, limit);
+    "SELECT * FROM (SELECT rowid AS ordering, * FROM opc_messages WHERE session_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ? OFFSET ?) ORDER BY timestamp ASC, ordering ASC"
+  ).all(sessionId, limit, offset);
 };
 
 db.opcDeleteMessage = function (id, userId) {
@@ -348,17 +606,11 @@ db.opcDeleteMessage = function (id, userId) {
 
 // --- 对话压缩 ---
 
-db.opcCompressSession = function (sessionId, summary, keepRecent = 10) {
-  const all = db.prepare("SELECT * FROM opc_messages WHERE session_id = ? ORDER BY timestamp ASC").all(sessionId);
-  if (all.length <= keepRecent) return;
-
-  const toRemove = all.slice(0, -keepRecent);
-  const ids = toRemove.map((m) => m.id);
-  const placeholders = ids.map(() => "?").join(",");
-  db.prepare(`DELETE FROM opc_messages WHERE id IN (${placeholders})`).run(...ids);
-
-  db.opcAddMessage(sessionId, "system", `[对话摘要]\n${summary}`, { compressed: true });
-  db.opcUpdateSession(sessionId, { summary });
+db.opcCompressSession = function (sessionId, summary, keepRecent = 10, userId) {
+  const session=db.opcGetSession(sessionId,userId);
+  if(!Number.isSafeInteger(userId)||!session)throw Object.assign(new Error("会话不可用"),{status:404});
+  const mode=sessionId.startsWith("opc_workflow_")||db.prepare("SELECT 1 FROM opc_messages WHERE session_id=? AND role IN ('workflow','workflow-step','action-cards')").get(sessionId)?"workflow":"assistant";
+  return require("./studio-summary-store.js").createStudioSummaryStore(db).build(userId,{mode,sessionId,summary,keepRecent});
 };
 
 // --- 跨会话记忆 ---
@@ -395,7 +647,14 @@ db.llmSaveProvider = function (id, config, isActive, userId) {
 };
 
 db.llmDeleteProvider = function (id, userId) {
-  db.prepare("DELETE FROM llm_providers WHERE id = ? AND user_id = ?").run(id, userId || 0);
+  const uid = userId || 0;
+  return db.transaction(() => {
+    const result = db.prepare("DELETE FROM llm_providers WHERE id = ? AND user_id = ?").run(id, uid);
+    if (result.changes) {
+      db.prepare("UPDATE agent_roles SET default_provider_id = NULL, updated_at = unixepoch() WHERE user_id = ? AND default_provider_id = ?").run(uid, id);
+    }
+    return result;
+  })();
 };
 
 db.llmSetActive = function (id, userId) {
@@ -507,57 +766,305 @@ db.taskGet = function (id, userId) {
   return db.prepare("SELECT * FROM tasks WHERE id = ? AND user_id = ?").get(id, userId);
 };
 
-db.taskList = function (userId, options = {}) {
+function taskStatuses(value) {
+  const allowed = new Set(["queued", "running", "paused", "completed", "failed", "cancelled"]);
+  const values = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(values.map((status) => String(status).trim()).filter((status) => allowed.has(status)))];
+}
+
+db.taskPage = function (userId, options = {}) {
   const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 200);
   const offset = Math.max(Number(options.offset) || 0, 0);
-  if (options.status) {
-    return db.prepare(
-      "SELECT * FROM tasks WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?"
-    ).all(userId, options.status, limit, offset);
+  const statuses = taskStatuses(options.status);
+  const where = ["user_id = ?"];
+  const baseParams = [userId];
+  if (statuses.length) {
+    where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+    baseParams.push(...statuses);
   }
-  return db.prepare(
-    "SELECT * FROM tasks WHERE user_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?"
-  ).all(userId, limit, offset);
+  const cursor = options.cursor;
+  const pageWhere = [...where];
+  const pageParams = [...baseParams];
+  if (cursor) {
+    pageWhere.push("(updated_at < ? OR (updated_at = ? AND id < ?))");
+    pageParams.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+  }
+  const rows = db.prepare(
+    `SELECT * FROM tasks
+     WHERE ${pageWhere.join(" AND ")}
+     ORDER BY updated_at DESC, id DESC
+     LIMIT ?${cursor ? "" : " OFFSET ?"}`
+  ).all(...pageParams, limit + 1, ...(cursor ? [] : [offset]));
+  const hasMore = rows.length > limit;
+  const tasks = hasMore ? rows.slice(0, limit) : rows;
+  const total = db.prepare(
+    `SELECT COUNT(*) count FROM tasks WHERE ${where.join(" AND ")}`
+  ).get(...baseParams).count;
+  const last = hasMore ? tasks[tasks.length - 1] : null;
+  return {
+    tasks,
+    total,
+    next: last ? { updatedAt: last.updated_at, id: last.id } : null,
+  };
+};
+
+db.taskList = function (userId, options = {}) {
+  return db.taskPage(userId, options).tasks;
 };
 
 db.taskClaim = function (id, userId, deviceId) {
+  const normalizedDeviceId = String(deviceId || "").trim();
+  if (!normalizedDeviceId) return null;
+  const leaseToken = crypto.randomBytes(32).toString("hex");
   const result = db.prepare(
     `UPDATE tasks
-     SET status = 'running', worker_device_id = ?, started_at = COALESCE(started_at, unixepoch()),
-         updated_at = unixepoch(), revision = revision + 1
+     SET status = 'running', worker_device_id = ?, worker_id = ?,
+         lease_token = ?, lease_expires_at = unixepoch() + 60,
+         started_at = COALESCE(started_at, unixepoch()),
+         attempt_count = attempt_count + 1, updated_at = unixepoch(), revision = revision + 1
      WHERE id = ? AND user_id = ? AND status = 'queued'
-       AND (scheduled_at IS NULL OR scheduled_at <= unixepoch())`
-  ).run(deviceId, id, userId);
+       AND (scheduled_at IS NULL OR scheduled_at <= unixepoch())
+       AND NOT EXISTS (
+         SELECT 1 FROM tasks active
+         WHERE active.user_id = tasks.user_id
+           AND active.status = 'running'
+           AND (active.lease_expires_at IS NULL OR active.lease_expires_at > unixepoch())
+       )`
+  ).run(normalizedDeviceId, `legacy:${normalizedDeviceId}`, leaseToken, id, userId);
   return result.changes ? db.taskGet(id, userId) : null;
+};
+
+const claimNextTask = db.transaction((workerId, now, leaseSeconds, kinds, executionMode) => {
+  const kindClause = kinds.length
+    ? ` AND queued.kind IN (${kinds.map(() => "?").join(", ")})`
+    : "";
+  const modeClause = executionMode ? " AND queued.execution_mode = ?" : "";
+  const candidate = db.prepare(
+    `SELECT queued.id, queued.user_id
+     FROM tasks queued
+     WHERE queued.status = 'queued'
+       AND (queued.scheduled_at IS NULL OR queued.scheduled_at <= ?)
+       ${modeClause}${kindClause}
+       AND NOT EXISTS (
+         SELECT 1 FROM tasks active
+         WHERE active.user_id = queued.user_id
+           AND active.status = 'running'
+           AND (active.lease_expires_at IS NULL OR active.lease_expires_at > ?)
+       )
+     ORDER BY COALESCE(queued.scheduled_at, queued.created_at), queued.created_at, queued.rowid
+     LIMIT 1`
+  ).get(now, ...(executionMode ? [executionMode] : []), ...kinds, now);
+  if (!candidate) return null;
+
+  const leaseToken = crypto.randomBytes(32).toString("hex");
+  const result = db.prepare(
+    `UPDATE tasks
+     SET status = 'running', worker_id = ?, lease_token = ?, lease_expires_at = ?,
+         started_at = ?, completed_at = NULL, attempt_count = attempt_count + 1,
+         updated_at = ?, revision = revision + 1
+     WHERE id = ? AND user_id = ? AND status = 'queued'
+       AND (scheduled_at IS NULL OR scheduled_at <= ?)
+       ${executionMode ? "AND execution_mode = ?" : ""}
+       ${kinds.length ? `AND kind IN (${kinds.map(() => "?").join(", ")})` : ""}
+       AND NOT EXISTS (
+         SELECT 1 FROM tasks active
+         WHERE active.user_id = tasks.user_id
+           AND active.status = 'running'
+           AND active.id <> tasks.id
+           AND (active.lease_expires_at IS NULL OR active.lease_expires_at > ?)
+       )`
+  ).run(
+    workerId,
+    leaseToken,
+    now + leaseSeconds,
+    now,
+    now,
+    candidate.id,
+    candidate.user_id,
+    now,
+    ...(executionMode ? [executionMode] : []),
+    ...kinds,
+    now
+  );
+  return result.changes
+    ? db.prepare("SELECT * FROM tasks WHERE id = ?").get(candidate.id)
+    : null;
+});
+
+db.taskClaimNext = function (workerId, options = {}) {
+  const normalizedWorkerId = String(workerId || "").trim();
+  if (!normalizedWorkerId) throw new TypeError("workerId 不能为空");
+  const now = Number.isFinite(options.now) ? Math.floor(options.now) : Math.floor(Date.now() / 1000);
+  const leaseSeconds = Math.max(1, Math.floor(Number(options.leaseSeconds) || 60));
+  const kinds = Array.isArray(options.kinds)
+    ? [...new Set(options.kinds.map((kind) => String(kind || "").trim()).filter(Boolean))]
+    : [];
+  const executionMode = options.executionMode == null
+    ? ""
+    : String(options.executionMode).trim();
+  return claimNextTask(normalizedWorkerId, now, leaseSeconds, kinds, executionMode);
+};
+
+function leaseFailure(id) {
+  return db.prepare("SELECT id FROM tasks WHERE id = ?").get(id)
+    ? { ok: false, reason: "lease_lost" }
+    : { ok: false, reason: "not_found" };
+}
+
+db.taskRenewLease = function (id, leaseToken, options = {}) {
+  const now = Number.isFinite(options.now) ? Math.floor(options.now) : Math.floor(Date.now() / 1000);
+  const leaseSeconds = Math.max(1, Math.floor(Number(options.leaseSeconds) || 60));
+  const result = db.prepare(
+    `UPDATE tasks
+     SET lease_expires_at = ?, updated_at = ?, revision = revision + 1
+     WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_expires_at > ?`
+  ).run(now + leaseSeconds, now, id, leaseToken, now);
+  return result.changes
+    ? { ok: true, task: db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) }
+    : leaseFailure(id);
+};
+
+db.taskReportProgress = function (id, leaseToken, updates = {}) {
+  const now = Number.isFinite(updates.now) ? Math.floor(updates.now) : Math.floor(Date.now() / 1000);
+  const leaseSeconds = Math.max(1, Math.floor(Number(updates.leaseSeconds) || 60));
+  const progress = Math.min(100, Math.max(0, Number(updates.progress) || 0));
+  const output = updates.output === undefined ? null : JSON.stringify(updates.output);
+  const result = db.prepare(
+    `UPDATE tasks
+     SET progress = ?, stage = ?, output = COALESCE(?, output),
+         lease_expires_at = ?, updated_at = ?, revision = revision + 1
+     WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_expires_at > ?`
+  ).run(progress, updates.stage || "", output, now + leaseSeconds, now, id, leaseToken, now);
+  return result.changes
+    ? { ok: true, task: db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) }
+    : leaseFailure(id);
+};
+
+db.taskCompleteLease = function (id, leaseToken, updates = {}) {
+  const now = Number.isFinite(updates.now) ? Math.floor(updates.now) : Math.floor(Date.now() / 1000);
+  const output = updates.output === undefined ? null : JSON.stringify(updates.output);
+  const result = db.prepare(
+    `UPDATE tasks
+     SET status = 'completed', progress = 100, stage = COALESCE(?, stage),
+         output = COALESCE(?, output), error = NULL, completed_at = ?,
+         worker_id = NULL, lease_token = NULL, lease_expires_at = NULL,
+         updated_at = ?, revision = revision + 1
+     WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_expires_at > ?`
+  ).run(updates.stage ?? null, output, now, now, id, leaseToken, now);
+  return result.changes
+    ? { ok: true, task: db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) }
+    : leaseFailure(id);
+};
+
+db.taskFailLease = function (id, leaseToken, updates = {}) {
+  const now = Number.isFinite(updates.now) ? Math.floor(updates.now) : Math.floor(Date.now() / 1000);
+  const output = updates.output === undefined ? null : JSON.stringify(updates.output);
+  const result = db.prepare(
+    `UPDATE tasks
+     SET status = 'failed', stage = COALESCE(?, stage), error = ?,
+         output = COALESCE(?, output), completed_at = ?,
+         worker_id = NULL, lease_token = NULL, lease_expires_at = NULL,
+         updated_at = ?, revision = revision + 1
+     WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_expires_at > ?`
+  ).run(updates.stage ?? null, updates.error || "任务执行失败", output, now, now, id, leaseToken, now);
+  return result.changes
+    ? { ok: true, task: db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) }
+    : leaseFailure(id);
+};
+
+function requeueLeases(whereSql, parameters, now) {
+  return db.transaction(() => {
+    const active = db.prepare(
+      `SELECT * FROM tasks WHERE status = 'running' AND ${whereSql} ORDER BY created_at, id`
+    ).all(...parameters);
+    if (active.length === 0) return [];
+    const requeue = db.prepare(
+      `UPDATE tasks
+       SET status = 'queued', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL,
+           worker_device_id = NULL, progress = 0, stage = '', output = NULL, error = NULL,
+           started_at = NULL, completed_at = NULL, updated_at = ?, revision = revision + 1
+       WHERE id = ? AND status = 'running' AND revision = ?
+         AND worker_id IS ? AND worker_device_id IS ?
+         AND lease_token IS ? AND lease_expires_at IS ?`
+    );
+    const recovered = [];
+    for (const task of active) {
+      if (requeue.run(
+        now,
+        task.id,
+        task.revision,
+        task.worker_id,
+        task.worker_device_id,
+        task.lease_token,
+        task.lease_expires_at
+      ).changes) {
+        recovered.push(db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.id));
+      }
+    }
+    return recovered;
+  })();
+}
+
+db.taskRecoverExpiredLeases = function (options = {}) {
+  const now = Number.isFinite(options.now) ? Math.floor(options.now) : Math.floor(Date.now() / 1000);
+  return requeueLeases(
+    "((lease_expires_at IS NOT NULL AND lease_expires_at <= ?) OR (lease_token IS NULL AND lease_expires_at IS NULL))",
+    [now],
+    now
+  );
+};
+
+db.taskReleaseWorkerLeases = function (workerId, options = {}) {
+  const now = Number.isFinite(options.now) ? Math.floor(options.now) : Math.floor(Date.now() / 1000);
+  return requeueLeases("worker_id = ?", [workerId], now);
+};
+
+db.taskReleaseLease = function (id, leaseToken, options = {}) {
+  const now = Number.isFinite(options.now) ? Math.floor(options.now) : Math.floor(Date.now() / 1000);
+  const released = requeueLeases("id = ? AND lease_token = ?", [id, leaseToken], now);
+  return released.length
+    ? { ok: true, task: released[0] }
+    : leaseFailure(id);
 };
 
 db.taskProgress = function (id, userId, updates) {
   const current = db.taskGet(id, userId);
-  if (!current || !["running", "paused"].includes(current.status)) return null;
-  const progress = Math.min(100, Math.max(0, Number(updates.progress) || 0));
-  db.prepare(
-    `UPDATE tasks
-     SET progress = ?, stage = ?, output = COALESCE(?, output),
-         updated_at = unixepoch(), revision = revision + 1
-     WHERE id = ? AND user_id = ?`
-  ).run(
-    progress,
-    updates.stage || "",
-    updates.output === undefined ? null : JSON.stringify(updates.output),
-    id,
-    userId
-  );
-  return db.taskGet(id, userId);
+  if (!current || current.status !== "running" || !current.lease_token || !updates.leaseToken) {
+    return null;
+  }
+  const result = db.taskReportProgress(id, updates.leaseToken, updates);
+  return result.ok ? result.task : null;
 };
 
 db.taskAction = function (id, userId, action, payload = {}) {
   const current = db.taskGet(id, userId);
   if (!current) return { reason: "not_found" };
+  if (["complete", "fail"].includes(action)) {
+    if (!current.lease_token || !payload.leaseToken) {
+      return { reason: "lease_required", task: current };
+    }
+    const result = action === "complete"
+      ? db.taskCompleteLease(id, payload.leaseToken, payload)
+      : db.taskFailLease(id, payload.leaseToken, payload);
+    return result.ok
+      ? { task: result.task }
+      : { reason: result.reason, task: db.taskGet(id, userId) };
+  }
+  if (action === "retry") {
+    const cleanupInProgress = db.prepare(
+      `SELECT 1 FROM task_attachments
+       WHERE user_id = ? AND task_id = ? AND cleanup_token IS NOT NULL
+       LIMIT 1`
+    ).get(userId, id);
+    if (cleanupInProgress) {
+      return { reason: "attachment_cleanup_in_progress", task: current };
+    }
+  }
   const transitions = {
-    pause: { from: ["running"], to: "paused" },
-    resume: { from: ["paused"], to: "queued", clearWorker: true },
+    pause: { from: ["running"], to: "paused", clearWorker: true, clearLease: true },
+    resume: { from: ["paused"], to: "queued", clearWorker: true, clearLease: true, reset: true },
     cancel: { from: ["queued", "running", "paused"], to: "cancelled", terminal: true },
-    retry: { from: ["failed", "cancelled"], to: "queued", reset: true, clearWorker: true },
+    retry: { from: ["failed", "cancelled"], to: "queued", reset: true, clearWorker: true, clearLease: true },
     complete: { from: ["running"], to: "completed", terminal: true },
     fail: { from: ["running"], to: "failed", terminal: true },
   };
@@ -566,7 +1073,9 @@ db.taskAction = function (id, userId, action, payload = {}) {
     return { reason: "invalid_transition", task: current };
   }
 
-  const output = payload.output === undefined ? current.output : JSON.stringify(payload.output);
+  const output = transition.reset
+    ? null
+    : payload.output === undefined ? current.output : JSON.stringify(payload.output);
   const progress = action === "complete" ? 100 : transition.reset ? 0 : current.progress;
   const stage = transition.reset ? "" : (payload.stage ?? current.stage);
   const error = action === "fail"
@@ -574,26 +1083,43 @@ db.taskAction = function (id, userId, action, payload = {}) {
     : transition.reset
       ? null
       : current.error;
-  const worker = transition.clearWorker ? null : current.worker_device_id;
+  const clearLease = transition.clearLease || action === "cancel" || transition.terminal;
+  const workerDevice = transition.clearWorker || clearLease ? null : current.worker_device_id;
+  const worker = clearLease ? null : current.worker_id;
+  const leaseToken = clearLease ? null : current.lease_token;
+  const leaseExpiresAt = clearLease ? null : current.lease_expires_at;
   const completedAt = transition.terminal ? Math.floor(Date.now() / 1000) : null;
+  const startedAt = transition.reset ? null : current.started_at;
 
-  db.prepare(
+  const result = db.prepare(
     `UPDATE tasks
      SET status = ?, progress = ?, stage = ?, error = ?, output = ?,
-         worker_device_id = ?, completed_at = ?, updated_at = unixepoch(),
-         revision = revision + 1
-     WHERE id = ? AND user_id = ?`
+          worker_device_id = ?, worker_id = ?, lease_token = ?, lease_expires_at = ?,
+          started_at = ?, completed_at = ?, updated_at = unixepoch(),
+          revision = revision + 1
+     WHERE id = ? AND user_id = ? AND status = ? AND revision = ?
+       AND lease_token IS ?`
   ).run(
     transition.to,
     progress,
     stage,
     error,
     output,
+    workerDevice,
     worker,
+    leaseToken,
+    leaseExpiresAt,
+    startedAt,
     completedAt,
     id,
-    userId
+    userId,
+    current.status,
+    current.revision,
+    current.lease_token
   );
+  if (!result.changes) {
+    return { reason: "conflict", task: db.taskGet(id, userId) };
+  }
   return { task: db.taskGet(id, userId) };
 };
 
@@ -653,6 +1179,27 @@ db.deviceList = function (userId) {
 db.deviceGet = function (id, userId) {
   return db.prepare("SELECT * FROM devices WHERE id = ? AND user_id = ? AND status != 'revoked'").get(id, userId);
 };
+
+db.deviceRegister = db.transaction(function (device, userId) {
+  const existing = db.prepare("SELECT * FROM devices WHERE id = ?").get(device.id);
+  if (existing && Number(existing.user_id) !== Number(userId)) {
+    return { reason: "owned_by_another_account" };
+  }
+  if (existing?.status === "revoked") return { reason: "revoked" };
+  if (existing) {
+    db.prepare(
+      `UPDATE devices
+       SET name = ?, type = ?, status = 'online', last_seen = unixepoch()
+       WHERE id = ? AND user_id = ? AND status != 'revoked'`
+    ).run(device.name, device.type, device.id, userId);
+    return { device: db.deviceGet(device.id, userId), created: false };
+  }
+  db.prepare(
+    `INSERT INTO devices (id, user_id, name, type, status)
+     VALUES (?, ?, ?, ?, 'online')`
+  ).run(device.id, userId, device.name, device.type);
+  return { device: db.deviceGet(device.id, userId), created: true };
+});
 
 db.deviceTouch = function (id, userId, status = "online") {
   db.prepare(
@@ -728,37 +1275,22 @@ db.migrateConversationsToOpc = function () {
 db.migrateGenerationsToTasks();
 db.migrateConversationsToOpc();
 
-// 僵尸任务回收：worker 设备心跳超时（默认 60s）的 running 任务 requeue 回 queued
-// 避免桌面窗口关闭后任务永久卡在 running
-db.taskRequeueStale = function (thresholdSec = 60) {
-  const staleTasks = db.prepare(
-    `SELECT t.id, t.user_id FROM tasks t
-     JOIN devices d ON d.id = t.worker_device_id
-     WHERE t.status = 'running'
-       AND d.status = 'online'
-       AND d.last_seen < unixepoch() - ?`
-  ).all(thresholdSec);
-  const requeue = db.prepare(
-    `UPDATE tasks
-     SET status = 'queued', worker_device_id = NULL, stage = '', progress = 0,
-         updated_at = unixepoch(), revision = revision + 1
-     WHERE id = ? AND user_id = ? AND status = 'running'`
-  );
-  let count = 0;
-  for (const t of staleTasks) {
-    count += requeue.run(t.id, t.user_id).changes;
+// 兼容旧启动入口：可靠性判断只依赖任务租约，不再依赖 devices 心跳。
+db.taskRequeueStale = function () {
+  const recovered = db.taskRecoverExpiredLeases();
+  if (recovered.length > 0) {
+    console.log(`[DB] 租约回收: ${recovered.length} 个任务已重新排队`);
   }
-  if (count > 0) console.log(`[DB] 僵尸回收: ${count} 个任务已 requeue（worker 心跳超时）`);
-  return count;
+  return recovered.length;
 };
 
-// 定期心跳检查：30s 一次（配合 60s 阈值）
-db.startStaleReaper = function (intervalSec = 30, thresholdSec = 60) {
+db.startStaleReaper = function (intervalSec = 30) {
   if (db.__reaperStarted) return;
   db.__reaperStarted = true;
-  setInterval(() => {
-    try { db.taskRequeueStale(thresholdSec); } catch (e) { /* 不打断循环 */ }
+  const timer = setInterval(() => {
+    try { db.taskRequeueStale(); } catch (e) { /* 不打断循环 */ }
   }, intervalSec * 1000);
+  timer.unref?.();
 };
 
 module.exports = db;
