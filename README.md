@@ -2,9 +2,9 @@
 
 **One workspace for creative briefs, AI conversations and production tracking.**
 
-[简体中文](README.zh-CN.md) · **Version 1.40** · [Release and acceptance notes](docs/releases/v1.40.en.md)
+[简体中文](README.zh-CN.md) · **Version 1.40** · [Historical release and acceptance notes](docs/releases/v1.40.en.md)
 
-Stzh brings prompts, reference files, model connections, project memory, roles and results together for short-video and AIGC creators. **Web phase four is at its closing stage; accepted local work has been released.** External integrations, real media generation and mobile phase five remain incomplete. This is not an acceptance claim for every production workflow.
+Stzh brings prompts, reference files, model connections, project memory, roles and results together for short-video and AIGC creators. This guide follows **current main source** (checked 2026-10-02; Web/server package version 1.40.0). **Phase four remains incomplete.** Real media, independent quality, cross-device and production acceptance still have open work; no phase-four full development record is generated.
 
 ![1.40 creative workspace](docs/releases/images/v1.40/welcome.png)
 
@@ -23,7 +23,7 @@ Stzh brings prompts, reference files, model connections, project memory, roles a
 
 ## Feature screenshots
 
-Current Web screens using local fixtures, static assets or guest/empty states: **these are not generated video or live model results**. Expand each group to see all screenshots. [Capture scope](docs/releases/images/v1.40/features/README.md).
+Historical 1.40 release captures using local fixtures, static assets or guest/empty states: **these are not generated video or live model results**. Expand each group to see all screenshots. [Capture scope](docs/releases/images/v1.40/features/README.md).
 
 <details open>
 <summary>Creation: Coze, assistant, workflows, research and collaboration</summary>
@@ -82,7 +82,7 @@ All direct dependencies and exact versions: [Web](package.json), [server](server
 
 ## Clone, configure and run
 
-Requires Git, **Node.js 22.18+** and npm; Python is only needed for RAG. SQLite is a native dependency: installation may require a matching Node/platform toolchain.
+You need Git and npm. Application packages declare Node.js >=20; repository checks use node:sqlite, so the shared development/check baseline is **22.18+**. Python is only needed for RAG. SQLite is a native dependency; installation may need a matching Node/platform toolchain.
 
 ```bash
 git clone https://github.com/fms211/Stzh-video-agent-assistant.git
@@ -160,32 +160,23 @@ npm ci
 npm start
 ```
 
-Electron needs `server/native/electron-v<ABI>/` bindings, not the Node SQLite binary. Expo devices need a reachable backend and device permissions. These optional installation flows were not validated in this documentation update.
+Electron requires a matching SQLite binding under server/native/electron-v<ABI>/better_sqlite3.node; Node binaries cannot replace it and no automatic preparation script is provided. Expo devices need a reachable backend and permissions; the mobile package version is 1.0.0. See [Electron](electron/README.md), [mobile](Tszh-App/README.md) and [RAG](rag-service/RAG学习笔记.md). These optional installation flows are not validated in this update.
 
 </details>
 
-## Development status, regression, smoke and remaining work
+## Development status, checks and remaining work
 
-**As of 2026-10-01:** 1.40 Web UI and core business source are delivered; external integrations, cross-device verification and production deployment remain. Completion is stated by acceptance scope rather than a single percentage.
+**Phase four is still in progress.** Earlier release and limited acceptance counts remain in the [historical release notes](docs/releases/v1.40.en.md); they are not results from this update. Phase-one/two/three development records are preserved, and no phase-four record is generated.
 
-| Check | Actual result |
-|---|---|
-| Build | Production build passed; same-origin preview updated |
-| Frontend regression | Release snapshot **518/518 passed** after fixing seven initial test-double/outdated-assertion failures |
-| Backend regression | Workspace **315/315 passed**; initial release snapshot 314/315, then **two related checks passed** after removing a local-binary assumption from the Electron entry check. No claim of another full snapshot run after that fix |
-| Concentrated smoke | Real Express + fresh isolated DB: **26 passed**; page entries and account/API checks, generation executor disabled |
-| UI / visual | Five pages, four modes, drafts, history, project/memory, Escape focus, model form and glow controls; 1440/960/390 DOM boundaries, three themes, reduced motion/transparency passed |
-| State / statistics | Locally simulated queue/run/pause/failure/retry-success passed; chart width stable for 33 seconds. Simulation is not real Coze/video acceptance |
+Reproducible source commands: `npm run build`, `npm run lint`, `npm run test:p0` (frontend followed by backend), or `npm --prefix server test`. The tracked read-only smoke script requires a separately prepared isolated environment and test account; see [validation guide](docs/TESTING.md). This documentation update checks source, links, paths, commands and configuration; it does not rerun full business regression, builds or paid external calls.
 
-Reproduce code checks with `npm run build` and `npm run test:p0` (frontend then backend); backend only: `npm --prefix server test`. Read-only smoke `scripts/stage4-readonly-smoke.cjs` needs a separately prepared isolated preview plus `STZH_SMOKE_BASE`, `STZH_SMOKE_USER`, `STZH_SMOKE_PASSWORD`; it does not create the environment. [UI evidence](docs/releases/evidence/v1.40/browser-smoke.json), [API evidence](docs/releases/evidence/v1.40/api-smoke.json), [full acceptance notes](docs/releases/v1.40.en.md). This README update checks documents, links and captures; it does not rerun business regression.
-
-- **Pending integrations:** real provider model lists, production Coze permissions/quota, StylePromptMaster and LinkReader tools; authentication, rate limits and network security blocks prevent an all-passed claim.
-- **Pending media:** real image/video generation, paid-media end-to-end calls and historical-video playback; no such APIs were called for this update.
-- **Pending device checks:** physical touch, 200% text-only scaling, real IME confirmation and glow after actual provider verification.
-- **Pending delivery:** mobile phase five, a new Electron installer, production deployment acceptance, portable RAG paths and real-corpus checks. Research/plugins require per-service acceptance; local UI checks do not validate every third-party workflow.
+- **External services and media:** real Coze Bot/tool permissions and quota, paid image/video generation, the full media task chain and historical URL playback require separate acceptance.
+- **Quality and rollout:** provider behavior, independent retrieval/task quality, production latency/cost and enforce rollout remain open; synthetic samples and limited text calls do not cover every scenario.
+- **Devices and delivery:** physical touch, IME, text scaling, mobile phase five, a new Electron installer and production deployment are not validated by this update.
+- **Optional components:** RAG retains developer paths/external corpus requirements; plugins need per-service configuration. Older deployment scripts have packaging and entrypoint gaps; see [deployment guide](deploy/DEPLOY.md).
 
 ## Source map and licensing
 
 `app/` Web · `server/` API/tasks/plugins · `shared/` contracts/context · `rag-service/` retrieval · `electron/` desktop · `Tszh-App/` mobile · `test/` and `server/test/` regression · `docs/releases/` evidence.
 
-[Memory API](docs/knowledge/studio-memory-api.md) · [1.40 changes and rollback](更新md/2026-10-01-15-Web1.40视觉交互与发布.md). Older usage documents may predate the current implementation; use this README and source for startup. Third-party notices: `public/licenses/`, `docs/third-party-notices/`. There is no project-wide root license; unrestricted redistribution of all source should not be assumed.
+[Memory API](docs/knowledge/studio-memory-api.md) · [1.40 changes and rollback](更新md/2026-10-01-15-Web1.40视觉交互与发布.md). Current technical guides are indexed in [documentation navigation](docs/README.md), [backend setup](BACKEND_SETUP.md) and [usage](USAGE.md); historical releases, research and phase records keep their original scope. Third-party notices: `public/licenses/`, `docs/third-party-notices/`. There is no project-wide root license; unrestricted redistribution of all source should not be assumed.

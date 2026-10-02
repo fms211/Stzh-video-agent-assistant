@@ -1,230 +1,100 @@
-# 通过 API 调用智能体
-将 AI 编程生成的智能体部署为 API 服务后，你可以通过 OpenAPI 方式将智能体的 AI 功能灵活集成到应用中。
-## 前提条件
-已将 AI 编程生成的智能体部署为 API 服务。具体可参考[部署智能体](https://docs.coze.cn/api/open/docs/guides/deploy_agent_as_api_service)。
-## **获取 API 访问信息**
-部署成功后，扣子编程会自动生成 API 服务，你可以在**部署总览**页面获取访问  API 的相关信息。
-### **查看 API 访问信息**
-获取该服务的 API 访问地址、请求Header、请求参数等详细信息。
+# 腾昇智和 · 应用 API
 
-1. 在部署的**总览**页面，单击某条部署记录右侧的更多按钮，选择**查看**。
-   ![Image](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/eef320d3063c4f90a0bd05f32110ba72~tplv-goo7wpa0wc-image.image)
-2. 在**API 请求示例及接口说明**页面，查看该服务的 API 访问信息。
-   ![Image](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/52d94dd609844ba98b4e7b9a4429f929~tplv-goo7wpa0wc-image.image)
+本文说明 main 的 **Express API**（2026-10-02源码核对），不是Coze官方API字段镜像。应用阶段4尚未完成；调用媒体、模型或插件可能产生外部消费，须按实际配置和权限执行。
 
-### **创建 API Token**
-你需要创建 API Token，调用 API 时需要使用 API Token 进行身份验证。你需要将创建的 API Token  包含在请求头的 `Authorization` 参数中。
+## 基址与身份
 
-1. 在智能体开发页面，在右侧单击➕打开新的标签页，在弹出的标签页中选择**部署**。
-2. 在部署的**总览**页面，单击某条部署记录右侧的更多按钮，选择**查看**。
-3. 在**API 请求示例及接口说明**页面，单击**管理 API Token**，单击**创建 API Token** 生成新的 API Token。复制并妥善保存 API Token。 
-   * 生成的令牌仅在此时展示一次，请即刻复制并妥善保存。
-   * 请妥善保存该 API Token，不要在浏览器或其他客户端代码中暴露 API Token。
-   * 每个项目最多能创建 10 个 API Token，API Token 的有效期为永久有效。
-   * 暂时不支持在部署详情页面直接调用和调试 API。
+默认开发后端 `http://localhost:8080`；静态同源部署使用页面所在域名。客户端基址见[后端配置](BACKEND_SETUP.md)。除健康检查和注册/登录等入口外，业务接口要求：
 
-   ![Image](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/b009fab8cedb4c1a8b1849a0b4525778~tplv-goo7wpa0wc-image.image)
-4. （可选）你也可以在 **API Token** 页面查看已创建的 API Token 列表，删除不再使用的 API Token。
+~~~http
+Authorization: Bearer <当前账户JWT>
+Content-Type: application/json
+~~~
 
-## 调用智能体 API
-部署完成后，你可以在你的应用程序或网页中通过 HTTP 请求来调用智能体的 API，以便集成智能体的 AI 能力。
-**接口说明**
-调用智能体的 API 请求地址的格式为 `https://<your_domain>/stream_run`，是一个流式响应 API。调用该 API 时，服务端不会一次性发送所有数据，而是以数据流的形式逐条发送数据给客户端，数据流中包含智能体执行过程中触发的各种事件，直至处理完毕或处理中断。
-API 的请求参数由 AI 编程自动生成，具体参数说明可在部署详情页的 **API 请求示例及接口说明**页面查看。
-AI 编程项目中不兼容低代码 API 文档中的[上传文件](https://docs.coze.cn/api/open/docs/developer_guides/upload_files)等 API 。
+登录：
 
-**调用方法**
+~~~http
+POST /api/auth/login
+~~~
 
-1. 复制扣子编程提供的 Curl 请求命令。
-   ![Image](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/0c99f0481c2d44edadc4a2f961d9b111~tplv-goo7wpa0wc-image.image)
-2. 将 header 中的 `<YOUR_TOKEN>` 替换为你在[创建 API Token](https://docs.coze.cn/api/open/docs/guides/deploy_agent_as_api_service#067c13f8)中获取的 API Token。
-3. 通过 Postman 或相关工具调用对应的 API 。
-   以下是某个智能体的 API 请求示例和返回示例。
-   
-   <div type="doc-tabs">
-   <div type="tab-item" title="请求示例" key="JmhJ1fQAUn">
-   
-   ```JSON
-   curl --location --request POST "https://m48gym***.coze.site/stream_run" \
-     --header "Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjEwOGU2OTE3LWQwNGYtNDg3Zi1hYjdhLWY0NWIwYWQ4YmM0MCJ9.eyJpc3MiOiJodHRwczovL2FwaS5jb3plLmNuIiwiYXVkIjpbIkgzOVZkS3BwUmVKVXdjMU81VmtraWZkZW9CajZrVlRBIl0sImV4cCI6ODIxMDI2Njg3Njc5OSwiaWF0IjoxNzY2NTU2NzI4LCJzdWIiOiJzcGlmZmU6Ly9hcGkuY296ZS5jbi93b3JrbG9hZF9******" \
-     --header "Content-Type: application/json" \
-     --data '{
-         "content": {
-           "query": {
-             "prompt": [
-               {
-                 "type": "text",
-                 "content": {
-                   "text": "今天天气真好，我们去爬山吧"
-                 }
-               }
-             ]
-           }
-         },
-         "type": "query",
-         "project_id": 75872598284063***
-       }'
-   ```
-   
-   
-   </div>
-   <div type="tab-item" title="返回示例" key="tCpTVmyAUn">
-   
-   ```JSON
-   event: message
-   data: {"type": "message_start", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "08a1c13d-9dd9-41d1-a065-b40057a***", "sequence_id": 1, "finish": true, "content": {"answer": null, "thinking": null, "tool_request": null, "tool_response": null, "message_start": {"local_msg_id": "", "msg_id": "", "execute_id": "97574940-5ba9-421a-985a-6c5ba***"}, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 2, "finish": false, "content": {"answer": "It", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 3, "finish": false, "content": {"answer": "'s", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 4, "finish": false, "content": {"answer": " a", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 5, "finish": false, "content": {"answer": " nice", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 6, "finish": false, "content": {"answer": " day", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 7, "finish": false, "content": {"answer": " today", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 8, "finish": false, "content": {"answer": "!", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 9, "finish": false, "content": {"answer": " How", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 10, "finish": false, "content": {"answer": " about", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 11, "finish": false, "content": {"answer": " we", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 12, "finish": false, "content": {"answer": " go", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 13, "finish": false, "content": {"answer": " hiking", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 14, "finish": false, "content": {"answer": "?", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 15, "finish": false, "content": {"answer": " 🥾", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 16, "finish": false, "content": {"answer": "  \n\n", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 17, "finish": false, "content": {"answer": "H", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 18, "finish": false, "content": {"answer": "iking", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 19, "finish": false, "content": {"answer": " means", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 20, "finish": false, "content": {"answer": " walking", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 21, "finish": false, "content": {"answer": " in", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 22, "finish": false, "content": {"answer": " the", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 23, "finish": false, "content": {"answer": " mountains", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 24, "finish": false, "content": {"answer": " or", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 25, "finish": false, "content": {"answer": " hills", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 26, "finish": false, "content": {"answer": " for", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 27, "finish": false, "content": {"answer": " fun", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 28, "finish": false, "content": {"answer": ".", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 29, "finish": false, "content": {"answer": " For", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 30, "finish": false, "content": {"answer": " example", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 31, "finish": false, "content": {"answer": ":", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 32, "finish": false, "content": {"answer": " \"", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 33, "finish": false, "content": {"answer": "I", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 34, "finish": false, "content": {"answer": " love", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 35, "finish": false, "content": {"answer": " hiking", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 36, "finish": false, "content": {"answer": " with", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 37, "finish": false, "content": {"answer": " my", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 38, "finish": false, "content": {"answer": " friends", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 39, "finish": false, "content": {"answer": " on", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 40, "finish": false, "content": {"answer": " sunny", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 41, "finish": false, "content": {"answer": " days", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 42, "finish": false, "content": {"answer": "!\"", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 43, "finish": false, "content": {"answer": "  \n\n", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 44, "finish": false, "content": {"answer": "Do", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 45, "finish": false, "content": {"answer": " you", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 46, "finish": false, "content": {"answer": " like", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 47, "finish": false, "content": {"answer": " hiking", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 48, "finish": false, "content": {"answer": "?", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 49, "finish": false, "content": {"answer": " 😊", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "answer", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-****", "msg_id": "f833bcf3-c96a-45b3-89dd-22a7cdcc****", "sequence_id": 50, "finish": true, "content": {"answer": "", "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": null}, "log_id": "20251224141437681CD4591E***"}
-   
-   event: message
-   data: {"type": "message_end", "session_id": "", "query_msg_id": "", "reply_id": "eaccc8a4-a120-434f-b673-b82a***", "msg_id": "39901536-72a5-4dc9-85d5-d8f685d***", "sequence_id": 51, "finish": true, "content": {"answer": null, "thinking": null, "tool_request": null, "tool_response": null, "message_start": null, "message_end": {"code": "0", "message": "", "token_cost": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}, "time_cost_ms": 2861}}, "log_id": "20251224141437681CD4591E***"}
-   ```
-   
-   
-   </div>
-   </div>
+~~~json
+{"username":"<你的用户名>","password":"<你的密码>"}
+~~~
+
+返回 `token` 和 `user`；Token默认7天有效。注册为 `POST /api/auth/register`，字段 `username/password/displayName`；当前用户名2–20字符、密码至少6字符。`GET /api/auth/me` 核对身份，`POST /api/auth/change-password` 使用 `oldPassword/newPassword`。不要把JWT、Coze令牌或模型密钥放进共享示例。
+
+## 可靠任务与历史
+
+主创作界面通过服务端队列执行 `video.generate`。先上传附件（如有），再创建任务：
+
+~~~http
+POST /api/tasks
+~~~
+
+~~~json
+{
+  "kind":"video.generate",
+  "title":"示例创作任务",
+  "origin":"desktop",
+  "idempotencyKey":"<本次提交的稳定唯一键>",
+  "input":{"prompt":"<当前创作要求>"},
+  "attachmentIds":[]
+}
+~~~
+
+新任务返回201及 `{task, created:true}`；相同键和相同内容复用任务，内容改变返回409。返回排队状态不表示媒体已生成。缺少Coze运行配置时执行器不启动。
+
+| 请求 | 用途与限制 |
+|---|---|
+| `GET /api/tasks?status=completed,failed,cancelled&limit=20` | 按账户查询历史；返回 `tasks/total/nextCursor`，继续查询时使用 `cursor`，不要解码后修改游标 |
+| `GET /api/tasks/:id` | 单任务，结果包含状态、input/output、进度、时间及revision |
+| `POST /api/tasks/:id/actions` | `{"action":"pause|resume|cancel|retry"}`；许可取决于当前状态 |
+| `POST /api/attachments` | `multipart/form-data`，字段 `file`；返回附件描述符，绑定任务时校验账户归属 |
+
+状态：`queued / running / paused / completed / failed / cancelled`。`claim`、`lease/renew`、`progress` 及 `complete/fail` 是执行/兼容契约，需要设备/租约校验；已启用服务端Runtime时客户端不能接管服务器任务。详细依据：[任务路由](server/routes/tasks.js)、[执行器](server/video-generate-executor.js)。
+
+## Coze即时接口与SSE
+
+`POST /api/agent` 为即时接口，不等于可靠任务历史。基础输入 `prompt`，可选 `history/historyOmitted/currentConstraints/excludedMemoryIds/projectId/conversationId`；兼容 `conversation_id`。附件实际执行走任务附件链路，即时路由不把任意客户端附件对象转给上游。
+
+成功JSON含 `requestId/createdAt/text/conversationId/chatId/followUps`，可选 `videoUrl/imageUrls/contextTrace/warnings`。纯文本结果合法，不能要求每次返回媒体。
+
+`POST /api/agent/stream` 接收同类输入，返回 `text/event-stream`：
+
+| SSE事件 | 数据 |
+|---|---|
+| `delta` | `{content}` 文本增量 |
+| `follow_up` | `{suggestions:[...]}` |
+| `done` | 完成结果，含 `done:true` 和可选媒体/上下文 |
+| `error` | 流已开始后的错误说明 |
+
+流开始前仍可返回HTTP错误。客户端断开会尝试停止本地处理/远端调用，但不证明上游撤销或未计费；先核对任务和会话，不能自动重发。Coze配置与上游路径见[Coze指南](Coze智能体配置与调用.md)。
+
+## 其他已挂载接口
+
+| 路由组 | 主要入口 | 源码 |
+|---|---|---|
+| 会话/消息 | `/api/conversations`、`/api/opc/sessions`、消息batch、compress | [会话](server/routes/conversations.js)、[统一应用](server/server-express.js) |
+| 模板/统计 | `/api/templates`、`/api/generations`、`/api/generations/stats` | [模板](server/routes/templates.js)、[生成记录](server/routes/generations.js) |
+| 模型连接/角色 | `/api/model-providers`、`/discover-models`、`/:id/test`、`/api/model/chat`、`/api/agent-roles` | [创作路由](server/routes/creative-agent.js) |
+| 协作/项目 | `/api/creative-projects`、项目team、`/api/agent-runs`、start/finalize/confirm-coze | [创作路由](server/routes/creative-agent.js) |
+| 工作流恢复 | `/api/opc/sessions/:sessionId/workflow-runs/:runId`，计划写入为同路径 `/plan` | [工作流结果](server/studio-workflow-results.js) |
+| 研究 | `/api/research/runs`、`/:id/events`、计划PATCH、`/:id/actions` | [研究路由](server/routes/research.js) |
+| 记忆/摘要/笔记 | `/api/studio/memories`、`/summaries`、`/project-notes/:projectId` | [记忆契约](docs/knowledge/studio-memory-api.md) |
+| 检索 | `POST /api/rag/retrieve`、`GET /api/rag/health`、`POST /api/search` | [检索路由](server/routes/retrieval.js) |
+| 账户插件 | `/api/plugins/*`；插件UI另有token路径 | [插件路由](server/routes/plugins.js) |
+| 系统插件登记 | `/api/admin/plugins`，管理账户权限 | [创作路由](server/routes/creative-agent.js) |
+| 设备 | `/api/devices`、register、network-targets、pairing-codes、pair、heartbeat | [设备路由](server/routes/devices.js) |
+| 通知/偏好 | `/api/notifications`、`/api/prefs`、`/api/settings`；`/api/app-settings`为应用级设置 | [统一应用](server/server-express.js)、[账户设置](server/routes/settings.js) |
+
+表中路由组是导航索引，具体方法/字段以链接源码为准。旧 `/api/llm/providers` 兼容路由仍存在；新模型中心使用 `/api/model-providers`。
+
+## 实时事件与错误
+
+Web客户端使用 `/ws/desktop`，手机使用 `/ws/mobile`，传当前JWT及设备ID。提供设备ID时服务器核对当前账户设备，未配对/已撤销设备拒绝。事件含 `task.updated`、`notification.created`、`ready`；实时消息配合只读重拉取和轮询，不是可靠事件日志的替代。
+
+通知列表 `GET /api/notifications`，单条已读 `POST /api/notifications/:id/read`、全部已读 `POST /api/notifications/read-all`、清空 `DELETE /api/notifications`。服务端SQLite为账户通知事实源，本地只是缓存。
+
+常见错误：400输入格式；401身份；404不存在或无权；409版本/状态/幂等冲突；429并发或上游限额；502上游响应错误；503检索暂不可用。不同路由错误结构有差异，通常为 `error.message` 与可选 `error.code`。HTTP500或断线不证明写入、模型调用未生效，应先读取权威记录。
+
+接口存在、模拟测试通过和真实外部验收分别记录；本次没有调用真实媒体、模型或账户接口。见[验证指南](docs/TESTING.md)。
