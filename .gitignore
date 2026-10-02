@@ -119,3 +119,12 @@ OPC工作区.png
 /.playwright-cli/
 /electron-builder/
 /stitch_素材.zip
+
+# regenerated deployment bundles and captured build output
+/deploy/*.zip
+/page-styles.css
+
+# local assistant tooling, not application runtime
+/.claude/
+/Tszh-App/.claude/
+/claude-flow.config.json
