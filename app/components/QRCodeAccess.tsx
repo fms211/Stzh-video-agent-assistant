@@ -1,6 +1,9 @@
 "use client";
+import { MaterialSelect } from "@/app/components/MaterialSelect";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ModalDialog } from "./ModalDialog";
+import { useAuth } from "./AuthProvider";
 import {
   Check,
   Copy,
@@ -36,6 +39,10 @@ function formatRemaining(seconds: number) {
 }
 
 export default function QRCodeAccess({ compact = false, disabled = false }: Props) {
+  const { user } = useAuth();
+  const owner = user?.id ?? null;
+  const generationRef = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [showPanel, setShowPanel] = useState(false);
   const [pairingCode, setPairingCode] = useState("");
@@ -46,8 +53,16 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [copyError, setCopyError] = useState("");
 
-  const visible = compact || showPanel;
+  const visible = !disabled && (compact || showPanel);
+  useLayoutEffect(() => {
+    generationRef.current++;
+    setShowPanel(false); setPairingCode(""); setExpiresAt(""); setTargets([]); setTargetUrl("");
+    setRemaining(0); setLoading(false); setCopied(false); setError(""); setCopyError("");
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    return () => { generationRef.current++; if (copyTimer.current) clearTimeout(copyTimer.current); };
+  }, [owner, disabled]);
   const pairPayload = useMemo(() => {
     if (!pairingCode || !targetUrl) return "";
     return `tszh-remote://connection?server=${encodeURIComponent(targetUrl)}&code=${encodeURIComponent(pairingCode)}`;
@@ -55,14 +70,20 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
 
   const generatePairingSession = useCallback(async () => {
     if (disabled) return;
+    const request = ++generationRef.current;
     setLoading(true);
     setCopied(false);
+    setPairingCode(""); setExpiresAt(""); setRemaining(0);
     setError("");
+    setCopyError("");
     try {
       const [pairing, network] = await Promise.all([
         createPairingCode(),
         getPairingNetworkTargets().catch(() => ({ targets: [] as NetworkTarget[] })),
       ]);
+      if (request !== generationRef.current) return;
+      const expiry = Date.parse(pairing.expiresAt);
+      if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("配对码有效期无效或已过期，请重新生成。");
       const fallback = process.env.NEXT_PUBLIC_AGENT_BACKEND_URL || window.location.origin;
       const availableTargets = network.targets || [];
       const preferred = preferredTarget(availableTargets);
@@ -72,16 +93,16 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
       setExpiresAt(pairing.expiresAt);
       setRemaining(Math.max(0, Math.ceil((new Date(pairing.expiresAt).getTime() - Date.now()) / 1000)));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "配对会话生成失败");
+      if (request === generationRef.current) setError(cause instanceof Error ? cause.message : "配对会话生成失败");
     } finally {
-      setLoading(false);
+      if (request === generationRef.current) setLoading(false);
     }
-  }, [disabled]);
+  }, [disabled, owner]);
 
   useEffect(() => {
     if (!visible || disabled) return;
     const start = window.setTimeout(() => void generatePairingSession(), 0);
-    return () => window.clearTimeout(start);
+    return () => { window.clearTimeout(start); generationRef.current++; };
   }, [disabled, generatePairingSession, visible]);
 
   useEffect(() => {
@@ -93,26 +114,36 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
   }, [expiresAt]);
 
   useEffect(() => {
-    if (!pairPayload || !canvasRef.current) return;
+    if (!visible || !pairPayload || !canvasRef.current) return;
+    let cancelled = false;
     void QRCode.toCanvas(canvasRef.current, pairPayload, {
       width: compact ? 118 : 188,
       margin: 1,
       errorCorrectionLevel: "M",
       color: { dark: "#d8dce8", light: "#0a1228" },
-    }).catch(() => setError("二维码渲染失败，请改用手动配对码"));
-  }, [compact, pairPayload]);
+    }).catch(() => { if (!cancelled) setError("二维码渲染失败，请改用手动配对码"); });
+    return () => { cancelled = true; };
+  }, [compact, pairPayload, visible]);
 
   async function copyCode() {
-    if (!pairingCode) return;
-    await navigator.clipboard.writeText(pairingCode);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    if (!pairingCode || remaining <= 0 || loading || disabled) return;
+    const request = generationRef.current;
+    setCopyError("");
+    try {
+      await navigator.clipboard.writeText(pairingCode);
+      if (request !== generationRef.current) return;
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => { if (request === generationRef.current) setCopied(false); }, 1600);
+    } catch {
+      if (request === generationRef.current) setCopyError("无法访问剪贴板，请手动选择并复制配对码。");
+    }
   }
 
   if (compact) {
     return (
-      <button type="button" className="qr-compact" disabled={disabled} onClick={() => setShowPanel((open) => !open)}>
-        <canvas ref={canvasRef} className="qr-canvas-compact" />
+      <button type="button" className="qr-compact" aria-label="重新生成设备配对码" disabled={disabled || loading} onClick={() => void generatePairingSession()}>
+        <canvas key={owner ?? "guest"} ref={canvasRef} className="qr-canvas-compact" />
         <span>{loading ? "生成中" : pairingCode || "设备配对"}</span>
       </button>
     );
@@ -125,20 +156,18 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
         className="qr-trigger"
         disabled={disabled}
         title={disabled ? "登录后可配对手机" : "配对手机远程控制台"}
+        aria-haspopup="dialog"
+        aria-expanded={showPanel && !disabled}
         onClick={() => setShowPanel(true)}
       >
         <Smartphone size={15} strokeWidth={1.7} />
         <span>{disabled ? "登录后配对" : "配对手机"}</span>
       </button>
 
-      {showPanel && (
-        <div className="qr-overlay" onMouseDown={() => setShowPanel(false)}>
+      {showPanel && !disabled && (
+        <ModalDialog className="qr-overlay" labelledBy="pairing-title" onClose={() => setShowPanel(false)}>
           <section
             className="qr-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pairing-title"
-            onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="qr-panel__header">
               <div className="qr-panel__mark"><QrCode size={20} strokeWidth={1.6} /></div>
@@ -146,7 +175,7 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
                 <span>SECURE HANDSHAKE</span>
                 <h3 id="pairing-title">连接手机远程控制台</h3>
               </div>
-              <button type="button" aria-label="关闭配对窗口" onClick={() => setShowPanel(false)}>
+              <button autoFocus type="button" aria-label="关闭配对窗口" onClick={() => setShowPanel(false)}>
                 <X size={17} strokeWidth={1.7} />
               </button>
             </header>
@@ -170,15 +199,15 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
 
               <div className="qr-session">
                 <div className="qr-session__status">
-                  <span><i className={remaining > 0 ? "is-ready" : ""} />{remaining > 0 ? "等待手机确认" : "配对码已过期"}</span>
-                  <strong>{formatRemaining(remaining)}</strong>
+                  <span><i className={!loading && !error && remaining > 0 ? "is-ready" : ""} />{loading ? "正在生成配对码" : error ? "配对暂不可用" : remaining > 0 ? "等待手机确认" : pairingCode ? "配对码已过期" : "尚未生成配对码"}</span>
+                  <strong>{loading ? "…" : formatRemaining(remaining)}</strong>
                 </div>
 
                 <div className="qr-session__code">
                   <span>一次性配对码</span>
                   <div>
                     <strong>{pairingCode || "········"}</strong>
-                    <button type="button" aria-label="复制配对码" onClick={() => void copyCode()}>
+                    <button type="button" aria-label={copied ? "配对码已复制" : "复制配对码"} disabled={!pairingCode || loading || remaining <= 0} onClick={() => void copyCode()}>
                       {copied ? <Check size={15} /> : <Copy size={15} />}
                     </button>
                   </div>
@@ -187,13 +216,13 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
                 <div className="qr-session__network">
                   <span><Network size={13} strokeWidth={1.7} /> 手机将连接到</span>
                   {targets.length > 1 ? (
-                    <select value={targetUrl} onChange={(event) => setTargetUrl(event.target.value)}>
+                    <MaterialSelect aria-label="访问地址" value={targetUrl} onValueChange={selectedValue => setTargetUrl(selectedValue)}>
                       {targets.map((target) => (
                         <option value={target.url} key={`${target.label}-${target.address}`}>
                           {target.label} · {target.url}
                         </option>
                       ))}
-                    </select>
+                    </MaterialSelect>
                   ) : (
                     <code>{targetUrl || "正在识别局域网地址"}</code>
                   )}
@@ -205,7 +234,8 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
                   <li><span>03</span><p><strong>完成安全握手</strong>配对成功后任务状态会实时同步。</p></li>
                 </ol>
 
-                {error && <p className="qr-error"><TriangleAlert size={13} /> {error}</p>}
+                {error && <p role="alert" className="qr-error"><TriangleAlert size={13} /> {error}</p>}
+                {copyError && <p role="alert" className="qr-error">{copyError}</p>}
                 {remaining === 0 && !loading && (
                   <button type="button" className="qr-regenerate" onClick={() => void generatePairingSession()}>
                     <RefreshCw size={14} /> 重新生成配对码
@@ -215,7 +245,7 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
               </div>
             </div>
           </section>
-        </div>
+        </ModalDialog>
       )}
 
       <style>{`
@@ -224,15 +254,16 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
         .qr-trigger:disabled { opacity:.48; cursor:not-allowed; }
         .qr-compact { display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:var(--space-panel); color:var(--foreground-muted); cursor:pointer; }
         .qr-canvas-compact { border-radius: var(--shape-control); }.qr-compact span { font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
-        .qr-overlay { position:fixed; inset:0; z-index:var(--z-max); display:grid; place-items:center; padding:24px; background:rgba(2,5,13,.88); animation:qr-overlay-in 180ms cubic-bezier(.16,1,.3,1) both; }
-        .qr-panel { width:min(780px,100%); overflow:hidden; border:1px solid color-mix(in srgb,var(--glow-warm) 20%,var(--border-subtle)); border-radius: var(--shape-card); background:var(--space-panel); box-shadow:0 26px 80px rgba(0,0,0,.55); animation:qr-panel-in 240ms cubic-bezier(.16,1,.3,1) both; }
-        .qr-panel__header { min-height:82px; padding:16px 18px; display:grid; grid-template-columns:44px minmax(0,1fr) 34px; align-items:center; gap:12px; border-bottom:1px solid var(--border-subtle); }
+        .qr-overlay { position:fixed; inset:0; width:100%; height:100%; max-width:none; max-height:none; margin:0; border:0; box-sizing:border-box; color:var(--foreground); z-index:var(--z-max); display:grid; place-items:center; padding:24px; background:rgba(2,5,13,.88); animation:qr-overlay-in 180ms cubic-bezier(.16,1,.3,1) both; }
+        .qr-overlay::backdrop { background:transparent; }
+        .qr-panel { width:min(780px,100%); max-height:calc(100svh - 48px); display:flex; flex-direction:column; overflow:hidden; border:1px solid color-mix(in srgb,var(--glow-warm) 20%,var(--border-subtle)); border-radius: var(--shape-card); background:var(--space-panel); box-shadow:0 26px 80px rgba(0,0,0,.55); animation:qr-panel-in 240ms cubic-bezier(.16,1,.3,1) both; }
+        .qr-panel__header { min-height:82px; padding:16px 18px; display:grid; grid-template-columns:44px minmax(0,1fr) 44px; flex-shrink:0; align-items:center; gap:12px; border-bottom:1px solid var(--border-subtle); }
         .qr-panel__mark { width:44px; height:44px; display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--glow-warm) 30%,transparent); border-radius: var(--shape-control); color:var(--glow-warm); background:color-mix(in srgb,var(--glow-warm) 8%,transparent); }
         .qr-panel__header span { color:var(--glow-cool); font: var(--weight-regular) var(--text-caption-size)/var(--text-caption-line) var(--font-code); letter-spacing:.16em; }
         .qr-panel__header h3 { margin:5px 0 0; color:var(--foreground); font-size: var(--text-heading-size); font-weight: var(--weight-medium); line-height: var(--text-heading-line); }
-        .qr-panel__header > button { width:34px; height:34px; display:grid; place-items:center; border:1px solid transparent; border-radius: var(--shape-control); background:transparent; color:var(--foreground-muted); cursor:pointer; }
+        .qr-panel__header > button { width:44px; height:44px; display:grid; place-items:center; border:1px solid transparent; border-radius: var(--shape-control); background:transparent; color:var(--foreground-muted); cursor:pointer; }
         .qr-panel__header > button:hover { color:var(--foreground); border-color:var(--border-subtle); }
-        .qr-panel__body { padding:24px; display:grid; grid-template-columns:250px minmax(0,1fr); gap:28px; }
+        .qr-panel__body { min-height:0; overflow:auto; padding:24px; display:grid; grid-template-columns:250px minmax(0,1fr); gap:28px; overscroll-behavior:contain; }
         .qr-scanner { position:relative; width:250px; height:250px; padding:18px; display:grid; place-items:center; border:1px solid var(--border-subtle); border-radius: var(--shape-card); background:var(--space-base); }
         .qr-scanner__bezel { width:210px; height:210px; display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--glow-cool) 20%,transparent); border-radius: var(--shape-control); background:#0a1228; box-shadow:inset 0 0 0 5px rgba(255,255,255,.018); }
         .qr-canvas { width:188px!important; height:188px!important; border-radius: var(--shape-control); }
@@ -248,16 +279,19 @@ export default function QRCodeAccess({ compact = false, disabled = false }: Prop
         .qr-session__code > span { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .qr-session__code > div { margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
         .qr-session__code strong { color:var(--glow-warm); font: var(--weight-semibold) var(--text-section-size)/var(--text-section-line) var(--font-code); letter-spacing:.17em; }
-        .qr-session__code button { width:30px; height:30px; display:grid; place-items:center; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:transparent; color:var(--foreground-muted); cursor:pointer; }
+        .qr-session__code button { width:44px; height:44px; flex-shrink:0; display:grid; place-items:center; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:transparent; color:var(--foreground-muted); cursor:pointer; }
         .qr-session__network { margin-top:12px; }.qr-session__network > span { display:flex; align-items:center; gap:6px; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }.qr-session__network code,.qr-session__network select { display:block; width:100%; margin-top:6px; padding:8px 9px; overflow:hidden; border:1px solid var(--border-subtle); border-radius: var(--shape-control); background:var(--space-base); color:var(--foreground); font: var(--weight-regular) var(--text-caption-size)/var(--text-caption-line) var(--font-code); text-overflow:ellipsis; }
         .qr-session__steps { margin:15px 0 0; padding:0; display:flex; flex-direction:column; gap:9px; list-style:none; }
-        .qr-session__steps li { display:grid; grid-template-columns:27px 1fr; gap:9px; align-items:start; }.qr-session__steps li>span{padding-top:2px;color:var(--glow-cool);font:9px "Geist Mono",monospace}.qr-session__steps p{margin:0;color: var(--text-muted);font-size: var(--text-caption-size);line-height: var(--text-caption-line)}.qr-session__steps strong{display:block;color:var(--foreground);font-size: var(--text-caption-size);font-weight: var(--weight-medium); line-height: var(--text-caption-line); }
-        .qr-error { margin:12px 0 0; padding:8px; display:flex; gap:6px; border:1px solid color-mix(in srgb,var(--error) 30%,transparent); border-radius: var(--shape-control); color:var(--error); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .qr-session__steps li { display:grid; grid-template-columns:27px minmax(0,1fr); gap:9px; align-items:start; }.qr-session__steps li>span{padding-top:2px;color:var(--glow-cool);font:12px/18px var(--font-code)}.qr-session__steps p{margin:0;color: var(--text-muted);font-size: var(--text-caption-size);line-height: var(--text-caption-line);overflow-wrap:anywhere}.qr-session__steps strong{display:block;color:var(--foreground);font-size: var(--text-caption-size);font-weight: var(--weight-medium); line-height: var(--text-caption-line); }
+        .qr-error { margin:12px 0 0; padding:8px; display:flex; gap:6px; overflow-wrap:anywhere; border:1px solid color-mix(in srgb,var(--error) 30%,transparent); border-radius: var(--shape-control); color:var(--error); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+        .qr-error svg,.qr-session__secure svg { flex-shrink:0; }
         .qr-regenerate { margin-top:12px; min-height:34px; padding:0 11px; display:flex; align-items:center; gap:6px; border:1px solid color-mix(in srgb,var(--glow-warm) 30%,transparent); border-radius: var(--shape-control); background:transparent; color:var(--glow-warm); font-size: var(--text-caption-size); cursor:pointer; line-height: var(--text-caption-line); }
-        .qr-session__secure { margin:13px 0 0; display:flex; align-items:center; gap:6px; color: var(--text-muted); font-size:8px; }
+        .qr-session__secure { margin:13px 0 0; display:flex; align-items:center; gap:6px; color: var(--text-muted); font-size:12px; line-height:18px; overflow-wrap:anywhere; }
         @keyframes qr-overlay-in{from{opacity:0}to{opacity:1}}@keyframes qr-panel-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}@keyframes qr-spin{to{transform:rotate(360deg)}}
-        @media(max-width:680px){.qr-overlay{padding:12px;align-items:end}.qr-panel__body{grid-template-columns:1fr;max-height:calc(100svh - 110px);overflow:auto}.qr-scanner{margin:0 auto}.qr-panel{border-radius: var(--shape-card)}.qr-session__code strong{font-size: var(--text-dialog-size); line-height: var(--text-dialog-line); }}
+        @media(max-width:680px){.qr-overlay{padding:12px;align-items:end}.qr-panel__body{grid-template-columns:1fr;max-height:calc(100svh - 110px);overflow:auto}.qr-scanner{margin:0 auto}.qr-panel{max-height:calc(100svh - 24px);border-radius: var(--shape-card)}.qr-session__code strong{font-size: var(--text-dialog-size); line-height: var(--text-dialog-line); }}
         @media(prefers-reduced-motion:reduce){.qr-overlay,.qr-panel,.qr-scanner__loading svg{animation:none}.qr-trigger{transition:none}}
+        :root[data-reduced-motion="true"] .qr-overlay,:root[data-reduced-motion="true"] .qr-panel,:root[data-reduced-motion="true"] .qr-scanner__loading svg { animation:none; }
+        :root[data-reduced-motion="true"] .qr-trigger { transition:none; }
       `}</style>
     </>
   );

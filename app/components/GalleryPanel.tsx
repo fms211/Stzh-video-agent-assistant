@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import Image from "next/image";
 import { RefreshCw, Palette } from "lucide-react";
-import { needsUnoptimized } from "@/app/lib/needsUnoptimized";
 import { loadMessages, loadSessions } from "@/app/lib/sync";
 import { PluginSlot } from "./plugin-slots/PluginSlot";
 import { useAuth } from "./AuthProvider";
@@ -11,6 +9,7 @@ import { getTasks } from "@/app/lib/auth";
 import { loadTaskMedia, mergeMedia, type MediaItem } from "@/app/lib/workspace-media";
 import GalleryMediaActions from "./GalleryMediaActions";
 import GalleryPreview from "./GalleryPreview";
+import GalleryImage from "./GalleryImage";
 
 function collectMedia(): MediaItem[] {
   const sessions = loadSessions();
@@ -62,7 +61,7 @@ export default function GalleryPanel() {
 function GalleryPanelView({ owner, authenticated }: { owner: string; authenticated: boolean }) {
   const [remote, setRemote] = useState<{ owner: string; items: MediaItem[] }>({ owner: "", items: [] });
   const [remoteError, setRemoteError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(authenticated);
   const [preview, setPreview] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<"all" | "video" | "image">("all");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -138,9 +137,9 @@ function GalleryPanelView({ owner, authenticated }: { owner: string; authenticat
           <button
             type="button"
             className="gallery-filter-btn"
-            onClick={() => setRefreshKey((k) => k + 1)}
+            onClick={() => { if (!loading) setRefreshKey((k) => k + 1); }}
             aria-label="刷新"
-            disabled={loading}
+            aria-disabled={loading}
           >
             <RefreshCw size={15} strokeWidth={1.8} />
           </button>
@@ -148,12 +147,13 @@ function GalleryPanelView({ owner, authenticated }: { owner: string; authenticat
       </div>
 
       {/* 网格 */}
-      {remoteError && <p role="alert">服务端作品暂未同步：{remoteError}。可点击刷新重试。</p>}
+      {remoteError && <p className="gallery-feedback" role="alert">服务端作品暂未同步：{remoteError}。可点击刷新重试。</p>}
+      {loading && media.length > 0 && <p className="gallery-feedback" role="status">正在同步服务端作品，当前作品仍可查看。</p>}
       {filtered.length === 0 ? (
         <div className="gallery-empty">
           <span className="gallery-empty-icon"><Palette size={28} strokeWidth={1.5} /></span>
-          <p className="gallery-empty-title">{loading ? "正在同步作品…" : media.length ? "当前分类没有作品" : "还没有创作作品"}</p>
-          <p className="gallery-empty-desc">{media.length ? "切换到全部，查看其他类型的作品" : "在对话工作区中生成视频或图片，作品会自动出现在这里"}</p>
+          <p className="gallery-empty-title">{media.length ? "当前分类没有作品" : loading ? "正在同步作品…" : remoteError ? "暂时无法确认服务端作品" : "还没有创作作品"}</p>
+          <p className="gallery-empty-desc">{media.length ? "切换到全部，查看其他类型的作品" : loading ? "正在读取已有作品记录，请稍候。" : remoteError ? "已有记录保持原状，可点击右上角刷新重新读取。" : "在对话工作区中生成视频或图片，作品会自动出现在这里"}</p>
         </div>
       ) : (
         <div className="gallery-grid">
@@ -171,14 +171,7 @@ function GalleryPanelView({ owner, authenticated }: { owner: string; authenticat
                   onClick={() => setPreview(item)}
                   aria-label={`预览 ${item.sessionTitle}`}
                 >
-                  <Image
-                    src={item.url}
-                    alt={item.sessionTitle}
-                    width={320}
-                    height={240}
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    unoptimized={needsUnoptimized(item.url)}
-                  />
+                  <GalleryImage key={item.url} item={item} />
                   <span className="gallery-badge image">图片</span>
                 </button>
               )}
@@ -236,44 +229,11 @@ function GalleryPanelView({ owner, authenticated }: { owner: string; authenticat
           letter-spacing: 0.06em; line-height: var(--text-caption-line); }
         .gallery-filters {
           display: flex;
+          flex-wrap: wrap;
           gap: 6px;
         }
-        .gallery-filter-btn {
-          padding: 5px 12px;
-          border-radius: var(--shape-control);
-          border: 1px solid var(--border-subtle);
-          background: transparent;
-          color: var(--text-muted);
-          font-family: var(--font-ui);
-          font-size: var(--text-label-size);
-          cursor: pointer;
-          transition: all 0.15s;
-          outline: none; line-height: var(--text-label-line); }
-        .gallery-filter-btn:hover {
-          border-color: color-mix(in srgb, var(--glow-warm) 40%, transparent);
-          color: var(--foreground);
-        }
-        .gallery-filter-btn.active {
-          border-color: var(--glow-warm);
-          color: var(--glow-warm);
-          background: color-mix(in srgb, var(--glow-warm) 10%, transparent);
-        }
-        .gallery-filter-btn:focus-visible {
-          box-shadow: 0 0 0 2px color-mix(in srgb, var(--glow-warm) 30%, transparent);
-        }
-        .gallery-filter-btn:disabled { opacity: 0.55; cursor: wait; }
+        .gallery-feedback { margin: 12px 0; font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
         .gallery-media:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: -3px; }
-        .gallery-download { padding: 0 10px 12px; }
-        .gallery-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-        .gallery-actions a { text-decoration: none; }
-        .gallery-download-message { color: var(--text-muted); font-size: var(--text-caption-size); margin: 8px 0 0; overflow-wrap: anywhere; line-height: var(--text-caption-line); }
-        .gallery-preview { border: 0; padding: 24px; margin: auto; background: transparent; color: var(--foreground); max-width: 100vw; max-height: 100dvh; }
-        .gallery-preview::backdrop { background: color-mix(in srgb, var(--space-deep) 90%, transparent); }
-        .gallery-preview-panel { width: min(1200px, 88vw); border: 1px solid var(--border-subtle); border-radius: var(--shape-control); padding: 12px; background: var(--space-panel); }
-        .gallery-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-        .gallery-preview-header h3 { margin: 0; font-size: var(--text-body-size); overflow-wrap: anywhere; line-height: var(--text-body-line); }
-        .gallery-preview-header button { flex-shrink: 0; }
-        .gallery-preview-panel img { width: 100%; height: auto; max-height: 75dvh; object-fit: contain; }
 
         /* 空状态 */
         .gallery-empty {

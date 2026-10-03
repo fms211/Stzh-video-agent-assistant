@@ -36,6 +36,7 @@ app.use(attachUser);
 // === 挂载路由模块（auth / conversations / templates / generations / user-settings） ===
 app.use(require("./routes/auth.js"));
 app.use("/api", requireUser);
+app.use(require("./routes/history-retention.js"));
 app.use(require("./routes/conversations.js"));
 app.use(require("./routes/templates.js"));
 app.use(require("./routes/generations.js"));
@@ -75,6 +76,8 @@ app.post("/api/opc/sessions", (req, res) => {
   const userId = req.user?.userId || 0;
   const { id, title } = req.body;
   if (!id) return res.status(400).json({ error: "id required" });
+  try { require("./history-retention.js").assertAvailable(db, userId, id); }
+  catch (error) { return res.status(error.status).json({ error: { code: error.code, message: error.message } }); }
   db.opcCreateSession(id, title, userId);
   if (!db.opcGetSession(id, userId)) return res.status(409).json({ error: "session ID unavailable" });
   try { const scope=require("./studio-session-scope.js");scope.register(db,userId,id,scope.inferMode(db,userId,id)); }
@@ -302,27 +305,33 @@ app.delete("/api/notifications", (req, res) => {
   res.json({ ok: true });
 });
 
-// === 应用级设置 API（主题等，非用户级） ===
-// 注意：用户级设置 (/api/settings) 由 routes/settings.js 提供
-// 这里是应用级 key-value 存储，路径改为 /api/app-settings 避免冲突
+// === 兼容旧设置 API 路径，远程读写必须按认证账户隔离 ===
+// /api/settings 的主题字段仍由 routes/settings.js 提供。
+// 全局 app_settings 保留内部迁移标记和无归属旧数据，不通过 HTTP 暴露。
 
-app.get("/api/app-settings", (_req, res) => {
-  res.json({ settings: db.settingsGetAll() });
+app.get("/api/app-settings", (req, res) => {
+  res.json({ settings: db.accountSettingsGetAll(req.user.userId) });
 });
 
 app.post("/api/app-settings", (req, res) => {
-  const { key, value } = req.body;
-  if (!key) return res.status(400).json({ error: "key required" });
-  db.settingsSet(key, value);
+  const { key, value } = req.body || {};
+  if (typeof key !== "string" || !key.trim() || typeof value !== "string") {
+    return res.status(400).json({ error: "setting key and value must be strings" });
+  }
+  db.accountSettingsSetBatch(req.user.userId, [[key, value]]);
   res.json({ ok: true });
 });
 
 app.post("/api/app-settings/batch", (req, res) => {
-  const { settings } = req.body;
-  if (!settings || typeof settings !== "object") return res.status(400).json({ error: "settings object required" });
-  for (const [key, value] of Object.entries(settings)) {
-    db.settingsSet(key, value);
+  const { settings } = req.body || {};
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return res.status(400).json({ error: "settings object required" });
   }
+  const entries = Object.entries(settings);
+  if (entries.some(([key, value]) => !key.trim() || typeof value !== "string")) {
+    return res.status(400).json({ error: "setting key and value must be strings" });
+  }
+  db.accountSettingsSetBatch(req.user.userId, entries);
   res.json({ ok: true });
 });
 
@@ -332,17 +341,39 @@ app.use((req, res, next) => {
   if (req.path.startsWith("/api/") || req.path === "/health") {
     return next();
   }
-  // 尝试静态文件
-  const filePath = path.join(OUT_DIR, req.path);
-  if (req.path !== "/" && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    return res.sendFile(filePath);
-  }
-  // SPA fallback → index.html
-  const indexPath = path.join(OUT_DIR, "index.html");
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).json({ error: { message: "Not found" } });
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const notFound = () => res.status(404).json({ error: { message: "Not found" } });
+  const isWithin = (root, target) => {
+    const relative = path.relative(root, target);
+    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  };
+  try {
+    // Decode once for real filenames. Never treat Windows separators or NUL as URL paths.
+    const requestPath = decodeURIComponent(req.path);
+    if (requestPath.includes("\\") || requestPath.includes("\0")) {
+      return res.status(400).json({ error: { message: "Invalid file path" } });
+    }
+    const outputRoot = path.resolve(OUT_DIR);
+    const filePath = path.resolve(outputRoot, `.${requestPath}`);
+    if (!isWithin(outputRoot, filePath) || !fs.existsSync(outputRoot)) return notFound();
+    const realRoot = fs.realpathSync(outputRoot);
+    const sendOutput = target => {
+      // Directory links must not expose files outside the exported Web tree.
+      const realFile = fs.realpathSync(target);
+      if (!isWithin(realRoot, realFile)) return notFound();
+      return res.sendFile(realFile);
+    };
+    if (requestPath !== "/" && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      return sendOutput(filePath);
+    }
+    const indexPath = path.join(outputRoot, "index.html");
+    return fs.existsSync(indexPath) ? sendOutput(indexPath) : notFound();
+  } catch (error) {
+    if (error instanceof URIError) {
+      return res.status(400).json({ error: { message: "Invalid file path" } });
+    }
+    console.error("[Static] Read failed:", error.code || "UNKNOWN");
+    return res.status(500).json({ error: { message: "Static file unavailable" } });
   }
 });
 

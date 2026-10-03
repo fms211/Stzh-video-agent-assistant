@@ -1,6 +1,8 @@
 "use client";
 
 import "./StudioContextTrace.css";
+import { contextPresentation } from "@/app/lib/studio-context-presentation";
+import { rolloutSourceLabel, studioModeLabels } from "@/app/lib/studio-context-status";
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -12,7 +14,8 @@ const number = (value: unknown) => typeof value === "number" && Number.isFinite(
 export function StudioContextTrace({ trace, label = "本次上下文" }: { trace: unknown; label?: string }) {
   const data = record(trace);
   if (typeof data.rollout !== "string") return null;
-  const applied = data.applied === true;
+  const application = contextPresentation(data.rollout, data.applied);
+  const applied = application.applied;
   const selected = Array.isArray(data.selected) ? data.selected.map(record) : [];
   const dropped = Object.entries(record(data.dropped)).filter(([, count]) => typeof count === "number" && count > 0);
   const summary = record(data.summary);
@@ -33,7 +36,9 @@ export function StudioContextTrace({ trace, label = "本次上下文" }: { trace
   const verificationNames: Record<string, string> = { unverified: "未经事实核验", verified: "已有核验证据（仍需核对适用条件）", stale: "核验证据已过期", conflicted: "存在冲突证据" };
   const sectionNames: Record<string, string> = { "Relevant Memory": "相关记忆", Evidence: "参考证据" };
   return <details className="studio-context-trace">
-    <summary>{label} · {applied ? "已用于请求" : data.rollout === "shadow" ? "仅匹配预览，未用于回答" : "未启用"}</summary>
+    <summary>{label} · {application.label}</summary>
+    {typeof data.mode === "string" && Object.hasOwn(studioModeLabels, data.mode) && <p>{studioModeLabels[data.mode as keyof typeof studioModeLabels]} · {rolloutSourceLabel(data.rolloutSource)}。这是本次请求的配置快照。</p>}
+    {data.rolloutConfigurationValid === false && <p>配置值无效，本次采用安全回退；请联系部署维护者核对配置。</p>}
     {workflow.authority === "client_reference_only" && <p>本地运行 {text(workflow.runId)} · 步骤 {text(workflow.stepId)}。客户端提交了 {Array.isArray(workflow.previousStepIds) ? workflow.previousStepIds.length : 0} 个前序引用；这些标识不代表服务端已核验完成状态。</p>}
     {workflow.authority === "server_result_records" && <details>
       <summary>运行 {text(workflow.runId)} · 步骤 {text(workflow.stepId)} · 服务端已核对前序回复</summary>
@@ -41,7 +46,7 @@ export function StudioContextTrace({ trace, label = "本次上下文" }: { trace
       <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(workflow.predecessors ?? [], null, 2)}</pre>
     </details>}
     {data.reason === "required_context_over_budget" && <p>必需内容超出容量；本次未应用优化方案。</p>}
-    {data.inputBytes != null && <p>{applied ? "发送内容" : "拟采用内容"}容量估算 {number(data.inputBytes)} / {number(data.ceiling)}。按 UTF-8 字节保守估算，并非实际 Token 用量。</p>}
+    {data.inputBytes != null && <p>{applied ? "发送内容" : "方案内容"}容量估算 {number(data.inputBytes)} / {number(data.ceiling)}。按 UTF-8 字节保守估算，并非实际 Token 用量。</p>}
     {data.capacitySource === "unknown" && <p>模型窗口容量未配置，当前使用本地容量限制。</p>}
     {data.retrievalBasis === "adapter_task_and_role" && <p>本次记忆按运行原始任务和当前角色职责筛选；前序角色产物不会增加检索关键词。</p>}
     {data.retrievalBasis === "workflow_original_input" && <p>本次记忆按运行最初输入和创作参数筛选；前序回复、检索资料只作为参考。</p>}
@@ -63,17 +68,17 @@ export function StudioContextTrace({ trace, label = "本次上下文" }: { trace
       {Array.isArray(record(item.verification).openQuestions) && <ul>{(record(item.verification).openQuestions as unknown[]).filter(value => typeof value === "string").map((question, i) => <li key={i}>未决：{String(question)}</li>)}</ul>}
       <details><summary>请求时的来源引用</summary><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(item.source ?? {}, null, 2)}</pre></details>
       <details><summary>适用范围与核验证据</summary><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ scope: item.scope ?? null, claimKind: item.claimKind ?? null, verification: item.verification ?? null }, null, 2)}</pre></details>
-    </li>)}</ul> : <p>本次方案没有采用记忆条目。</p>}
-    {summary.id != null && <p>会话摘要 {text(summary.id)} · 版本 {number(summary.revision)} · 采用 {number(summary.includedExcerpts)} 段摘录；摘要不替代原文。</p>}
-    {typeof summary.excludedConflictingTurns === "number" && summary.excludedConflictingTurns > 0 && <p>已省略 {number(summary.excludedConflictingTurns)} 轮与本次明确要求冲突的历史摘录。</p>}
+    </li>)}</ul> : <p>本次方案没有纳入记忆条目。</p>}
+    {summary.id != null && <p>会话摘要 {text(summary.id)} · 版本 {number(summary.revision)} · {applied ? "已引用" : "方案纳入"} {number(summary.includedExcerpts)} 段摘录；摘要不替代原文。</p>}
+    {typeof summary.excludedConflictingTurns === "number" && summary.excludedConflictingTurns > 0 && <p>{applied ? "已省略" : "方案排除"} {number(summary.excludedConflictingTurns)} 轮与本次明确要求冲突的历史摘录。</p>}
     {typeof summary.skipped === "string" && <p>摘要未采用：{summary.skipped}</p>}
     {mechanism.id != null && <details>
-      <summary>流程参考 {text(mechanism.id)} · 版本 {number(mechanism.revision)} · {mechanism.included === true ? (applied ? "已采用" : "拟采用") : "容量不足，整份省略"}</summary>
+      <summary>流程参考 {text(mechanism.id)} · 版本 {number(mechanism.revision)} · {mechanism.included === true ? (applied ? "已采用" : "方案纳入，应用状态见上方") : "容量不足，整份省略"}</summary>
       <p>{text(mechanism.expected)}</p>
       <p>这是仓库流程说明，不证明当前运行状态；部署适用性仍需核对。</p>
       <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(mechanism, null, 2)}</pre>
     </details>}
-    {note.projectId != null && <p>项目笔记 · 版本 {number(note.revision)} · {note.included === true ? (applied ? "已采用" : "拟采用") : "容量不足，整份省略"}。笔记属于用户参考，不代表实时状态或执行批准。</p>}
+    {note.projectId != null && <p>项目笔记 · 版本 {number(note.revision)} · {note.included === true ? (applied ? "已采用" : "方案纳入，应用状态见上方") : "容量不足，整份省略"}。笔记属于用户参考，不代表实时状态或执行批准。</p>}
     {dropped.length > 0 && <ul>{dropped.map(([reason, count]) => <li key={reason}>{reasonNames[reason] || reason}：{number(count)}</li>)}</ul>}
     <p><small>以上是请求时的记录；引用与用户确认不等于事实已核验。</small></p>
   </details>;

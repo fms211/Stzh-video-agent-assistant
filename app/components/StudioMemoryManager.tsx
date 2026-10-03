@@ -1,11 +1,15 @@
 "use client";
+import { LiquidMaterialBackdrop } from "@/app/components/LiquidMaterialBackdrop";
+import { MaterialSelect } from "@/app/components/MaterialSelect";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Brain, Download, Plus, RefreshCw, X } from "lucide-react";
 import type { StudioMode } from "../../shared/studio-context/index.cjs";
 import { ApiRequestError } from "@/app/lib/auth";
 import { captureStudioMemoryClient, createMemorySaveAttempt, draftFromMemory, emptyMemoryDraft, memoryState, type MemoryDraft, type MemoryRow, type MemorySourcePreview } from "@/app/lib/studio-memory-client";
 import "./StudioMemoryManager.css";
+import { contextStatusDescription, studioModeLabels, type StudioContextStatus } from "@/app/lib/studio-context-status";
+import { ModalDialog } from "./ModalDialog";
 
 function sourceOverview(raw: string) {
   try {
@@ -28,25 +32,9 @@ function sourceOverview(raw: string) {
 }
 
 function MemoryDialog({ label, onClose, busy = false, children, compact = false }: { label: string; onClose: () => void; busy?: boolean; children: ReactNode; compact?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useLayoutEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.showModal();
-    return () => { dialog.close(); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, []);
-  return <dialog ref={ref} aria-label={label} className={`studio-memory-dialog${compact ? " is-compact" : ""}`} tabIndex={-1}
-    onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}
-    onClick={event => { if (!busy && event.target === event.currentTarget) onClose(); }}
-    onKeyDown={event => {
-      if (event.key !== "Tab") return;
-      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex="0"]')).filter(node => node.getClientRects().length && !node.closest("[inert]"));
-      const first = controls[0], last = controls.at(-1);
-      if (!first) { event.preventDefault(); ref.current?.focus(); }
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    }}>{children}</dialog>;
+  return <ModalDialog label={label} className={`studio-memory-dialog liquid-material-host${compact ? " is-compact" : ""}`} busy={busy} onClose={onClose}>
+    <LiquidMaterialBackdrop />{children}
+  </ModalDialog>;
 }
 
 export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClose: () => void }) {
@@ -65,9 +53,10 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [rollout, setRollout] = useState<"off" | "shadow" | "enforce" | null>(null);
+  const [contextStatus, setContextStatus] = useState<StudioContextStatus | null>(null);
   const [discard, setDiscard] = useState<"close" | "new" | MemoryRow | null>(null);
   const [deleting, setDeleting] = useState<MemoryRow | null>(null);
+  const [deletionUnconfirmed, setDeletionUnconfirmed] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
   const live = useRef(true), locked = useRef(false);
   const attempt = useRef<ReturnType<typeof createMemorySaveAttempt> | null>(null);
@@ -89,10 +78,11 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
   };
   const load = async (more = false) => {
     if (!more) {
+      if (live.current) setContextStatus(null);
       try {
         const status = await client.contextStatus();
-        if (live.current) setRollout(["off", "shadow", "enforce"].includes(status.rollout) ? status.rollout : null);
-      } catch { if (live.current) setRollout(null); }
+        if (live.current) setContextStatus(status);
+      } catch { if (live.current) setContextStatus(null); }
     }
     const page = await client.list(more ? nextCursor || "" : "");
     if (!live.current) return;
@@ -126,7 +116,7 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
     if (dirty) { setDiscard(target); return; }
     if (target === "close") onClose(); else choose(target === "new" ? null : target);
   };
-  const changeDraft = (patch: Partial<MemoryDraft>) => { setDraft(previous => ({ ...previous, ...patch })); attempt.current = null; };
+  const changeDraft = (patch: Partial<MemoryDraft>) => { if (locked.current) return; setDraft(previous => ({ ...previous, ...patch })); attempt.current = null; };
   const scopeLabel = (item: MemoryRow) => item.scope.kind === "user" ? "账户通用" : item.scope.kind === "project" ? projects.find(project => project.id === (item.scope.kind === "project" ? item.scope.projectId : ""))?.name || "项目记忆" : item.scope.kind === "session" ? "会话记忆" : "运行记忆";
   const scopeValue = draft.scope.kind === "user" ? "user" : draft.scope.kind === "project" ? draft.scope.projectId : "existing";
   const shown = rows.filter(item => !query.trim() || `${item.content} ${memoryState(item)} ${scopeLabel(item)}`.toLowerCase().includes(query.trim().toLowerCase()));
@@ -138,17 +128,34 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
   });
   const currentInvalid = selected && ["来源已失效", "来源待复核", "已过期"].includes(memoryState(selected));
   const preview = sourcePreview ? sourceOverview(sourcePreview.content) : null;
+  const deleteMemory = () => void act(async () => {
+    if (!deleting || deletionUnconfirmed) return;
+    try {
+      await client.remove(deleting);
+    } catch (cause) {
+      if (live.current && (!(cause instanceof ApiRequestError) || cause.status >= 500 || [404, 409].includes(cause.status))) setDeletionUnconfirmed(true);
+      throw cause;
+    }
+    if (live.current) {
+      setRows(previous => previous.filter(row => row.id !== deleting.id));
+      choose(null); setDeleting(null); setDeletionUnconfirmed(false); setNotice("记忆已删除。");
+    }
+  });
 
   return <>
     <MemoryDialog label="创意记忆" onClose={() => navigate("close")} busy={busy}>
       <div className="studio-memory-panel">
         <header className="studio-memory-head"><div><span className="studio-memory-eyebrow"><Brain size={15} /> CREATIVE MEMORY</span><h2>创意记忆</h2><p>保存你愿意复用的偏好与约定，由你决定是否使用。</p></div><button type="button" className="studio-memory-icon" aria-label="关闭创意记忆" disabled={busy} onClick={() => navigate("close")} autoFocus><X size={18} /></button></header>
-        <p className="studio-memory-stage" role="status">{rollout === "enforce" ? "记忆引用已开启：已确认且相关的条目可参与四模式请求，以每次回答的上下文记录为准。" : rollout === "shadow" ? "当前为匹配预览：记忆可以保存和管理，但匹配结果尚未用于模型回答。" : rollout === "off" ? "当前已关闭记忆引用：已保存的记忆仍可管理，不会自动加入新请求。" : "暂时无法确认记忆引用状态。可继续管理记忆，点击刷新重新读取。"}</p>
+        <p className="studio-memory-stage" role="status">{contextStatusDescription(mode, contextStatus?.byMode[mode] ?? null)}</p>
+        <details className="studio-memory-help"><summary>四模式配置状态</summary>
+          <ul>{(Object.keys(studioModeLabels) as StudioMode[]).map(item => <li key={item}>{contextStatusDescription(item, contextStatus?.byMode[item] ?? null)}</li>)}</ul>
+          <p>这是读取时的配置状态，普通工作流与研究计划共用工作流配置。是否用于某次请求，以该请求的上下文记录为准；开启配置不代表已验证效果。</p>
+        </details>
         <div className="studio-memory-toolbar"><label className="studio-memory-search"><span className="sr-only">筛选已载入记忆</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="查找内容或状态" /></label><button type="button" disabled={busy} onClick={() => void act(() => load())}><RefreshCw size={14} /> 刷新</button><button type="button" disabled={busy} onClick={() => navigate("new")}><Plus size={14} /> 新增</button><button type="button" disabled={busy} onClick={() => void act(async () => {
           const data = await client.export(); if (!live.current) return;
           setExportUrl(URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }))); setNotice("导出已准备好，点击下载链接保存。");
         })}><Download size={14} /> 导出</button>{exportUrl && <a href={exportUrl} download="creative-memories.json">下载记忆 JSON</a>}</div>
-        {error && <div className="studio-memory-error" role="alert">{error}</div>}
+        {error && !deleting && <div className="studio-memory-error" role="alert">{error}</div>}
         {notice && <p className="studio-memory-notice" role="status">{notice}</p>}
         <div className="studio-memory-columns" aria-busy={busy}>
           <section className="studio-memory-list" aria-label="已保存记忆"><div className="studio-memory-list-heading">已载入 {rows.length} 条 <span>仅筛选已载入条目</span></div>
@@ -157,9 +164,9 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
           </section>
           <section className="studio-memory-editor" aria-label={selected ? "编辑记忆" : "新增记忆"}><h3>{selected ? "编辑记忆" : "写下一条记忆"}</h3><form onSubmit={event => { event.preventDefault(); if (!busy && !conflict) save(); }}>
             <fieldset disabled={busy}><label>记忆内容<textarea aria-label="记忆内容" rows={6} maxLength={4000} value={draft.content} onChange={event => changeDraft({ content: event.target.value })} placeholder="例如：产品介绍偏好工业极简风格，正文保持简洁。" required /></label><span className="studio-memory-count">{draft.content.length}/4000</span>
-              <div className="studio-memory-fields"><label>使用范围<select aria-label="记忆使用范围" value={scopeValue} onChange={event => changeDraft({ scope: event.target.value === "user" ? { kind: "user" } : { kind: "project", projectId: event.target.value } })}><option value="user">账户通用</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}{draft.scope.kind === "project" && !projects.some(project => project.id === (draft.scope.kind === "project" ? draft.scope.projectId : "")) && <option value={draft.scope.projectId}>原项目（当前不可用）</option>}{scopeValue === "existing" && <option value="existing">保留原会话／运行范围</option>}</select></label><label>对应参数<select aria-label="记忆对应参数" value={draft.slot} onChange={event => changeDraft({ slot: event.target.value })}><option value="">一般背景</option><option value="style">风格</option><option value="aspect">画幅</option><option value="duration">时长</option><option value="camera">运镜</option><option value="composition">构图</option>{draft.slot && !["style", "aspect", "duration", "camera", "composition"].includes(draft.slot) && <option value={draft.slot}>{draft.slot}</option>}</select></label></div>
+              <div className="studio-memory-fields"><label>使用范围<MaterialSelect aria-label="记忆使用范围" value={scopeValue} onValueChange={selectedValue => changeDraft({ scope: selectedValue === "user" ? { kind: "user" } : { kind: "project", projectId: selectedValue } })}><option value="user">账户通用</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}{draft.scope.kind === "project" && !projects.some(project => project.id === (draft.scope.kind === "project" ? draft.scope.projectId : "")) && <option value={draft.scope.projectId}>原项目（当前不可用）</option>}{scopeValue === "existing" && <option value="existing">保留原会话／运行范围</option>}</MaterialSelect></label><label>对应参数<MaterialSelect aria-label="记忆对应参数" value={draft.slot} onValueChange={selectedValue => changeDraft({ slot: selectedValue })}><option value="">一般背景</option><option value="style">风格</option><option value="aspect">画幅</option><option value="duration">时长</option><option value="camera">运镜</option><option value="composition">构图</option>{draft.slot && !["style", "aspect", "duration", "camera", "composition"].includes(draft.slot) && <option value={draft.slot}>{draft.slot}</option>}</MaterialSelect></label></div>
               {projectError && <p className="studio-memory-help">{projectError}</p>}
-              <label>内容类型<select aria-label="记忆内容类型" disabled={Boolean(selected) || busy} value={draft.claimKind} onChange={event => changeDraft({ claimKind: event.target.value as MemoryDraft["claimKind"] })}><option value="preference">个人偏好</option><option value="constraint">创作约定</option><option value="observation">待核实的陈述</option>{selected && !["preference", "constraint", "observation"].includes(selected.claimKind) && <option value={selected.claimKind}>{selected.claimKind === "mechanism" ? "机制说明" : "待验证假说"}</option>}</select></label>
+              <label>内容类型<MaterialSelect aria-label="记忆内容类型" disabled={Boolean(selected) || busy} value={draft.claimKind} onValueChange={selectedValue => changeDraft({ claimKind: selectedValue as MemoryDraft["claimKind"] })}><option value="preference">个人偏好</option><option value="constraint">创作约定</option><option value="observation">待核实的陈述</option>{selected && !["preference", "constraint", "observation"].includes(selected.claimKind) && <option value={selected.claimKind}>{selected.claimKind === "mechanism" ? "机制说明" : "待验证假说"}</option>}</MaterialSelect></label>
             </fieldset>
             <p className="studio-memory-help">保存后需确认才能参与检索。确认使用不代表事实已经核验；当前对话中的明确要求优先。</p>
             {selected && !selected.source.recordId.startsWith("manual:") && <div className="studio-memory-source">
@@ -176,13 +183,17 @@ export function StudioMemoryManager({ mode, onClose }: { mode: StudioMode; onClo
               </>}
             </div>}
             {selected && <details className="studio-memory-source"><summary>来源与状态</summary><dl><dt>状态</dt><dd>{memoryState(selected)}</dd><dt>来源</dt><dd>{selected.source.recordId.startsWith("manual:") ? "手动记录" : selected.source.artifactIds?.length ? "研究产物" : selected.source.sessionId ? "会话消息" : "运行记录"}</dd><dt>事实核验</dt><dd>{selected.verification.state === "verified" ? "已核验" : selected.verification.state === "stale" ? "已过期，需复核" : selected.verification.state === "conflicted" ? "存在冲突" : "未核验"}</dd><dt>更新时间</dt><dd>{new Date(selected.updatedAt).toLocaleString()}</dd><dt>原始来源</dt><dd><code>{selected.source.recordId}</code></dd>{selected.expiresAt && <><dt>有效期至</dt><dd>{new Date(selected.expiresAt).toLocaleString()}</dd></>}</dl></details>}
-            {conflict && selected && <div className="studio-memory-conflict" role="alert"><p>服务器版本已经变化。本地改稿仍保留，读取最新内容后再决定。</p><button type="button" disabled={busy} onClick={() => void act(async () => { const result = await client.get(selected.id); if (live.current) setLatest(result.item); })}>读取最新版本</button>{latest && <><p className="studio-memory-server-copy">{latest.content}</p><button type="button" onClick={() => { upsert(latest); choose(latest); }}>载入最新版本并放弃改稿</button></>}</div>}
-            <div className="studio-memory-editor-actions"><button type="submit" className="is-primary" disabled={busy || conflict || !dirty || !draft.content.trim()}>保存记忆</button>{selected && <><button type="button" disabled={busy || dirty || conflict || Boolean(currentInvalid) || selected.status === "confirmed"} onClick={() => void act(async () => { const result = await client.confirm(selected); if (live.current) { upsert(result.item); choose(result.item); setNotice("已确认使用；事实核验状态保持不变。"); } })}>确认使用</button><button type="button" disabled={busy || dirty || conflict || (Boolean(currentInvalid) && !selected.enabled)} onClick={() => void act(async () => { const result = await client.toggle(selected); if (live.current) { upsert(result.item); choose(result.item); setNotice(result.item.enabled ? "已恢复使用。" : "已停用，后续检索不再使用这条记忆。"); } })}>{selected.enabled ? "停用" : "恢复使用"}</button><button type="button" className="is-danger" disabled={busy} onClick={() => setDeleting(selected)}>删除</button></>}</div>
+            {conflict && selected && <div className="studio-memory-conflict" role="alert"><p>服务器版本已经变化。本地改稿仍保留，读取最新内容后再决定。</p><button type="button" disabled={busy} onClick={() => void act(async () => { const result = await client.get(selected.id); if (live.current) setLatest(result.item); })}>读取最新版本</button>{latest && <><p className="studio-memory-server-copy">{latest.content}</p><button type="button" disabled={busy} onClick={() => { upsert(latest); choose(latest); }}>载入最新版本并放弃改稿</button></>}</div>}
+            <div className="studio-memory-editor-actions"><button type="submit" className="is-primary" disabled={busy || conflict || !dirty || !draft.content.trim()}>保存记忆</button>{selected && <><button type="button" disabled={busy || dirty || conflict || Boolean(currentInvalid) || selected.status === "confirmed"} onClick={() => void act(async () => { const result = await client.confirm(selected); if (live.current) { upsert(result.item); choose(result.item); setNotice("已确认使用；事实核验状态保持不变。"); } })}>确认使用</button><button type="button" disabled={busy || dirty || conflict || (Boolean(currentInvalid) && !selected.enabled)} onClick={() => void act(async () => { const result = await client.toggle(selected); if (live.current) { upsert(result.item); choose(result.item); setNotice(result.item.enabled ? "已恢复使用。" : "已停用，后续检索不再使用这条记忆。"); } })}>{selected.enabled ? "停用" : "恢复使用"}</button><button type="button" className="is-danger" disabled={busy} onClick={() => { setError(""); setDeletionUnconfirmed(false); setDeleting(selected); }}>删除</button></>}</div>
           </form></section>
         </div>
       </div>
     </MemoryDialog>
     {discard && <MemoryDialog label="放弃未保存的记忆" compact onClose={() => setDiscard(null)}><h3>有尚未保存的改稿</h3><p>继续操作会放弃这次修改。</p><div className="studio-memory-editor-actions"><button type="button" autoFocus onClick={() => setDiscard(null)}>继续编辑</button><button type="button" onClick={() => { const target = discard; setDiscard(null); if (target === "close") onClose(); else choose(target === "new" ? null : target); }}>放弃修改并继续</button></div></MemoryDialog>}
-    {deleting && <MemoryDialog label="删除这条记忆" compact busy={busy} onClose={() => setDeleting(null)}><h3>删除这条记忆？</h3><p>删除后不会再参与检索，原始会话记录仍保留。</p><p className="studio-memory-server-copy">{deleting.content}</p><div className="studio-memory-editor-actions"><button type="button" autoFocus disabled={busy} onClick={() => setDeleting(null)}>取消删除</button><button type="button" className="is-danger" disabled={busy} onClick={() => void act(async () => { await client.remove(deleting); if (live.current) { setRows(previous => previous.filter(row => row.id !== deleting.id)); choose(null); setDeleting(null); setNotice("记忆已删除。"); } }).finally(() => { if (live.current) setDeleting(null); })}>确认删除</button></div></MemoryDialog>}
+    {deleting && <MemoryDialog label="删除这条记忆" compact busy={busy} onClose={() => setDeleting(null)}>
+      <h3>删除这条记忆？</h3><p>删除后不会再参与检索，原始会话记录仍保留。</p><p className="studio-memory-server-copy">{deleting.content}</p>
+      {error && <div className="studio-memory-error" role="alert">{error}{deletionUnconfirmed && <p>删除结果或记录版本尚未确认，请返回列表刷新并核对，不要重复提交。</p>}</div>}
+      <div className="studio-memory-editor-actions"><button type="button" autoFocus disabled={busy} onClick={() => setDeleting(null)}>{deletionUnconfirmed ? "返回列表核对" : "取消删除"}</button><button type="button" className="is-danger" disabled={busy || deletionUnconfirmed} onClick={deleteMemory}>{busy ? "正在删除…" : "确认删除"}</button></div>
+    </MemoryDialog>}
   </>;
 }

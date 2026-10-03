@@ -1,4 +1,5 @@
 "use client";
+import { MaterialSelect } from "@/app/components/MaterialSelect";
 
 // 插件中心 — 项目插件（规划 §8.1 项目插件区 / Task 13）
 // 列表 + 详情双栏语义（窄屏堆叠）；绑定编辑后显示「等待重建 Generation」；
@@ -146,11 +147,11 @@ export function ProjectPlugins({ adapter, projectId, authenticated, onAuthRequir
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <label className="pc-binding__meta" style={{ gap: 8 }}>
                     版本
-                    <select
+                    <MaterialSelect
                       value={editing.version}
                       aria-label={`选择 ${binding.pluginId} 版本`}
-                      onChange={(event) => {
-                        setEditing({ ...editing, version: event.target.value });
+                      onValueChange={selectedValue => {
+                        setEditing({ ...editing, version: selectedValue });
                         setDirty(true);
                       }}
                     >
@@ -159,7 +160,7 @@ export function ProjectPlugins({ adapter, projectId, authenticated, onAuthRequir
                           v{option.version}
                         </option>
                       ))}
-                    </select>
+                    </MaterialSelect>
                   </label>
                   <PluginPermissionPicker
                     requestedPermissionTier={pkg.manifest.requestedPermissionTier}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Activity,
   CheckCircle2,
@@ -111,6 +111,9 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
   const [actionError, setActionError] = useState("");
   const error = actionError || loadError;
   const [busyId, setBusyId] = useState("");
+  const operationLock = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     if (!authenticated || !focusTask) return;
@@ -173,35 +176,46 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
     || null;
 
   async function run(id: string, action: "pause" | "resume" | "cancel" | "retry") {
+    const token = getToken();
+    if (!token || operationLock.current || !mounted.current) return;
+    operationLock.current = true;
     setBusyId(id);
     setActionError("");
     try {
       const result = await taskAction(id, action);
+      if (!mounted.current || getToken() !== token) return;
       list.applyTask(result.task);
       setFocusedRecord(previous => previous?.id === id ? result.task : previous);
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      if (!mounted.current || getToken() !== token) return;
+      const message = cause instanceof Error ? cause.message : "任务操作返回异常";
+      if (!(cause instanceof ApiRequestError) || cause.status >= 500) {
+        await list.refresh();
+        if (mounted.current && getToken() === token) setActionError(`${message}。已尝试刷新状态，操作结果仍需核对；请勿重复提交。`);
+      } else setActionError(message);
     } finally {
-      setBusyId("");
+      operationLock.current = false;
+      if (mounted.current) setBusyId("");
     }
   }
 
   async function openConversation(task: LinkedTask) {
     const id = linkedConversationId(task);
     const token = getToken();
-    if (!id || !token || !onOpenConversation) return;
+    if (!id || !token || !onOpenConversation || operationLock.current || !mounted.current) return;
+    operationLock.current = true;
     setBusyId(task.id);
     setActionError("");
     try {
       const result = await getConversation(id);
-      if (getToken() !== token) return;
+      if (!mounted.current || getToken() !== token) return;
       if (result.conversation?.mode !== "coze") {
         setActionError("关联会话不是 Coze 创作对话，已保留当前任务记录。");
         return;
       }
       onOpenConversation(id);
     } catch (cause) {
-      if (getToken() !== token) return;
+      if (!mounted.current || getToken() !== token) return;
       if (cause instanceof ApiRequestError && cause.status === 404 && loadMessages(id).length) {
         onOpenConversation(id);
       } else {
@@ -210,7 +224,8 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
           : cause instanceof Error ? cause.message : "暂时无法核对关联对话，请稍后重试。");
       }
     } finally {
-      if (getToken() === token) setBusyId("");
+      operationLock.current = false;
+      if (mounted.current) setBusyId("");
     }
   }
 
@@ -229,7 +244,7 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
       <header className="task-center__header">
         <div className="task-center__title-block">
           <div className="task-center__eyebrow"><Radio size={13} strokeWidth={1.7} /> 任务联动</div>
-          <h2 className="page-title">任务中心</h2>
+          <h2 className="page-title"><span className="page-title__shiny">任务中心</span></h2>
           <p>服务器负责可靠执行，桌面与手机都可实时观察、暂停、取消或重新排队。</p>
         </div>
         <div className="task-center__header-actions">
@@ -281,10 +296,12 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
                 </button>
               ))}
             </div>
-            <button type="button" disabled={listBusy} className="task-center__refresh" onClick={() => void list.refresh()}>
+            <button type="button" aria-disabled={listBusy} className="task-center__refresh" onClick={() => { if (!listBusy) void list.refresh(); }}>
               <RotateCcw size={13} strokeWidth={1.7} /> 校准状态
             </button>
           </div>
+
+          {busyId && <p role="status" className="task-operation-status">正在处理任务操作，请稍候…</p>}
 
           {error && (
             <div className="task-center__error" role="status">
@@ -308,8 +325,8 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
               {!loading && filteredTasks.length === 0 && (
                 <div className="task-center__empty">
                   <MonitorSmartphone size={27} strokeWidth={1.5} />
-                  <strong>{tasks.length ? "当前筛选下没有任务" : "等待第一条联动任务"}</strong>
-                  <span>{tasks.length ? "切换筛选条件查看其他任务。" : "手机提交创作请求后，会立即出现在这里。"}</span>
+                  <strong>{loadError ? "暂时无法读取任务" : filter !== "all" ? "当前筛选下没有任务" : "等待第一条联动任务"}</strong>
+                  <span>{loadError ? "已有任务记录保持原状，可点击刷新列表重新读取。" : filter !== "all" ? "切换到全部，查看其他状态的任务。" : "提交创作请求后，会出现在这里。"}</span>
                 </div>
               )}
 
@@ -323,7 +340,7 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
                   <span className="task-card__icon"><StatusGlow value={task.status} success={task.status === "completed"}>{statusIcon(task.status)}</StatusGlow></span>
                   <span className="task-card__body">
                     <span className="task-card__meta">
-                      <span>{task.origin === "mobile" ? "手机远程" : task.origin === "migration" ? "历史迁移" : "桌面"}</span>
+                      <span>{task.origin === "mobile" ? "手机远程" : task.origin === "migration" ? "历史迁移" : task.origin === "server" ? "服务端" : "桌面"}</span>
                       <span>{formatTime(task.updatedAt)}</span>
                     </span>
                     <strong>{task.title}</strong>
@@ -366,7 +383,7 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
                   </div>
 
                   <dl>
-                    <div><dt>来源</dt><dd>{selectedTask.origin === "mobile" ? <><Smartphone size={13} /> 手机远程</> : "桌面创作中心"}</dd></div>
+                    <div><dt>来源</dt><dd>{selectedTask.origin === "mobile" ? <><Smartphone size={13} /> 手机远程</> : selectedTask.origin === "migration" ? "历史迁移" : selectedTask.origin === "server" ? "服务端任务" : "桌面创作中心"}</dd></div>
                     <div><dt>更新时间</dt><dd>{formatTime(selectedTask.updatedAt)}</dd></div>
                     <div><dt>任务类型</dt><dd>{selectedTask.kind}</dd></div>
                   </dl>
@@ -378,7 +395,7 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
 
                   {selectedTask.error && (
                     <div className="task-detail__failure">
-                      <TriangleAlert size={14} strokeWidth={1.7} /> {selectedTask.error}
+                      <TriangleAlert size={14} strokeWidth={1.7} /><span>{selectedTask.error}</span>
                     </div>
                   )}
 
@@ -392,22 +409,22 @@ function TaskCenterView({ accessMode = "authenticated", onAuthRequired, focusTas
                       <span className="task-detail__auto-run">服务器自动执行</span>
                     )}
                     {selectedTask.status === "running" && (
-                      <button disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "pause")}>
+                      <button disabled={Boolean(busyId)} onClick={() => void run(selectedTask.id, "pause")}>
                         <CirclePause size={15} /> 暂停
                       </button>
                     )}
                     {selectedTask.status === "paused" && (
-                      <button disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "resume")}>
+                      <button disabled={Boolean(busyId)} onClick={() => void run(selectedTask.id, "resume")}>
                         <CirclePlay size={15} /> 继续
                       </button>
                     )}
                     {isActiveTask(selectedTask) && (
-                      <button className="danger" disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "cancel")}>
+                      <button className="danger" disabled={Boolean(busyId)} onClick={() => void run(selectedTask.id, "cancel")}>
                         <Square size={14} /> 取消任务
                       </button>
                     )}
                     {(selectedTask.status === "failed" || selectedTask.status === "cancelled") && (
-                      <button disabled={busyId === selectedTask.id} onClick={() => void run(selectedTask.id, "retry")}>
+                      <button disabled={Boolean(busyId)} onClick={() => void run(selectedTask.id, "retry")}>
                         <RotateCcw size={14} /> 重新排队
                       </button>
                     )}

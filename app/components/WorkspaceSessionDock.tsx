@@ -17,6 +17,7 @@ export type DockLayoutMode = "docked" | "rail" | "overlay";
 type Props = {
   layoutMode: DockLayoutMode;
   width: number;
+  maxWidth?: number;
   onModeChange: (mode: DockLayoutMode) => void;
   onWidthChange: (width: number) => void;
   onOpenSettings?: () => void;
@@ -33,6 +34,7 @@ const LEFT_MAX = 360;
 export function WorkspaceSessionDock({
   layoutMode,
   width,
+  maxWidth = LEFT_MAX,
   onModeChange,
   onWidthChange,
   onOpenSettings,
@@ -70,7 +72,7 @@ export function WorkspaceSessionDock({
     if (!dragState.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     dragState.current.latestWidth = Math.max(
       LEFT_MIN,
-      Math.min(LEFT_MAX, dragState.current.startWidth + event.clientX - dragState.current.startX),
+      Math.min(maxWidth, dragState.current.startWidth + event.clientX - dragState.current.startX),
     );
     if (resizeFrameRef.current !== null) return;
     resizeFrameRef.current = requestAnimationFrame(() => {
@@ -80,7 +82,7 @@ export function WorkspaceSessionDock({
   };
 
   const stopResize = (event: PointerEvent<HTMLButtonElement>) => {
-    const nextWidth = Math.max(LEFT_MIN, Math.min(LEFT_MAX, dragState.current?.latestWidth ?? width));
+    const nextWidth = Math.max(LEFT_MIN, Math.min(maxWidth, dragState.current?.latestWidth ?? width));
     if (resizeFrameRef.current !== null) {
       cancelAnimationFrame(resizeFrameRef.current);
       resizeFrameRef.current = null;
@@ -98,7 +100,7 @@ export function WorkspaceSessionDock({
     if (event.key === "ArrowLeft") onWidthChange(width - 16);
     else if (event.key === "ArrowRight") onWidthChange(width + 16);
     else if (event.key === "Home") onWidthChange(LEFT_MIN);
-    else if (event.key === "End") onWidthChange(LEFT_MAX);
+    else if (event.key === "End") onWidthChange(maxWidth);
     else return;
     event.preventDefault();
   };
@@ -219,7 +221,7 @@ export function WorkspaceSessionDock({
           aria-label="调整会话坞宽度"
           aria-orientation="vertical"
           aria-valuemin={LEFT_MIN}
-          aria-valuemax={LEFT_MAX}
+          aria-valuemax={maxWidth}
           aria-valuenow={Math.round(width)}
           onPointerDown={startResize}
           onPointerMove={moveResize}

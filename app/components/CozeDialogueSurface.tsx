@@ -6,6 +6,9 @@ import { usePreferences } from "@/app/hooks/usePreferences";
 import { cozeDialoguePhase, cozeIdleFrame, type CozeDialoguePhase, type CozeDialogueState, type CozeGlowSettings } from "@/app/lib/coze-dialogue-settings";
 import { useCreativeMotion } from "@/app/hooks/useCreativeMotion";
 import { LiquidGlassSurface } from "./LiquidGlassSurface";
+import { useLiquidGlassSettings } from "./LiquidGlassProvider";
+import { normalizeGlassSurface } from "@/app/lib/glass-surface-settings";
+import { DEFAULT_COZE_GLOW } from "@/app/lib/coze-dialogue-settings";
 
 // Border proximity / angle interaction adapted from React Bits BorderGlow.
 // https://github.com/DavidHDev/react-bits/tree/main/src/ts-default/Components/BorderGlow
@@ -19,6 +22,7 @@ export function CozeDialogueSurface({ active, conversation, settings, children }
   const surfaceRef = useRef<HTMLDivElement>(null);
   const { reducedMotion } = useCreativeMotion();
   const { prefs } = usePreferences();
+  const glass = normalizeGlassSurface(useLiquidGlassSettings().settings.surface);
   const glow = settings ?? prefs.cozeGlow;
   const [openingScope, setOpeningScope] = useState<string | null>(null);
   const lastSubmission = useRef("");
@@ -147,7 +151,7 @@ export function CozeDialogueSurface({ active, conversation, settings, children }
   const idle = conversation && (phase === "idle" || phase === "loading");
   const rect = idle ? cozeIdleFrame(area, star, panelHeight) : { x: 0, y: 0, width: area.width, height: area.height };
   const style = {
-    "--coze-radius": `${Math.min(glow.borderRadius, area.width < 720 ? 24 : 50)}px`,
+    "--coze-radius": `${Math.min(glow.borderRadius === DEFAULT_COZE_GLOW.borderRadius ? glass.borderRadius : glow.borderRadius, area.width < 720 ? 24 : 60)}px`,
     "--coze-background": glow.backgroundColor, "--coze-glow-intensity": glow.glowIntensity,
     "--coze-cone-spread": glow.coneSpread, "--coze-glow-radius": `${glow.glowRadius}px`,
     "--coze-border-width": `${glow.borderWidth}px`, "--coze-fill-opacity": glow.fillOpacity,
@@ -162,7 +166,7 @@ export function CozeDialogueSurface({ active, conversation, settings, children }
       initial={false} animate={conversation && area.width > 0 ? rect : undefined} transition={{ duration: instant || phase === "loading" ? 0 : .52, ease: [.22, 1, .36, 1] }}
       style={{ ...style, ...(!conversation ? { width: "100%", height: "100%" } : area.width === 0 ? { inset: 0 } : {}) }}>
       <div className="coze-dialogue-surface__backdrop" aria-hidden="true">
-        <LiquidGlassSurface variant="panel" className="coze-dialogue-glass">{null}</LiquidGlassSurface>
+        <LiquidGlassSurface variant="panel" materialRole="dialogue" className="coze-dialogue-glass">{null}</LiquidGlassSurface>
       </div>
       <DialoguePhase.Provider value={phase}>{children}</DialoguePhase.Provider>
       <span className="coze-dialogue-surface__glow" aria-hidden="true" />

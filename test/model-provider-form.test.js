@@ -21,14 +21,14 @@ function fixture(){
 const settle=async()=>{await Promise.resolve();await Promise.resolve();};
 test("switching vendor cancels the previous model list and uses the new endpoint",async()=>{
   const f=fixture();f.fetchModels();assert.equal(f.reads.length,1);const old=f.reads[0];
-  f.field("vendor").props.onChange({target:{value:"deepseek"}});f.render();assert.equal(old.signal.aborted,true);
+  f.field("vendor").props.onValueChange("deepseek");f.render();assert.equal(old.signal.aborted,true);
   old.resolve({models:[{id:"stale",name:"Stale"}],partial:false});await settle();f.render();
   assert.ok(!f.nodes().some(node=>node.type==="option"&&node.props.value==="stale"));
   f.field("key").props.onChange({target:{value:"synthetic-next-vendor"}});f.render();
   f.fetchModels();const current=f.reads[1];assert.equal(JSON.parse(current.body).baseUrl,"https://api.deepseek.com/v1");
   current.resolve({models:[{id:"current-model",name:"Current model"}],partial:false});await settle();f.render();
   assert.ok(f.nodes().some(node=>node.type==="option"&&node.props.value==="current-model"));
-  f.field("model").props.onChange({target:{value:"current-model"}});assert.equal(f.value().model,"current-model");f.unmount();
+  f.field("model").props.onValueChange("current-model");assert.equal(f.value().model,"current-model");f.unmount();
 });
 test("unmount discards a model-list response even if the transport ignores abort",async()=>{
   const f=fixture();f.fetchModels();f.unmount();assert.equal(f.reads[0].signal.aborted,true);
@@ -39,4 +39,17 @@ test("list failures retain the manual model option and expose an actionable aler
   assert.ok(f.nodes().some(node=>node.props?.role==="alert"));
   f.field("manual").props.onChange({target:{value:"manual-model"}});f.render();
   assert.equal(f.value().model,"manual-model");assert.equal(f.nodes().find(node=>node.type==="button"&&node.props.type==="submit").props.disabled,false);f.unmount();
+});
+test("refresh failure preserves the known list, search and selection; connection changes clear that list",async()=>{
+  const f=fixture();f.fetchModels();f.reads[0].resolve({models:[{id:"alpha",name:"Alpha"},{id:"beta",name:"Beta"}],partial:false});await settle();f.render();
+  f.field("model").props.onValueChange("alpha");f.render();
+  f.field("search").props.onChange({target:{value:"Beta"}});f.render();
+  f.fetchModels();f.render();
+  assert.equal(f.field("search")?.props.value,"Beta","refresh must not remove the usable list while loading");
+  f.reads[1].reject(new Error("列表刷新失败"));await settle();f.render();
+  assert.ok(f.nodes().some(node=>node.type==="option"&&node.props.value==="beta"));
+  assert.equal(f.value().model,"alpha");assert.ok(f.nodes().some(node=>node.props?.role==="alert"));
+  f.field("base").props.onChange({target:{value:"https://api.deepseek.com/v1"}});f.render();
+  assert.equal(f.field("search"),undefined);assert.ok(!f.nodes().some(node=>node.type==="option"&&node.props.value==="beta"));
+  assert.equal(f.value().model,"");f.unmount();
 });

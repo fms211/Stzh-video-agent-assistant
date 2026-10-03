@@ -4,12 +4,11 @@
 // 上：CreativeParameterBar（Liquid Glass bar）；中：三域（WorkspaceSessionDock 左 /
 //     中央创作流 / CreativeContextInspector 右）；底：UnifiedCreativeComposer（四模式）。
 // 唯一拥有：mode、CreativeContext、researchRun、layout store 订阅、energy 聚合、
-//          AppearanceSettingsStudio 开关与焦点恢复、LiquidGlassFilters 单挂载点。
+//          AppearanceSettingsStudio 开关与焦点恢复；玻璃配置由 ProductShell 按账号管理。
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { GripVertical, PanelLeftOpen, PanelRightOpen, Settings2 } from "lucide-react";
-import { LiquidGlassFilters } from "./LiquidGlassFilters";
 import { CozeDialogueSurface } from "./CozeDialogueSurface";
 import type { CozeDialogueState } from "@/app/lib/coze-dialogue-settings";
 import { CreativeParameterBar } from "./CreativeParameterBar";
@@ -24,16 +23,17 @@ import { ResearchRunHistoryDialog } from "./research-workbench/ResearchRunHistor
 import { AppearanceSettingsStudio } from "./AppearanceSettingsStudio";
 import { StudioMemoryManager } from "./StudioMemoryManager";
 import { useAuth } from "./AuthProvider";
-import { DEFAULT_WALLPAPER_APPEARANCE, defaultGlassSettings, emptyCreativeContext, type CreativeContext, type CreativeWorkspaceMode, type GlassSettings, type WallpaperAppearance } from "@/app/lib/appearance-types";
-import { restoreWorkspaceLayoutStore, createWorkspaceLayoutPersister, WORKSPACE_LAYOUT_LIMITS, type DockMode } from "./workspace-layout-store";
+import { DEFAULT_WALLPAPER_APPEARANCE, emptyCreativeContext, type CreativeContext, type CreativeWorkspaceMode, type GlassSettings, type WallpaperAppearance } from "@/app/lib/appearance-types";
+import { useLiquidGlassSettings } from "./LiquidGlassProvider";
+import { restoreWorkspaceLayoutStore, createWorkspaceLayoutPersister, workspaceResizeLimits, workspaceLeftExpandMode, WORKSPACE_LAYOUT_LIMITS, type DockMode, type LayoutPersistenceIssue } from "./workspace-layout-store";
 import { LiquidGlassSurface } from "./LiquidGlassSurface";
 import { globalEnergyStore, useThemeEnergy } from "@/app/hooks/useThemeEnergy";
-import { dataOwnerFromUser } from "@/app/lib/data-owner";
+import { dataOwnerFromUser, currentDataOwner } from "@/app/lib/data-owner";
 import type { ResearchRunSummary, ResearchRuntimeAdapter } from "@/app/lib/research-runtime/adapter";
 import type { ResearchLaunchInput } from "@/app/lib/research-runtime/types";
 import type { AccessMode } from "@/app/lib/entry-flow";
-import { DEFAULT_THEME, getThemeDefinition, type ThemeId } from "@/app/lib/theme-registry";
-import { fetchServerSettings, saveServerSettings } from "@/app/lib/sync";
+import { getThemeDefinition } from "@/app/lib/theme-registry";
+import { useWorkspaceTheme } from "@/app/hooks/useWorkspaceTheme";
 import { CREATIVE_MOTION } from "@/app/lib/creative-motion";
 import { useCreativeMotion } from "@/app/hooks/useCreativeMotion";
 import { reduceCreativeContext } from "@/app/lib/creative-context";
@@ -50,9 +50,19 @@ type Props = {
   onWallpaperAppearanceChange?: (appearance: WallpaperAppearance) => void;
 };
 
-function readStoredTheme(): ThemeId {
-  if (typeof window === "undefined") return DEFAULT_THEME;
-  return getThemeDefinition(localStorage.getItem("theme") || DEFAULT_THEME).id;
+function restoreStoredWorkspaceLayout(scope: string, key: string) {
+  return restoreWorkspaceLayoutStore({
+    getItem: name => localStorage.getItem(name), setItem: (name, value) => localStorage.setItem(name, value),
+  }, key, typeof window === "undefined" ? 1600 : window.innerWidth, () => {
+    if (typeof window === "undefined") return false;
+    const owner = currentDataOwner(localStorage);
+    return (owner.kind === "account" ? `user:${owner.userId}` : "guest") === scope;
+  });
+}
+function layoutIssueMessage(issue: LayoutPersistenceIssue) {
+  if (issue === "read") return "本机布局读取未完成，当前使用临时布局。原记录未删除；可恢复存储后重新打开工坊，或保存当前布局。";
+  if (issue === "format") return "本机布局记录格式异常，当前使用默认布局。原记录保留；保存当前布局会替换它。";
+  return "当前布局调整尚未保存到本机；可恢复存储后重试。";
 }
 
 export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenModelCenter, focusConversation, researchAdapter, wallpaperAppearance = DEFAULT_WALLPAPER_APPEARANCE, onWallpaperAppearanceChange }: Props) {
@@ -71,57 +81,92 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
   const onCollaborationInspection = useCallback((value: CollaborationInspectorState) => {
     setInspection(previous => updateStudioInspector(previous, ownerScope, "collaboration", value));
   }, [ownerScope]);
-  const glassStorageKey = `tszh:v2:${ownerScope}:glass-settings`;
   const [mode, setMode] = useState<CreativeWorkspaceMode>("coze");
   const [memoryOwner, setMemoryOwner] = useState<string | null>(null);
   if (memoryOwner !== null && (memoryOwner !== ownerScope || accessMode !== "authenticated")) setMemoryOwner(null);
   const [context, setContext] = useState<CreativeContext>(() => emptyCreativeContext());
   const [lastInsertedRevision, setLastInsertedRevision] = useState(0);
   const [insertRequestRevision, setInsertRequestRevision] = useState(0);
-  const [cozeTaskStatus, setCozeTaskStatus] = useState<{ active: boolean; label: string } | null>(null);
+  const [ownedCozeTaskStatus, setCozeTaskStatus] = useState<{ owner: string; active: boolean; label: string } | null>(null);
+  const cozeTaskStatus = ownedCozeTaskStatus?.owner === ownerScope ? ownedCozeTaskStatus : null;
   const [cozeDialogue, setCozeDialogue] = useState<CozeDialogueState>({ scope: "", ready: false, hasMessages: false, firstSubmission: 0, panelOpen: false });
   const onDialogueStateChange = useCallback((next: CozeDialogueState) => {
     setCozeDialogue(previous => Object.keys(next).every(key => next[key as keyof CozeDialogueState] === previous[key as keyof CozeDialogueState]) ? previous : next);
   }, []);
+  const currentCozeDialogue = cozeDialogue.scope.startsWith(`${user?.id ?? "guest"}:`) ? cozeDialogue : { scope: "", ready: false, hasMessages: false, firstSubmission: 0, panelOpen: false };
   const energyState = useThemeEnergy();
-  const [glassSettings, setGlassSettings] = useState<GlassSettings>(() => defaultGlassSettings());
-  const [themeId, setThemeId] = useState<ThemeId>(readStoredTheme);
+  const glassController = useLiquidGlassSettings();
+  const glassSettings = glassController.settings;
+  useEffect(() => () => glassController.cancel(), [glassController.cancel]);
+  const themeController = useWorkspaceTheme(ownerScope);
+  const themeId = themeController.theme;
   // research run 视图状态（从 CreativeStudio 迁移）
-  const [researchRun, setResearchRun] = useState<{ styleName: string; useCase: string } | null>(null);
-  const [researchRunId, setResearchRunId] = useState<string | null>(null);
-  const [researchLaunchError, setResearchLaunchError] = useState("");
+  const [researchView, setResearchView] = useState<{
+    owner: string; adapter: ResearchRuntimeAdapter | null;
+    runId: string; input: { styleName: string; useCase: string };
+  } | null>(null);
+  const currentResearchView = researchView?.owner === ownerScope && researchView.adapter === researchAdapter ? researchView : null;
+  const researchRun = currentResearchView?.input ?? null;
+  const researchRunId = currentResearchView?.runId ?? null;
+  const [researchNotice, setResearchNotice] = useState<{ owner: string; adapter: ResearchRuntimeAdapter | null; message: string } | null>(null);
+  const researchLaunchError = researchNotice?.owner === ownerScope && researchNotice.adapter === researchAdapter ? researchNotice.message : "";
+  const setResearchLaunchError = useCallback((message: string) => {
+    setResearchNotice({ owner: ownerScope, adapter: researchAdapter, message });
+  }, [ownerScope, researchAdapter]);
   const [researchHistoryOpen, setResearchHistoryOpen] = useState(false);
   const researchActiveKey = `tszh:v2:${ownerScope}:research-active-run`;
+  const researchSelectionRevision = useRef(0);
+  const researchLaunchPending = useRef<symbol | null>(null);
+
+  useLayoutEffect(() => {
+    researchSelectionRevision.current++;
+    researchLaunchPending.current = null;
+    return () => {
+      researchSelectionRevision.current++;
+      researchLaunchPending.current = null;
+    };
+  }, [ownerScope, researchAdapter]);
 
   useEffect(() => {
-    let cancelled = false;
-    const saved = user ? localStorage.getItem(researchActiveKey) : null;
-    setResearchRunId(null);
-    setResearchRun(null);
+    const revision = ++researchSelectionRevision.current;
+    const current = () => revision === researchSelectionRevision.current;
+    setResearchView(null);
+    setResearchLaunchError("");
+    let saved: string | null = null;
+    try { saved = ownerScope !== "guest" ? localStorage.getItem(researchActiveKey) : null; }
+    catch { setResearchLaunchError("无法读取本机研究入口，可从研究历史重新打开已保存的任务。"); }
     if (saved && researchAdapter) {
       void researchAdapter.getRun(saved).then((snapshot) => {
-        if (cancelled) return;
-        setResearchRunId(snapshot.runId);
-        setResearchRun(snapshot.input);
+        if (current()) setResearchView({ owner: ownerScope, adapter: researchAdapter, runId: snapshot.runId, input: snapshot.input });
       }).catch((error) => {
-        if (!cancelled) setResearchLaunchError(error instanceof Error ? error.message : "恢复研究任务失败");
+        if (current()) setResearchLaunchError(error instanceof Error ? error.message : "恢复研究任务失败");
       });
     }
-    return () => { cancelled = true; };
-  }, [researchActiveKey, researchAdapter, user]);
+    return () => { researchSelectionRevision.current++; };
+  }, [researchActiveKey, researchAdapter, ownerScope, setResearchLaunchError]);
   // 布局 store（owner-scoped 持久化）
   const layoutStorageKey = `tszh:v2:${ownerScope}:workspace-layout`;
   const [ownedLayout, setOwnedLayout] = useState(() => ({
     owner: ownerScope,
-    store: restoreWorkspaceLayoutStore(localStorage, layoutStorageKey, window.innerWidth),
+    store: restoreStoredWorkspaceLayout(ownerScope, layoutStorageKey),
   }));
   const currentLayout = ownedLayout.owner === ownerScope ? ownedLayout : {
     owner: ownerScope,
-    store: restoreWorkspaceLayoutStore(localStorage, layoutStorageKey, window.innerWidth),
+    store: restoreStoredWorkspaceLayout(ownerScope, layoutStorageKey),
   };
   if (currentLayout !== ownedLayout) setOwnedLayout(currentLayout);
   const layoutStore = currentLayout.store;
   const layout = useSyncExternalStore(layoutStore.subscribe, layoutStore.getSnapshot);
+  const resizeLimits = workspaceResizeLimits(layout);
+  const [ownedLayoutNotice, setLayoutNotice] = useState<{ owner: string; store: typeof layoutStore; message: string } | null>(null);
+  const layoutNotice = ownedLayoutNotice?.owner === ownerScope && ownedLayoutNotice.store === layoutStore ? ownedLayoutNotice.message : "";
+  const layoutPersistenceRef = useRef<{ owner: string; store: typeof layoutStore; persister: ReturnType<typeof createWorkspaceLayoutPersister>; allowAutomaticSave: boolean } | null>(null);
+  const retryLayoutSave = useCallback(() => {
+    const active = layoutPersistenceRef.current;
+    if (!active || active.owner !== ownerScope || active.store !== layoutStore) return;
+    active.allowAutomaticSave = true;
+    active.persister.save(layoutStore.getSnapshot()); active.persister.flush();
+  }, [layoutStore, ownerScope]);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [rightPanelContent, setRightPanelContent] = useState<"inspector" | "image-parameters">("inspector");
   const [rightOverlayOpen, setRightOverlayOpen] = useState(false);
@@ -146,33 +191,18 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     globalEnergyStore.setReducedMotion(reducedMotion);
   }, [reducedMotion]);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(glassStorageKey);
-      setGlassSettings(raw ? { ...defaultGlassSettings(), ...JSON.parse(raw) } : defaultGlassSettings());
-    } catch {
-      setGlassSettings(defaultGlassSettings());
-    }
-  }, [glassStorageKey]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty("--glass-blur", `${glassSettings.blurPx}px`);
-    root.style.setProperty("--glass-opacity", String(glassSettings.opacity));
-    root.style.setProperty("--glass-panel-strength", `${Math.round((0.66 + glassSettings.opacity * 0.7) * 100)}%`);
-    root.style.setProperty("--glass-refraction", String(glassSettings.refraction));
-    root.style.setProperty("--glass-edge-glow", String(glassSettings.edgeGlow));
-    root.dataset.reduceTransparency = glassSettings.reduceTransparency ? "true" : "false";
-    root.dataset.refractionEnabled = glassSettings.refractionEnabled ? "true" : "false";
-    root.dataset.videoAutoplay = glassSettings.videoAutoplay ? "true" : "false";
-    window.dispatchEvent(new CustomEvent("tszh_preferences_changed"));
-  }, [glassSettings]);
-
   const handleGlassSettingsChange = useCallback((next: GlassSettings) => {
-    setGlassSettings(next);
-    localStorage.setItem(glassStorageKey, JSON.stringify(next));
-    onWallpaperAppearanceChange?.({ ...wallpaperAppearance, dim: next.wallpaperDim });
-  }, [glassStorageKey, onWallpaperAppearanceChange, wallpaperAppearance]);
+    glassController.save(next);
+    // These are separate local records. Report a partial save instead of
+    // claiming the already committed glass settings were not saved.
+    try {
+      if (!onWallpaperAppearanceChange) return { wallpaperLinked: false };
+      onWallpaperAppearanceChange({ ...wallpaperAppearance, dim: next.wallpaperDim });
+      return { wallpaperLinked: true };
+    } catch {
+      return { wallpaperLinked: false };
+    }
+  }, [glassController.save, onWallpaperAppearanceChange, wallpaperAppearance]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -203,30 +233,6 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     root.style.setProperty("--theme-energy-thinking", theme.energy.thinking);
     root.style.setProperty("--theme-energy-peak", theme.energy.peak);
   }, [themeId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!user) {
-      setThemeId(readStoredTheme());
-      return;
-    }
-    void fetchServerSettings().then((settings) => {
-      if (cancelled) return;
-      const next = getThemeDefinition(
-        typeof settings?.theme === "string" ? settings.theme : readStoredTheme(),
-      ).id;
-      localStorage.setItem("theme", next);
-      setThemeId(next);
-    });
-    return () => { cancelled = true; };
-  }, [user]);
-
-  const handleThemeChange = useCallback((nextThemeId: string) => {
-    const next = getThemeDefinition(nextThemeId).id;
-    localStorage.setItem("theme", next);
-    setThemeId(next);
-    if (user) void saveServerSettings({ theme: next });
-  }, [user]);
 
   // 响应式断点必须使用真实 viewport；使用容器宽会在每个断点提前 32px 降级。
   useEffect(() => {
@@ -269,6 +275,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     setRightPanelContent("image-parameters");
     if (layout.rightMode === "rail") {
       layoutStore.setRightMode("docked");
+      if (layoutStore.getSnapshot().rightMode === "overlay") setRightOverlayOpen(true);
     } else if (layout.rightMode === "overlay") {
       setRightOverlayOpen(true);
     }
@@ -305,7 +312,9 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
   useEffect(() => {
     if (!activeOverlay) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Native dialogs own Escape. Let their cancel handler close or confirm
+      // the foreground window without dismissing its background sidebar.
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog[open]")) return;
       event.preventDefault();
       closeActiveOverlay();
     };
@@ -332,6 +341,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
       setRightOverlayOpen(true);
     } else {
       layoutStore.setRightMode("docked");
+      if (layoutStore.getSnapshot().rightMode === "overlay") setRightOverlayOpen(true);
     }
   };
 
@@ -372,7 +382,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     rightDragState.current.latestWidth = Math.max(
       WORKSPACE_LAYOUT_LIMITS.rightMin,
       Math.min(
-        WORKSPACE_LAYOUT_LIMITS.rightMax,
+        resizeLimits.rightMax,
         rightDragState.current.startWidth + rightDragState.current.startX - event.clientX,
       ),
     );
@@ -386,7 +396,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
   const stopRightResize = (event: PointerEvent<HTMLButtonElement>) => {
     const nextWidth = Math.max(
       WORKSPACE_LAYOUT_LIMITS.rightMin,
-      Math.min(WORKSPACE_LAYOUT_LIMITS.rightMax, rightDragState.current?.latestWidth ?? layout.rightWidth),
+      Math.min(resizeLimits.rightMax, rightDragState.current?.latestWidth ?? layout.rightWidth),
     );
     if (rightResizeFrameRef.current !== null) {
       cancelAnimationFrame(rightResizeFrameRef.current);
@@ -403,7 +413,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     if (event.key === "ArrowLeft") layoutStore.setRightWidth(layout.rightWidth + 16);
     else if (event.key === "ArrowRight") layoutStore.setRightWidth(layout.rightWidth - 16);
     else if (event.key === "Home") layoutStore.setRightWidth(WORKSPACE_LAYOUT_LIMITS.rightMin);
-    else if (event.key === "End") layoutStore.setRightWidth(WORKSPACE_LAYOUT_LIMITS.rightMax);
+    else if (event.key === "End") layoutStore.setRightWidth(resizeLimits.rightMax);
     else return;
     event.preventDefault();
   };
@@ -412,13 +422,35 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     if (rightResizeFrameRef.current !== null) cancelAnimationFrame(rightResizeFrameRef.current);
   }, []);
 
-  // 布局持久化（debounce）
+  // Subscribe once per owner/store: changes debounce, navigation commits the last pending value.
   useEffect(() => {
-    const persister = createWorkspaceLayoutPersister(layoutStorageKey);
-    persister.attach(localStorage);
-    persister.save(layout);
-    return () => persister.cancel();
-  }, [layout, layoutStorageKey]);
+    let mounted = true;
+    const persister = createWorkspaceLayoutPersister(layoutStorageKey, {
+      current: () => {
+        const owner = currentDataOwner(localStorage);
+        return (owner.kind === "account" ? `user:${owner.userId}` : "guest") === ownerScope;
+      },
+      onFailure: issue => { if (mounted) setLayoutNotice({ owner: ownerScope, store: layoutStore, message: layoutIssueMessage(issue) }); },
+      onSaved: () => { if (mounted) setLayoutNotice(null); },
+    });
+    persister.attach({ getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
+    const active = { owner: ownerScope, store: layoutStore, persister, allowAutomaticSave: !layoutStore.restoreIssue };
+    layoutPersistenceRef.current = active;
+    setLayoutNotice(layoutStore.restoreIssue ? { owner: ownerScope, store: layoutStore, message: layoutIssueMessage(layoutStore.restoreIssue) } : null);
+    // Reading/default restoration never overwrites an existing record automatically.
+    const unsubscribe = layoutStore.subscribe(() => { if (active.allowAutomaticSave) persister.save(layoutStore.getSnapshot()); });
+    const commit = () => { persister.flush(); };
+    const onVisibility = () => { if (document.visibilityState === "hidden") commit(); };
+    window.addEventListener("pagehide", commit);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      mounted = false; unsubscribe();
+      persister.flush(); persister.cancel();
+      window.removeEventListener("pagehide", commit);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (layoutPersistenceRef.current === active) layoutPersistenceRef.current = null;
+    };
+  }, [layoutStore, layoutStorageKey, ownerScope]);
 
   // 能谱：研究 run 状态
   useEffect(() => {
@@ -430,6 +462,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     }).catch(() => {});
     const sub = researchAdapter.subscribe(researchRunId, 0, {
       onEvent(event) {
+        if (closed) return;
         globalEnergyStore.setSource("research", event.type === "run.started" || event.type === "run.resumed" ? "running" : event.type === "run.completed" || event.type === "run.failed" ? "idle" : "busy");
       },
       onError() {},
@@ -437,12 +470,19 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     return () => {
       closed = true;
       sub.close();
+      globalEnergyStore.setSource("research", "idle");
     };
   }, [researchRunId, researchAdapter]);
 
   // Prompt, selected files and acceptance state travel through the same boundary.
   const coreSubmitRef = useRef<ConversationSubmit | null>(null);
-  const [cozeSending, setCozeSending] = useState(false);
+  const [ownedCozeSending, setOwnedCozeSending] = useState({ owner: ownerScope, sending: false });
+  const cozeSending = ownedCozeSending.owner === ownerScope && ownedCozeSending.sending;
+  const setCozeSending = useCallback((sending: boolean) => {
+    const current = currentDataOwner(localStorage);
+    const currentScope = current.kind === "account" ? `user:${current.userId}` : "guest";
+    if (currentScope === ownerScope) setOwnedCozeSending({ owner: ownerScope, sending });
+  }, [ownerScope]);
   const cozeSubmit = useCallback((prompt: string, files: File[]) => {
     return coreSubmitRef.current?.(prompt, files) ?? false;
   }, []);
@@ -450,35 +490,46 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
   // handleLaunchRuntime（从 CreativeStudio 迁移：style-research → workbench）
   const handleLaunchRuntime = useCallback(async (input: ResearchLaunchInput) => {
     if (accessMode !== "authenticated") { onAuthRequired(); return false; }
-    if (!researchAdapter) return false;
+    if (!researchAdapter || researchLaunchPending.current) return false;
+    const token = Symbol("research-launch");
+    researchLaunchPending.current = token;
+    const revision = ++researchSelectionRevision.current;
+    const current = () => revision === researchSelectionRevision.current && researchLaunchPending.current === token;
     setResearchLaunchError("");
     try {
       const snapshot = await researchAdapter.createRun({ ...input, providerId: input.providerId || null, projectId: input.projectId || null });
-      localStorage.setItem(researchActiveKey, snapshot.runId);
-      setResearchRun(input);
-      setResearchRunId(snapshot.runId);
+      // A newer selection owns the screen; creation success must not override it.
+      if (!current()) return true;
+      setResearchView({ owner: ownerScope, adapter: researchAdapter, runId: snapshot.runId, input: snapshot.input });
+      try { localStorage.setItem(researchActiveKey, snapshot.runId); }
+      catch { setResearchLaunchError("研究任务已创建并打开，但本机无法记住入口。请从研究历史重新打开，不必重复创建。"); }
       return true;
     } catch (error) {
-      setResearchLaunchError(error instanceof Error ? error.message : "创建研究任务失败");
+      if (current()) setResearchLaunchError(error instanceof Error ? error.message : "创建研究任务失败");
       return false;
+    } finally {
+      if (researchLaunchPending.current === token) researchLaunchPending.current = null;
     }
-  }, [researchAdapter, accessMode, onAuthRequired, researchActiveKey]);
+  }, [researchAdapter, accessMode, onAuthRequired, researchActiveKey, ownerScope, setResearchLaunchError]);
 
   const handleExitWorkbench = useCallback(() => {
-    localStorage.removeItem(researchActiveKey);
-    setResearchRun(null);
-    setResearchRunId(null);
-  }, [researchActiveKey]);
+    researchSelectionRevision.current++;
+    setResearchView(null);
+    setResearchLaunchError("");
+    try { localStorage.removeItem(researchActiveKey); }
+    catch { setResearchLaunchError("已返回工坊，但本机最近任务入口未清除。刷新后可能再次恢复此任务；服务端任务没有被取消。"); }
+  }, [researchActiveKey, setResearchLaunchError]);
 
   const openResearchHistory = useCallback(() => setResearchHistoryOpen(true), []);
   const closeResearchHistory = useCallback(() => setResearchHistoryOpen(false), []);
   const handleSelectResearchRun = useCallback((run: ResearchRunSummary) => {
-    localStorage.setItem(researchActiveKey, run.runId);
+    researchSelectionRevision.current++;
     setResearchLaunchError("");
-    setResearchRun(run.input);
-    setResearchRunId(run.runId);
+    setResearchView({ owner: ownerScope, adapter: researchAdapter, runId: run.runId, input: run.input });
     setMode("workflow");
-  }, [researchActiveKey]);
+    try { localStorage.setItem(researchActiveKey, run.runId); }
+    catch { setResearchLaunchError("已打开研究任务，但本机无法记住入口；重新打开页面后可从研究历史选择。"); }
+  }, [researchActiveKey, ownerScope, researchAdapter, setResearchLaunchError]);
 
   // 参数条插入（revision 去重）
   const handleInsert = useCallback((revision: number) => {
@@ -497,7 +548,8 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
   };
 
   // 会话坞状态（ConversationCore 上提）
-  const [dockState, setDockState] = useState<{
+  const [ownedDockState, setDockState] = useState<{
+    owner: string;
     sessions: HistorySession[];
     files: StagedFile[];
     activeSessionId: string;
@@ -507,6 +559,8 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
     onFileClick: (f: StagedFile) => void;
     onClearFiles: () => void;
   } | null>(null);
+
+  const dockState = ownedDockState?.owner === ownerScope ? ownedDockState : null;
 
   const rightPanelVisible = layout.rightMode === "docked" || (layout.rightMode === "overlay" && rightOverlayOpen);
   const rightRailVisible = layout.rightMode === "rail" || (layout.rightMode === "overlay" && !rightOverlayOpen);
@@ -530,8 +584,10 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
 
   return (
     <section className={`cws-workspace${reducedMotion ? " is-reduced-motion" : ""}`} ref={viewportRef} data-testid="creative-workspace" data-energy-state={energyState} data-creative-mode={mode}>
-      <LiquidGlassFilters />
       {researchLaunchError && <p role="alert" className="cws-inspector__risk">{researchLaunchError}</p>}
+      {layoutNotice && <div className="auth-session-notice" role="status">
+        <p>{layoutNotice}</p><button type="button" onClick={retryLayoutSave}>保存当前布局</button>
+      </div>}
 
       <div className="cws-parameter-bar-shell" inert={activeOverlay ? true : undefined}>
         <CreativeParameterBar
@@ -571,9 +627,10 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
         <WorkspaceSessionDock
           layoutMode={layout.leftMode}
           width={layout.leftWidth}
+          maxWidth={resizeLimits.leftMax}
           onModeChange={handleLeftModeChange}
           onWidthChange={(width) => layoutStore.setLeftWidth(width)}
-          expandMode={layout.viewportWidth < WORKSPACE_LAYOUT_LIMITS.overlayBreakpoint ? "overlay" : "docked"}
+          expandMode={workspaceLeftExpandMode(layout)}
           onOpenSettings={() => {
             setStudioOpen(true);
           }}
@@ -603,7 +660,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
           inert={activeOverlay ? true : undefined}
         >
           <div className="cws-conversation" hidden={mode !== "coze"} aria-hidden={mode !== "coze"} inert={mode !== "coze" ? true : undefined}>
-          <CozeDialogueSurface active={mode === "coze"} conversation={cozeDialogue}>
+          <CozeDialogueSurface active={mode === "coze"} conversation={currentCozeDialogue}>
           <CreativeConversationCore
             creativeContext={context}
             accessMode={accessMode}
@@ -678,7 +735,7 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
               aria-label="调整上下文检查器宽度"
               aria-orientation="vertical"
               aria-valuemin={WORKSPACE_LAYOUT_LIMITS.rightMin}
-              aria-valuemax={WORKSPACE_LAYOUT_LIMITS.rightMax}
+              aria-valuemax={resizeLimits.rightMax}
               aria-valuenow={Math.round(layout.rightWidth)}
               onPointerDown={startRightResize}
               onPointerMove={moveRightResize}
@@ -749,8 +806,10 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
       </div>
 
       <AppearanceSettingsStudio
+        key={`appearance:${ownerScope}`}
         open={studioOpen}
         onClose={() => {
+          glassController.cancel();
           setStudioOpen(false);
         }}
         restoreFocusRef={settingsTriggerRef}
@@ -758,10 +817,13 @@ export default function CreativeWorkspace({ accessMode, onAuthRequired, onOpenMo
         onAppearanceChange={onWallpaperAppearanceChange}
         glassSettings={glassSettings}
         onGlassSettingsChange={handleGlassSettingsChange}
+        onGlassSettingsPreview={glassController.preview}
         themeId={themeId}
-        onThemeChange={handleThemeChange}
+        onThemeChange={themeController.choose}
+        themeStatus={themeController}
+        onThemeRetry={themeController.retrySync}
       />
-      {memoryOwner === ownerScope && user && accessMode === "authenticated" && <StudioMemoryManager key={ownerScope} mode={mode} onClose={() => setMemoryOwner(null)} />}
+      {memoryOwner === ownerScope && user && accessMode === "authenticated" && <StudioMemoryManager key={`memory:${ownerScope}`} mode={mode} onClose={() => setMemoryOwner(null)} />}
       {researchHistoryOpen && researchAdapter && (
         <ResearchRunHistoryDialog
           adapter={researchAdapter}

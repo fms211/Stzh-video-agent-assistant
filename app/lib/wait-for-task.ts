@@ -1,5 +1,7 @@
 type ObservableTask = { status: string; error?: string | null };
 
+export class TaskTerminalError extends Error {}
+
 export async function waitForTask<T extends ObservableTask>(
   fetchTask: () => Promise<T>,
   options: {
@@ -25,7 +27,7 @@ export async function waitForTask<T extends ObservableTask>(
     }
     if (task.status === "completed") return task;
     if (task.status === "failed" || task.status === "cancelled") {
-      throw new Error(task.error || (task.status === "cancelled" ? "任务已取消" : "任务执行失败"));
+      throw new TaskTerminalError(task.error || (task.status === "cancelled" ? "任务已取消" : "任务执行失败"));
     }
     options.onUpdate?.(task);
     await delay();

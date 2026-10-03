@@ -19,16 +19,17 @@ type Props = {
 
 export function WallpaperLayer({ appearance, asset, videoPaused = false, onFocalPointChange, onSmartTintColor, className }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
-  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [resolvedMedia, setResolvedMedia] = useState<{ asset: WallpaperAsset | null; mediaUrl: string | null; posterUrl: string | null }>({ asset: null, mediaUrl: null, posterUrl: null });
+  // A URL may only render with the exact asset that created it.
+  const mediaUrl = asset && resolvedMedia.asset === asset ? resolvedMedia.mediaUrl : null;
+  const posterUrl = asset && resolvedMedia.asset === asset ? resolvedMedia.posterUrl : null;
   const [videoAutoplay, setVideoAutoplay] = useState(true);
 
   // 资产对象 URL 生命周期：仅本地 blob 需要；URL 来源直接用原 url
   useEffect(() => {
     const nextMediaUrl = asset?.blob ? URL.createObjectURL(asset.blob) : (asset?.url ?? null);
     const nextPosterUrl = asset?.posterBlob ? URL.createObjectURL(asset.posterBlob) : null;
-    setMediaUrl(nextMediaUrl);
-    setPosterUrl(nextPosterUrl);
+    setResolvedMedia({ asset, mediaUrl: nextMediaUrl, posterUrl: nextPosterUrl });
     return () => {
       if (asset?.blob && nextMediaUrl) URL.revokeObjectURL(nextMediaUrl);
       if (nextPosterUrl) URL.revokeObjectURL(nextPosterUrl);
@@ -103,7 +104,7 @@ export function WallpaperLayer({ appearance, asset, videoPaused = false, onFocal
 
   // 智能取色：默认关闭；开启时从图片提取主色（失败/无权限回传 null，图片仍显示）
   useEffect(() => {
-    if (!appearance.smartTintEnabled || !asset) return;
+    if (!appearance.smartTintEnabled || !asset) { onSmartTintColor?.(null); return; }
     let cancelled = false;
     const imgSrc = asset.kind === "video" ? posterUrl : mediaUrl;
     if (!imgSrc) { onSmartTintColor?.(null); return; }

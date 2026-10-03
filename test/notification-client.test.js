@@ -54,3 +54,30 @@ test('stale refresh cannot undo read-all, concurrent mutations are single flight
   client.mutate=async()=>{throw new Error('503 请重试')};await feed.mutate('clear');assert.match(states.at(-1).error,/503/);assert.equal(states.at(-1).rows.length,1);
   feed.dispose();const count=states.length;await feed.refresh();assert.equal(states.length,count);
 });
+
+// Prepared only: no test or network execution in the paused-test round.
+test('first notification read exposes loading and failures retain cached rows',async t=>{
+  browser(t);const {createNotificationFeed}=await loadClient(),gate=deferred(),states=[];
+  const client={current:()=>true,cached:()=>[row],save:()=>{},read:async()=>gate.promise,mutate:async()=>[]};
+  const feed=createNotificationFeed(client,s=>states.push(s));
+  const read=feed.refresh();assert.equal(states.at(-1).loading,true);assert.equal(states.at(-1).rows[0].id,row.id);
+  gate.resolve([]);await read;assert.equal(states.at(-1).loading,false);assert.deepEqual(states.at(-1).rows,[]);
+  client.read=async()=>{throw new Error('offline')};await feed.refresh();
+  assert.equal(states.at(-1).loading,false);assert.match(states.at(-1).error,/offline/);
+  feed.dispose();
+});
+
+test('notification response remains visible when only its local cache write fails',async t=>{
+  browser(t);const {createNotificationFeed}=await loadClient(),states=[];
+  const client={current:()=>true,cached:()=>[],save:()=>{throw new Error('quota')},read:async()=>[row],mutate:async()=>[]};
+  const feed=createNotificationFeed(client,s=>states.push(s));await feed.refresh();
+  assert.equal(states.at(-1).rows[0].id,row.id);assert.equal(states.at(-1).loading,false);
+  assert.match(states.at(-1).error,/已读取.*缓存未保存/);feed.dispose();
+});
+
+test('disposal during an in-flight notification read never emits its result',async t=>{
+  browser(t);const {createNotificationFeed}=await loadClient(),gate=deferred(),states=[];let saves=0;
+  const client={current:()=>true,cached:()=>[],save:()=>{saves++},read:async()=>gate.promise,mutate:async()=>[]};
+  const feed=createNotificationFeed(client,s=>states.push(s));const read=feed.refresh();feed.dispose();
+  const count=states.length;gate.resolve([row]);await read;assert.equal(states.length,count);assert.equal(saves,0);
+});

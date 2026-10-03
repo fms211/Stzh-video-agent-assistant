@@ -115,3 +115,47 @@ test("production bootstrap stays disabled without explicit Coze credentials and 
   assert.equal(started.reason, "MISSING_CONFIG");
   assert.equal(db.taskGet(task.id, userId).status, "queued");
 });
+
+
+test("explicit media disable leaves queued tasks untouched and bypasses provider construction", () => {
+  for (const setting of ["0", "false", "off"]) {
+    const userId = createUser();
+    const task = createTask(userId, `bootstrap-disabled-${setting}`);
+    const options = {
+      db,
+      env: { STZH_MEDIA_EXECUTOR_ENABLED: setting },
+      get agentService() { throw new Error("disabled startup must not construct the worker"); },
+    };
+    const state = startProductionTaskRuntime(options);
+    assert.deepEqual(state, { enabled: false, runtime: null, reason: "CONFIG_DISABLED" });
+    assert.equal(db.taskGet(task.id, userId).status, "queued");
+    assert.equal(db.notifList(userId).length, 0);
+  }
+});
+
+test("invalid media executor setting disables startup instead of silently enabling it", () => {
+  const userId = createUser();
+  const task = createTask(userId, "bootstrap-invalid-gate");
+  const state = startProductionTaskRuntime({
+    db, env: { STZH_MEDIA_EXECUTOR_ENABLED: "disabled-typo" },
+    get agentService() { throw new Error("invalid setting must not construct the worker"); },
+  });
+  assert.deepEqual(state, { enabled: false, runtime: null, reason: "INVALID_MEDIA_EXECUTOR_SETTING" });
+  assert.equal(db.taskGet(task.id, userId).status, "queued");
+});
+
+
+test("enabled media gate retains execution through the production bootstrap with a local mock", async (t) => {
+  const userId = createUser();
+  const task = createTask(userId, "bootstrap-enabled-gate");
+  const state = startProductionTaskRuntime({
+    db, env: { STZH_MEDIA_EXECUTOR_ENABLED: "1" },
+    workerId: "enabled-gate-test", pollIntervalMs: 10, renewIntervalMs: 20, leaseMs: 1000,
+    agentService: { async generate() { return { text: "local mock", imageUrls: [] }; } },
+    attachmentService: { async resolveForTask() { return []; }, async cleanup() {} },
+  });
+  t.after(() => state.runtime?.stop());
+  assert.equal(state.enabled, true);
+  await waitFor(() => db.taskGet(task.id, userId).status === "completed");
+  await state.runtime.stop();
+});

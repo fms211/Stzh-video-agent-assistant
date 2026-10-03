@@ -71,9 +71,13 @@ export default function HomeClient() {
   const wallpaperOwnerScope = ownerScope(researchOwner);
   const wallpaperAppearanceKey = workspaceDataKey(researchOwner, "wallpaper-appearance");
   const researchAdapterRef = useRef<{ ownerKind: string; ownerUserId: number | null; adapter: ResearchRuntimeAdapter } | null>(null);
-  const [researchAdapter, setResearchAdapter] = useState<ResearchRuntimeAdapter | null>(null);
-  const [wallpaperAppearance, setWallpaperAppearance] = useState<WallpaperAppearance>(DEFAULT_WALLPAPER_APPEARANCE);
-  const [wallpaperAsset, setWallpaperAsset] = useState<WallpaperAsset | null>(null);
+  const [ownedResearchAdapter, setOwnedResearchAdapter] = useState<{ owner: string; adapter: ResearchRuntimeAdapter } | null>(null);
+  const researchAdapter = ownedResearchAdapter?.owner === wallpaperOwnerScope ? ownedResearchAdapter.adapter : null;
+  const [ownedWallpaperAppearance, setOwnedWallpaperAppearance] = useState<{ key: string; value: WallpaperAppearance }>({ key: wallpaperAppearanceKey, value: DEFAULT_WALLPAPER_APPEARANCE });
+  const wallpaperAppearance = ownedWallpaperAppearance.key === wallpaperAppearanceKey ? ownedWallpaperAppearance.value : DEFAULT_WALLPAPER_APPEARANCE;
+  const [loadedWallpaperAsset, setWallpaperAsset] = useState<WallpaperAsset | null>(null);
+  // Guard during render; effects run too late to prevent a previous account image flash.
+  const wallpaperAsset = loadedWallpaperAsset?.ownerScope === wallpaperOwnerScope && loadedWallpaperAsset.id === wallpaperAppearance.assetId ? loadedWallpaperAsset : null;
 
   useEffect(() => {
     const current = researchAdapterRef.current;
@@ -82,8 +86,8 @@ export default function HomeClient() {
     current?.adapter.dispose();
     const adapter = createHttpResearchRuntimeAdapter({ request: creativeApi });
     researchAdapterRef.current = { ownerKind: researchOwnerKind, ownerUserId: researchOwnerUserId, adapter };
-    setResearchAdapter(adapter);
-  }, [researchOwnerKind, researchOwnerUserId]);
+    setOwnedResearchAdapter({ owner: wallpaperOwnerScope, adapter });
+  }, [researchOwnerKind, researchOwnerUserId, wallpaperOwnerScope]);
 
   // 卸载时释放（页面生命周期结束）
   useEffect(() => {
@@ -95,9 +99,10 @@ export default function HomeClient() {
     };
   }, []);
 
-  // ---- 插件中心 Mock Adapter（owner-scoped，与研究 Adapter 同生命周期模式）----
+  // ---- 插件中心 HTTP Adapter（owner-scoped，与研究 Adapter 同生命周期模式）----
   const pluginAdapterRef = useRef<{ ownerKind: string; ownerUserId: number | null; adapter: PluginCenterAdapter } | null>(null);
-  const [pluginCenterAdapter, setPluginCenterAdapter] = useState<PluginCenterAdapter | null>(null);
+  const [ownedPluginAdapter, setOwnedPluginAdapter] = useState<{ owner: string; adapter: PluginCenterAdapter } | null>(null);
+  const pluginCenterAdapter = ownedPluginAdapter?.owner === wallpaperOwnerScope ? ownedPluginAdapter.adapter : null;
 
   useEffect(() => {
     const current = pluginAdapterRef.current;
@@ -106,16 +111,16 @@ export default function HomeClient() {
     current?.adapter.dispose();
     const adapter = createHttpPluginCenterAdapter({ request: creativeApi });
     pluginAdapterRef.current = { ownerKind: researchOwnerKind, ownerUserId: researchOwnerUserId, adapter };
-    setPluginCenterAdapter(adapter);
-  }, [researchOwnerKind, researchOwnerUserId]);
+    setOwnedPluginAdapter({ owner: wallpaperOwnerScope, adapter });
+  }, [researchOwnerKind, researchOwnerUserId, wallpaperOwnerScope]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
       const raw = localStorage.getItem(wallpaperAppearanceKey);
-      setWallpaperAppearance(raw ? { ...DEFAULT_WALLPAPER_APPEARANCE, ...JSON.parse(raw) } : DEFAULT_WALLPAPER_APPEARANCE);
+      setOwnedWallpaperAppearance({ key: wallpaperAppearanceKey, value: raw ? { ...DEFAULT_WALLPAPER_APPEARANCE, ...JSON.parse(raw) } : DEFAULT_WALLPAPER_APPEARANCE });
     } catch {
-      setWallpaperAppearance(DEFAULT_WALLPAPER_APPEARANCE);
+      setOwnedWallpaperAppearance({ key: wallpaperAppearanceKey, value: DEFAULT_WALLPAPER_APPEARANCE });
     }
   }, [hydrated, wallpaperAppearanceKey]);
 
@@ -125,15 +130,16 @@ export default function HomeClient() {
       setWallpaperAsset(null);
       return;
     }
+    setWallpaperAsset(null);
     void getWallpaper(wallpaperAppearance.assetId, wallpaperOwnerScope).then((asset) => {
       if (!cancelled) setWallpaperAsset(asset);
-    });
+    }).catch(() => { if (!cancelled) setWallpaperAsset(null); });
     return () => { cancelled = true; };
   }, [hydrated, wallpaperAppearance.assetId, wallpaperOwnerScope]);
 
   const onWallpaperAppearanceChange = useCallback((next: WallpaperAppearance) => {
-    setWallpaperAppearance(next);
     localStorage.setItem(wallpaperAppearanceKey, JSON.stringify(next));
+    setOwnedWallpaperAppearance({ key: wallpaperAppearanceKey, value: next });
   }, [wallpaperAppearanceKey]);
 
   useEffect(() => {
@@ -160,14 +166,6 @@ export default function HomeClient() {
     document.documentElement.dataset.cursorTrail = "false";
     document.documentElement.dataset.particleEffects = prefs.particleEffects ? "true" : "false";
   }, [prefs.particleEffects, prefs.reducedMotion]);
-
-  // 登录面板 ESC 关闭
-  useEffect(() => {
-    if (!authPromptOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAuthPromptOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [authPromptOpen]);
 
   const sendEntryEvent = useCallback((event: EntryEvent) => {
     setEntryState((current) => reduceEntryState(current, event));
@@ -276,7 +274,7 @@ export default function HomeClient() {
             <section className="opc-section"><div className="opc-section-divider" /><StatsDashboard /></section>
             <section className="opc-section">
               <div className="opc-section-divider" />
-              <h2 className="opc-section-title page-title">创作画廊</h2>
+              <h2 className="opc-section-title page-title"><span className="page-title__shiny">创作画廊</span></h2>
               <p className="opc-section-sub">当前数据仓中的视频和图片</p>
               <GalleryPanel />
             </section>

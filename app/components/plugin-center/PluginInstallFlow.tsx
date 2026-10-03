@@ -1,4 +1,5 @@
 "use client";
+import { LiquidMaterialBackdrop } from "@/app/components/LiquidMaterialBackdrop";
 
 // 插件中心 — 四步安装向导（规划 Task 12 Step 4）
 // 固定 stepper：来源 → manifest/依赖/脚本 → 权限/沙箱 → 最终确认。
@@ -81,7 +82,7 @@ export function PluginInstallFlow({ adapter, source, onClose, onInstalled }: Pro
 
   return (
     <PluginDialog label="插件安装向导" busy={busy} onClose={onClose}>
-      <div className="pc-stepper__panel">
+      <div className="pc-stepper__panel liquid-material-host"><LiquidMaterialBackdrop />
         <div className="pc-stepper__head">
           <h3>安装插件</h3>
           <button type="button" className="pc-btn" aria-label="关闭安装向导" onClick={onClose} disabled={busy}>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2, AlertCircle, Circle, ChevronDown } from "lucide-react";
+import { Check, AlertCircle, Circle, ChevronDown } from "lucide-react";
+import { DialogueLatticeLoader } from "../DialogueLatticeLoader";
 import MarkdownRenderer from "../MarkdownRenderer";
 import { normalizeReferenceNotes } from "@/app/lib/reference-retrieval";
 
@@ -23,7 +24,7 @@ export default function WorkflowStepCard({
   content, isRunning, isDone, isError, referenceNotes,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
-  const StatusIcon = isDone ? Check : isRunning ? Loader2 : isError ? AlertCircle : Circle;
+  const StatusIcon = isDone ? Check : isError ? AlertCircle : Circle;
   const statusClass = isDone ? "done" : isRunning ? "running" : isError ? "error" : "pending";
   const notes = normalizeReferenceNotes(referenceNotes);
 
@@ -38,16 +39,17 @@ export default function WorkflowStepCard({
       >
         <span className="wf-card-icon">{workflowIcon}</span>
         <span className="wf-card-name">{workflowName}</span>
-        {stepName && (
+        {(stepName || isRunning) && (
           <span className="wf-card-step">
-            <StatusIcon size={11} className={isRunning ? "wf-spin" : ""} />
-            {stepName} ({stepIndex + 1}/{totalSteps})
+            {!isRunning && <StatusIcon size={11} aria-hidden="true" />}
+            {!isRunning && <>{stepName} ({stepIndex + 1}/{totalSteps})</>}
           </span>
         )}
         {isDone && content && (
           <ChevronDown size={12} className={`wf-card-chevron ${collapsed ? "collapsed" : ""}`} />
         )}
       </button>
+      {isRunning && <div className="wf-card-content"><DialogueLatticeLoader label={`${stepName || "正在准备工作流"}（${stepIndex + 1}/${totalSteps}）`} /></div>}
       {!!notes.length && <div className="wf-card-references" role="status" aria-label="本步骤资料状态">
         <span>资料状态</span>
         <ul>{notes.map(note => <li key={note}>{note}</li>)}</ul>

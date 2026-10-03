@@ -34,7 +34,7 @@ test("web exposes the three-part creative workflow without replacing Coze chat",
   assert.match(collaborative, /agent-runs\/\$\{target\.id\}/);
   assert.match(collaborative, /finalInstruction:\s*instruction/);
   assert.match(collaborative, /confirmed\.task\.id/);
-  assert.match(collaborative, /creative-projects\/\$\{projectId\}\/team/);
+  assert.match(collaborative, /creative-projects\/\$\{encodeURIComponent\(projectId\)\}\/team/);
   assert.match(collaborative, /teamRoleIds/);
   assert.doesNotMatch(chat, /onDispatch=\{\(instruction\) => requestPrompt/);
   assert.match(nav, /key:\s*"studio"/);

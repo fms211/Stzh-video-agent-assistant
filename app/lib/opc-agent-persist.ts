@@ -96,6 +96,7 @@ export function getActiveSessionId(mode: "chat" | "workflow" = "chat"): string {
 
 export function setActiveSessionId(id: string, mode: "chat" | "workflow" = "chat") {
   if (isBrowser) localStorage.setItem(`${opcKey(ownerScope(owner()), "active")}${mode === "workflow" ? ":workflow" : ""}`, id);
+  if (isBrowser) window.dispatchEvent(new Event("tszh_active_session_changed"));
 }
 
 export function createSessionId(mode: "chat" | "workflow" = "chat") {

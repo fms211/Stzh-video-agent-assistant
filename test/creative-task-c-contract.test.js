@@ -94,7 +94,7 @@ describe("Task C 拖拽与 reduced-motion", () => {
     assert.doesNotMatch(move, /onWidthChange/);
     assert.match(stop, /cancelAnimationFrame\(resizeFrameRef\.current\)/);
     assert.equal((stop.match(/onWidthChange\(/g) || []).length, 1);
-    assert.match(stop, /Math\.max\([^)]*LEFT_MIN[\s\S]*Math\.min\([^)]*LEFT_MAX/);
+    assert.match(stop, /Math\.max\([^)]*LEFT_MIN[\s\S]*Math\.min\([^)]*maxWidth/);
     assert.match(dock, /useEffect\(\(\) => \(\) => \{[\s\S]*cancelAnimationFrame\(resizeFrameRef\.current\)/);
   });
 

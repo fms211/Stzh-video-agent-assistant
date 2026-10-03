@@ -1,0 +1,60 @@
+.dialogue-lattice-loader {
+  display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%;
+  color: var(--foreground-muted); font: var(--text-label-size, 13px)/var(--text-label-line, 21px) var(--font-ui);
+  vertical-align: middle; letter-spacing: normal;
+}
+.dialogue-lattice-loader__grid {
+  display: grid; grid-template-columns: repeat(3, var(--dll-cell)); gap: var(--dll-gap);
+  flex: 0 0 auto; width: calc(3 * var(--dll-cell) + 2 * var(--dll-gap));
+}
+.dialogue-lattice-loader__cell {
+  width: var(--dll-cell); height: var(--dll-cell); position: relative; box-sizing: border-box;
+  border-radius: max(2px, calc(var(--dll-cell) * .28));
+  border: 1px solid color-mix(in srgb, var(--dll-color) 50%, #fff 50%);
+  background: linear-gradient(145deg, rgba(255,255,255,.64), color-mix(in srgb, var(--dll-color) 38%, transparent) 48%, color-mix(in srgb, var(--dll-color) 65%, transparent));
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.5), inset 0 -1px 1px rgba(0,0,0,.16), 0 2px 5px rgba(0,0,0,.14);
+  opacity: var(--dll-idle); animation: dialogue-lattice-wave var(--dll-cycle) linear infinite;
+}
+.dialogue-lattice-loader__cell::after {
+  content: ""; position: absolute; inset: 1px 1px 50%; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,.55), transparent); pointer-events: none;
+}
+.dialogue-lattice-loader__cell[data-hole] { visibility: hidden; animation: none; }
+.dialogue-lattice-loader__label { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.dialogue-lattice-loader[data-glow="true"] .dialogue-lattice-loader__grid {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--dll-color) 24%, transparent));
+}
+@keyframes dialogue-lattice-wave {
+  0%, 62%, 100% { opacity: var(--dll-idle); transform: translateY(0); }
+  18%, 36% { opacity: 1; transform: translateY(-1px); }
+}
+.dialogue-lattice-loader[data-animated="false"] .dialogue-lattice-loader__cell,
+:root[data-reduced-motion="true"] .dialogue-lattice-loader__cell { animation: none; opacity: .8; transform: none; }
+.cws-conversation[hidden] .dialogue-lattice-loader__cell { animation-play-state: paused; }
+.dialogue-lattice-loader--compact { flex: 0 0 auto; }
+body .product-shell .coze-task-status.dialogue-lattice-loader { align-items: center; }
+.dialogue-loader-settings__preview {
+  padding: 18px; border-radius: var(--shape-card); background: var(--space-surface);
+  border: 1px solid var(--border-subtle); display: grid; gap: 16px;
+}
+.dialogue-loader-settings__colors { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:16px 0; }
+.dialogue-loader-settings__colors label { display:flex; align-items:center; gap:10px; min-width:0; }
+.dialogue-loader-settings__colors input[type="color"] { width:48px; height:44px; padding:5px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--space-surface); }
+.dialogue-loader-settings__colors input[type="text"] { width:110px; min-width:0; height:44px; padding:8px 10px; box-sizing:border-box; border:1px solid var(--border-subtle); border-radius:12px; background:var(--space-surface); color:var(--foreground); font:inherit; }
+.dialogue-loader-settings__hex { font-variant-numeric:tabular-nums; color:var(--foreground-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .dialogue-lattice-loader__cell { animation: none; opacity: .8; transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dialogue-lattice-loader__cell { background: var(--dll-color); box-shadow: none; }
+  .dialogue-lattice-loader__cell::after { display:none; }
+  .dialogue-lattice-loader__grid { filter: none !important; }
+}
+:root[data-reduce-transparency="true"] .dialogue-lattice-loader__cell { background:var(--dll-color); box-shadow:none; }
+:root[data-reduce-transparency="true"] .dialogue-lattice-loader__cell::after { display:none; }
+:root[data-reduce-transparency="true"] .dialogue-lattice-loader__grid { filter:none !important; }
+@media (forced-colors: active) {
+  .dialogue-lattice-loader__cell { background:CanvasText; border-color:CanvasText; box-shadow:none; }
+  .dialogue-lattice-loader__cell::after { display:none; }
+  .dialogue-lattice-loader__grid { filter:none !important; }
+}

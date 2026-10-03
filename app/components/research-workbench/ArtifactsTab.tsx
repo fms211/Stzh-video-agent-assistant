@@ -3,8 +3,9 @@
 // 检查器「产物」标签：三类产物（研究报告 / 风格特征包 / 应用提示词包）复制与下载
 // 下载使用 Blob + createObjectURL，完成后 revoke（规划 Task 5 Step 4）
 
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { FileText, Braces, ClipboardList, Copy, Download } from "lucide-react";
+import { saveFileDownload } from "@/app/lib/media-download";
 import type { OutputArtifact } from "@/app/lib/research-runtime/types";
 
 type Props = {
@@ -18,32 +19,59 @@ const TYPE_META: Record<OutputArtifact["type"], { label: string; icon: typeof Fi
 };
 
 export function ArtifactsTab({ artifacts }: Props) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copied, setCopied] = useState<{ id: string; content: string } | null>(null);
+  const [copyPending, setCopyPending] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ id: string; content: string; error: boolean; message: string } | null>(null);
+  const latestArtifacts = useRef(artifacts);
+  const alive = useRef(true);
+  const copySequence = useRef(0);
+  const feedbackSequence = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => { latestArtifacts.current = artifacts; }, [artifacts]);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      copySequence.current++;
+      feedbackSequence.current++;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
+  const isCurrentArtifact = useCallback((artifact: OutputArtifact) => alive.current && latestArtifacts.current.some(item => item.id === artifact.id && item.content === artifact.content), []);
 
   const download = useCallback((artifact: OutputArtifact) => {
-    const blob = new Blob([artifact.content], { type: `${artifact.mimeType};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
+    if (!isCurrentArtifact(artifact)) return;
+    feedbackSequence.current++;
     try {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = artifact.fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    } finally {
-      URL.revokeObjectURL(url);
+      const blob = new Blob([artifact.content], { type: `${artifact.mimeType};charset=utf-8` });
+      saveFileDownload({ blob, filename: artifact.fileName });
+      setFeedback({ id: artifact.id, content: artifact.content, error: false, message: "产物已交给浏览器保存，请在下载列表核对。" });
+    } catch {
+      setFeedback({ id: artifact.id, content: artifact.content, error: true, message: "下载未完成，原产物仍保留，请重试或复制正文。" });
     }
-  }, []);
+  }, [isCurrentArtifact]);
 
   const copy = useCallback(async (artifact: OutputArtifact) => {
+    if (!isCurrentArtifact(artifact)) return;
+    const request = ++copySequence.current;
+    const notice = ++feedbackSequence.current;
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    setCopied(null);
+    setCopyPending(artifact.id);
     try {
       await navigator.clipboard.writeText(artifact.content);
-      setCopiedId(artifact.id);
-      setTimeout(() => setCopiedId(null), 1500);
+      if (!isCurrentArtifact(artifact) || request !== copySequence.current || notice !== feedbackSequence.current) return;
+      setCopied({ id: artifact.id, content: artifact.content });
+      setFeedback({ id: artifact.id, content: artifact.content, error: false, message: "产物正文已复制。" });
+      copyTimer.current = setTimeout(() => { if (alive.current) setCopied(null); }, 1500);
     } catch {
-      // 剪贴板不可用时静默（演示环境）
+      if (isCurrentArtifact(artifact) && request === copySequence.current && notice === feedbackSequence.current) {
+        setFeedback({ id: artifact.id, content: artifact.content, error: true, message: "剪贴板不可用，请下载文件保存产物。" });
+      }
+    } finally {
+      if (alive.current && request === copySequence.current) setCopyPending(null);
     }
-  }, []);
+  }, [isCurrentArtifact]);
 
   if (!artifacts.length) {
     return (
@@ -73,14 +101,15 @@ export function ArtifactsTab({ artifacts }: Props) {
             </p>
             <pre className="rtab-artifact-preview">{artifact.content.slice(0, 240)}{artifact.content.length > 240 ? "…" : ""}</pre>
             <div className="rtab-artifact-actions">
-              <button type="button" className="rins-btn" onClick={() => void copy(artifact)}>
+              <button type="button" className="rins-btn" disabled={Boolean(copyPending)} onClick={() => void copy(artifact)}>
                 <Copy aria-hidden="true" size={12} />
-                {copiedId === artifact.id ? "已复制" : "复制"}
+                {copyPending === artifact.id ? "正在复制…" : copied?.id === artifact.id && copied.content === artifact.content ? "已复制" : "复制"}
               </button>
               <button type="button" className="rins-btn" onClick={() => download(artifact)} aria-label={`下载 ${artifact.fileName}`}>
                 <Download aria-hidden="true" size={12} /> 下载
               </button>
             </div>
+            {feedback?.id === artifact.id && feedback.content === artifact.content && <p className="rtab-artifact-evidence" role={feedback.error ? "alert" : "status"} style={{ overflowWrap: "anywhere" }}>{feedback.message}</p>}
           </li>
         );
       })}

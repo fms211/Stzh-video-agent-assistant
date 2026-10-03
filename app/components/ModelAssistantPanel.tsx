@@ -1,14 +1,18 @@
 "use client";
 
 import SquishSwitch from "@/app/components/SquishSwitch";
+import { DialogueLatticeLoader } from "./DialogueLatticeLoader";
+import { isPendingDialogueReply } from "@/app/lib/dialogue-loader-settings";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bot, ChevronDown, History, Loader2, MessageSquare, Play, Send, Sparkles, Workflow } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, History, MessageSquare, Play, Send, Sparkles, Workflow } from "lucide-react";
 import { creativeApi, type SafeProvider } from "@/app/lib/creative-agent-api";
 import { saveFileDownload } from "@/app/lib/media-download";
 import { apiCreateSession } from "@/app/lib/opc-agent-api";
 import { StudioSessionSummaries } from "./StudioSessionSummaries";
 import { RequestMemoryExclusions, useRequestMemoryExclusions } from "./RequestMemoryExclusions";
 import { StudioContextTrace } from "./StudioContextTrace";
+import MarkdownRenderer from "./MarkdownRenderer";
+import { contextMemoryLabel } from "@/app/lib/studio-context-presentation";
 import { useSessionProject } from "@/app/hooks/useSessionProject";
 import { WorkflowResultRecovery } from "./WorkflowResultRecovery";
 import { restoreWorkflowPlan, type SavedWorkflowPlan } from "@/app/lib/workflow-resume";
@@ -49,7 +53,7 @@ import {
 import WorkflowStepCard from "./opc-agent/WorkflowStepCard";
 import ActionCards from "./opc-agent/ActionCards";
 import type { OpcAgentMessage, ActionCard } from "./opc-agent/types";
-import { assistantContentWithReferences, assistantSessionMode, exportAssistantConversation, openAssistantSession, prepareAssistantRetry } from "@/app/lib/assistant-history";
+import { assistantContentWithReferences, assistantMessageDetails, assistantSessionMode, exportAssistantConversation, openAssistantSession, prepareAssistantRetry } from "@/app/lib/assistant-history";
 import { globalEnergyStore } from "@/app/hooks/useThemeEnergy";
 import { describeWorkflow, type AssistantInspectorState, type WorkflowInspectorState } from "@/app/lib/studio-inspector-state";
 
@@ -96,7 +100,13 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
+  useEffect(() => {
+    const refresh = () => setHistory(getLocalSessions());
+    window.addEventListener("tszh_history_retention_changed", refresh);
+    return () => window.removeEventListener("tszh_history_retention_changed", refresh);
+  }, []);
   const historyRequest = useRef(0);
+  const historyRefreshLock = useRef(false);
   const changingSession = useRef(false);
   const sessionMode = initialMode === "workflow" ? "workflow" : "chat";
   const [contextTrace, setContextTrace] = useState<{ sessionId: string; applied: boolean; rollout: string; selected?: Array<{ id: string; revision: number; content: string }> } | null>(null);
@@ -109,7 +119,10 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
   const invalidateInitialization = useCallback(() => { initialization.current++; initializedSession.current = false; }, []);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [pendingReply, setPendingReply] = useState<{ id: string; sessionId: string } | null>(null);
+  const [workflowPendingId, setWorkflowPendingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [exportFeedback, setExportFeedback] = useState<{ sessionId: string; error: boolean; message: string } | null>(null);
 
   // 工作流模式状态
   const [mode, setMode] = useState<"chat" | "workflow">(initialMode ?? "chat");
@@ -256,16 +269,18 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
   }, [opcContext, providerId, isCurrentOwner, sessionId, sessionMode, excludedMemoryIds, contextProjectId, sessionProject.ready]);
 
   const refreshHistory = async () => {
-    if (!isCurrentOwner()) return;
+    if (!isCurrentOwner() || historyRefreshLock.current) return;
+    historyRefreshLock.current = true;
     const request = ++historyRequest.current;
     setHistoryLoading(true); setHistoryError("");
-    setHistory(getLocalSessions());
     try {
+      setHistory(getLocalSessions());
       const sessions = await getSessions(true);
       if (isCurrentOwner() && historyRequest.current === request) setHistory(sessions);
     } catch (cause) {
       if (isCurrentOwner() && historyRequest.current === request) setHistoryError(`云端历史暂不可用，显示本机记录：${cause instanceof Error ? cause.message : "读取失败"}`);
     } finally {
+      historyRefreshLock.current = false;
       if (isCurrentOwner() && historyRequest.current === request) setHistoryLoading(false);
     }
   };
@@ -302,8 +317,14 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
   };
 
   const exportSession = () => {
-    const blob = new Blob([exportAssistantConversation(messages)], { type: "text/markdown;charset=utf-8" });
-    saveFileDownload({ blob, filename: `${sessionId.replace(/[^a-zA-Z0-9_-]/g, "_")}.md` });
+    if (!sessionReady || !isCurrentOwner()) return;
+    try {
+      const blob = new Blob([exportAssistantConversation(messages)], { type: "text/markdown;charset=utf-8" });
+      saveFileDownload({ blob, filename: `${sessionId.replace(/[^a-zA-Z0-9_-]/g, "_")}.md` });
+      setExportFeedback({ sessionId, error: false, message: "会话记录已交给浏览器保存，请在下载列表核对。" });
+    } catch (cause) {
+      setExportFeedback({ sessionId, error: true, message: cause instanceof Error ? `导出未完成：${cause.message}。当前内容仍保留，可重试。` : "导出未完成，当前内容仍保留，可重试。" });
+    }
   };
 
   const retryReply = async (id: string) => {
@@ -312,6 +333,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
     if (!remoteEnabled) { onAuthRequired(); return; }
     if (!hasProvider) { setError("请先在「模型与角色」中心配置并激活模型"); return; }
     setError(""); setSending(true); onSendingChange?.(true);
+    setPendingReply({ id, sessionId });
     setMessages(previous => previous.map(message => message.id === id ? { ...message, content: "", isError: false } : message));
     try {
       const response = await callModel([{ role: "system", content: SYSTEM_PROMPT }, ...retry.messages]);
@@ -320,7 +342,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
       if (!isCurrentOwner()) return;
       setMessages(previous => previous.map(message => message.id === id ? { ...message, isError: true } : message));
       setError(cause instanceof Error ? cause.message : "模型调用失败");
-    } finally { if (isCurrentOwner()) { setSending(false); onSendingChange?.(false); } }
+    } finally { if (isCurrentOwner()) { setSending(false); setPendingReply(null); onSendingChange?.(false); } }
   };
 
   const send = async (event: FormEvent) => {
@@ -335,6 +357,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
     setMessages((previous) => [...previous, userMsg, assistantMsg]);
     updateDraft("");
     setSending(true);
+    setPendingReply({ id: assistantMsg.id, sessionId });
     onSendingChange?.(true);
     try {
       const response = await callModel([
@@ -346,7 +369,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
     } catch (cause) {
       setMessages((previous) => previous.map((m) => (m.id === assistantMsg.id ? { ...m, content: "", isError: true } : m)));
       setError(cause instanceof Error ? cause.message : "模型调用失败");
-    } finally { if (isCurrentOwner()) { setSending(false); onSendingChange?.(false); } }
+    } finally { if (isCurrentOwner()) { setSending(false); setPendingReply(null); onSendingChange?.(false); } }
   };
 
   // ── 工作流执行引擎（链式多步，服务端模型）──
@@ -362,6 +385,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
     setWfError(null);
     runningRef.current = true;
     setWfRunning(true);
+    setWorkflowPendingId(null);
     globalEnergyStore.setSource("workflow", "running");
 
     try {
@@ -418,6 +442,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
       totalSteps: steps.length, stepIndex: 0,
     };
     setMessages((previous) => resumeMessage ? previous.map(message=>message.id===wfMsg.id?wfMsg:message) : [...previous, wfMsg]);
+    setWorkflowPendingId(wfMsg.id);
     // Persist the recovery entry before any execution step can consume a call.
     if(!resumeMessage) await savePersistedMessages(sessionId,[...messages,wfMsg]);
     if(!isCurrentOwner()) return;
@@ -507,15 +532,21 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
       if(isCurrentOwner()) setWfError(cause instanceof Error?cause.message:"工作流恢复失败");
       if(resumeMessage) throw cause;
     } finally {
-      if(isCurrentOwner()) {runningRef.current=false;setWfRunning(false);globalEnergyStore.clearSource("workflow");}
+      if(isCurrentOwner()) {runningRef.current=false;setWfRunning(false);setWorkflowPendingId(null);globalEnergyStore.clearSource("workflow");}
     }
   }, [activeWf, wfInput, sending, sessionReady, isCurrentOwner, remoteEnabled, onAuthRequired, hasProvider, sessionId, messages, callModel, providerId, contextProjectId, excludedMemoryIds, opcContext]);
 
   const handleActionCard = useCallback((card: ActionCard, content: string) => {
+    if (!isCurrentOwner()) return;
     switch (card.type) {
       case "save-report": {
-        const blob = new Blob([content], { type: "text/markdown" });
-        saveFileDownload({ blob, filename: `workflow-${Date.now()}.md` });
+        try {
+          const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+          saveFileDownload({ blob, filename: `workflow-${Date.now()}.md` });
+          setExportFeedback({ sessionId, error: false, message: "工作流报告已交给浏览器保存，请在下载列表核对。" });
+        } catch (cause) {
+          setExportFeedback({ sessionId, error: true, message: cause instanceof Error ? `报告导出未完成：${cause.message}。原报告仍保留，可重试。` : "报告导出未完成，原报告仍保留，可重试。" });
+        }
         break;
       }
       case "continue":
@@ -523,7 +554,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         break;
       default: break;
     }
-  }, [updateDraft]);
+  }, [updateDraft, isCurrentOwner, sessionId]);
 
   const currentProvider = providers.find((provider) => provider.id === providerId);
   const providerName = currentProvider?.name || "";
@@ -562,7 +593,8 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
           {!hasProvider && onOpenModelCenter && <button type="button" className="studio-configure-model" onClick={remoteEnabled ? onOpenModelCenter : onAuthRequired}>配置模型</button>}
         </div>
       </header>
-      {!sessionReady && <p role="status" className="studio-inline-error">正在恢复对话…</p>}
+      {!sessionReady && <DialogueLatticeLoader className="studio-inline-error" label="正在恢复对话…" />}
+      {wfRunning && !workflowPendingId && <DialogueLatticeLoader label="正在准备工作流…" />}
       {remoteEnabled && user && sessionReady && !(mode === "workflow" && activeWf?.runtimeMode === "research-workbench") && <details className="studio-context-section">
         <summary>项目与记忆{contextProjectId ? " · 已选择项目" : " · 未关联项目"}</summary>
         <fieldset disabled={sending || wfRunning}>
@@ -575,7 +607,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         <RequestMemoryExclusions key={`context-exclusions:${user.id}:${sessionId}:${contextProjectId}`} mode={sessionMode === "workflow" ? "workflow" : "assistant"} sessionId={sessionId} projectId={contextProjectId || undefined} value={excludedMemoryIds} onChange={ids=>setPendingExclusions({sessionId,ids})} disabled={sending || wfRunning} />
         {contextProjectId && <StudioProjectNotes key={`context-notes:${user.id}:${sessionId}:${contextProjectId}`} projectId={contextProjectId} disabled={sending || wfRunning} />}
       </details>}
-      {contextTrace?.sessionId === sessionId && <details className="studio-context-section"><summary>{contextTrace.applied ? `本轮使用 ${contextTrace.selected?.length || 0} 条记忆` : contextTrace.rollout === "shadow" ? "记忆匹配预览（尚未用于回答）" : "本轮未启用记忆"}</summary>{contextTrace.selected?.map(item => <p key={item.id}>{item.content} <small>· 版本 {item.revision}</small> <label><SquishSwitch disabled={sending || wfRunning} checked={excludedMemoryIds.includes(item.id)} onChange={event => setPendingExclusions({ sessionId, ids: event.target.checked ? [...new Set([...excludedMemoryIds, item.id])] : excludedMemoryIds.filter(id => id !== item.id) })} />下次发送排除</label></p>)}{excludedMemoryIds.length > 0 && <button type="button" disabled={sending || wfRunning} onClick={() => setPendingExclusions({ sessionId, ids: [] })}>取消临时排除（{excludedMemoryIds.length} 条）</button>}</details>}
+      {contextTrace?.sessionId === sessionId && <details className="studio-context-section"><summary>{contextMemoryLabel(contextTrace.rollout, contextTrace.applied, contextTrace.selected?.length || 0)}</summary>{contextTrace.selected?.map(item => <p key={item.id}>{item.content} <small>· 版本 {item.revision}</small> <label><SquishSwitch disabled={sending || wfRunning} checked={excludedMemoryIds.includes(item.id)} onChange={event => setPendingExclusions({ sessionId, ids: event.target.checked ? [...new Set([...excludedMemoryIds, item.id])] : excludedMemoryIds.filter(id => id !== item.id) })} />下次发送排除</label></p>)}{excludedMemoryIds.length > 0 && <button type="button" disabled={sending || wfRunning} onClick={() => setPendingExclusions({ sessionId, ids: [] })}>取消临时排除（{excludedMemoryIds.length} 条）</button>}</details>}
       {syncError && <p role="alert" className="studio-inline-error">对话已保存在本机，服务端同步失败：{syncError} <button type="button" onClick={() => setSyncRevision(value => value + 1)}>重试同步</button></p>}
 
       <nav className="studio-session-tools" aria-label="助手会话操作">
@@ -594,10 +626,11 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         await savePersistedMessages(sessionId, messages);
         if (!isCurrentOwner()) throw new DOMException("账户已切换", "AbortError");
       }} />}
+      {exportFeedback?.sessionId === sessionId && <p role={exportFeedback.error ? "alert" : "status"} style={{ overflowWrap: "anywhere" }}>{exportFeedback.message}</p>}
       {historyOpen && <section className="studio-session-history" aria-label="会话历史列表">
         <div className="studio-session-tools">
           <input aria-label="搜索会话标题" placeholder="搜索会话标题" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} />
-          <button type="button" disabled={historyLoading} onClick={() => void refreshHistory()}>{historyLoading ? "正在读取…" : "刷新列表"}</button>
+          <button type="button" aria-disabled={historyLoading} onClick={() => void refreshHistory()}>{historyLoading ? "正在读取…" : "刷新列表"}</button>
         </div>
         <p>当前账户的{sessionMode === "workflow" ? "工作流" : "单助手"}会话；未发送的输入会保留。</p>
         <ul>{history.filter(item => (item.mode || assistantSessionMode(item.id)) === sessionMode && item.title.toLocaleLowerCase().includes(historyQuery.toLocaleLowerCase())).map(item => <li key={item.id}>
@@ -697,7 +730,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
                 }}
                 disabled={wfRunning || researchLaunching}
               >
-                {wfRunning ? <Loader2 size={14} className="studio-spin" /> : <Play size={14} />}
+                {wfRunning ? <DialogueLatticeLoader compact decorative /> : <Play size={14} />}
                 {activeWf.runtimeMode === "research-workbench" && onLaunchRuntime ? "生成研究计划" : "开始执行"}
               </button>
             </div>
@@ -720,7 +753,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
                     totalSteps={message.totalSteps || 0}
                     content={message.content}
                     referenceNotes={message.referenceNotes}
-                    isRunning={wfRunning && message.role === "workflow" && !message.isError && !message.content && message.stepIndex !== message.totalSteps}
+                    isRunning={wfRunning && workflowPendingId === message.id && message.role === "workflow" && !message.isError && !message.content && message.stepIndex !== message.totalSteps}
                     isDone={!!message.content && !message.isError}
                     isError={message.isError}
                   />
@@ -736,7 +769,14 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
               return (
                 <article key={message.id} className={`studio-message studio-message--${message.role}`}>
                   <span>{message.role === "user" ? "你" : "创意助手"}</span>
-                  <p>{message.content || (message.isError ? "请求失败" : "")}</p>
+                  {isPendingDialogueReply(pendingReply, message.id, sessionId, sending && isCurrentOwner()) && message.role === "assistant" && !message.isError
+                    ? <DialogueLatticeLoader label="正在思考…" />
+                    : message.role === "assistant"
+                      ? <div className="msg-agent studio-message-content"><MarkdownRenderer content={assistantContentWithReferences(message.content || (message.isError ? "请求失败" : ""), message.referenceNotes)} /></div>
+                      : <p>{message.content}</p>}
+                  {assistantMessageDetails(message).length > 0 && <ul className="studio-message-details" aria-label="附件与资料说明">
+                    {assistantMessageDetails(message).map((detail, index) => <li key={index}>{detail}</li>)}
+                  </ul>}
                   {message.role === "assistant" && <StudioContextTrace trace={message.contextTrace} label="这条回复的上下文" />}
                   {prepareAssistantRetry(messages, message.id) && <button type="button" disabled={sending || wfRunning || !sessionReady} onClick={() => void retryReply(message.id)}>重试这条回复</button>}
                 </article>
@@ -745,7 +785,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
           </div>
           <form className="studio-composer" onSubmit={send}>
             <textarea value={activeDraft} onChange={(event) => updateDraft(event.target.value)} placeholder="输入创作问题或从左侧接收提示词…" aria-label="创意助手输入" />
-            <button type="submit" disabled={!activeDraft.trim() || sending || wfRunning || !sessionReady} aria-label="发送给创意助手">{sending ? <span className="studio-spinner" /> : <Send size={16} />}</button>
+            <button type="submit" disabled={!activeDraft.trim() || sending || wfRunning || !sessionReady} aria-label="发送给创意助手">{sending ? <DialogueLatticeLoader compact decorative /> : <Send size={16} />}</button>
           </form>
           {error && <p className="studio-inline-error" role="alert">{error}</p>}
         </>
@@ -759,7 +799,10 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         .studio-session-history { padding:0 14px 10px; border-bottom:1px solid var(--border-subtle); }
         .studio-session-history p { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
         .studio-session-history ul { max-height:240px; overflow:auto; list-style:none; padding:0; margin:0; display:grid; gap:6px; }
-        .studio-session-history li button { width:100%; text-align:left; display:flex; justify-content:space-between; gap:12px; }
+        .studio-session-history li button { width:100%; min-height:44px; text-align:left; display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; }
+        .studio-session-history li button > span { min-width:0; flex:1 1 160px; overflow-wrap:anywhere; font-size:var(--text-body-size); line-height:var(--text-body-line); }
+        .studio-session-history .studio-session-tools button { min-height:44px; }
+        .studio-session-history button[aria-disabled=true] { opacity:.5; cursor:wait; }
         .studio-session-history time { color: var(--text-muted); font-size: var(--text-caption-size); flex-shrink:0; line-height: var(--text-caption-line); }
         .studio-session-history [aria-current="true"] { border-color:var(--glow-cool); }
 
@@ -787,9 +830,14 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         .studio-assistant-empty svg { color:var(--glow-cool); margin-bottom:8px; } .studio-assistant-empty p { margin:0 0 8px; } .studio-assistant-empty small { color:var(--foreground-muted); opacity:.75; }
         .studio-message { max-width:88%; padding:11px 13px; border-radius: var(--shape-control); border:1px solid var(--border-subtle); background:var(--space-surface); line-height:1.6; }
         .studio-message--user { align-self:flex-end; background:color-mix(in srgb,var(--glow-warm) 12%,var(--space-surface)); border-color:color-mix(in srgb,var(--glow-warm) 24%,var(--border-subtle)); }
-        .studio-message span { font-size: var(--text-caption-size); color:var(--glow-cool); letter-spacing:.05em; line-height: var(--text-caption-line); } .studio-message--user span { color:var(--glow-warm); }.studio-message p { white-space:pre-wrap; margin:4px 0 0; color:var(--foreground); font-size: var(--text-body-size); line-height: var(--text-body-line); }
+        .studio-message > span:first-child { font-size: var(--text-caption-size); color:var(--glow-cool); letter-spacing:.05em; line-height: var(--text-caption-line); } .studio-message--user > span:first-child { color:var(--glow-warm); }.studio-message p { white-space:pre-wrap; margin:4px 0 0; color:var(--foreground); font-size: var(--text-body-size); line-height: var(--text-body-line); }
         .studio-action-cards { flex-shrink:0; }
-        .studio-composer { padding:14px; display:flex; gap:10px; align-items:flex-end; border-top:1px solid var(--border-subtle); }.studio-composer textarea { flex:1; min-height:52px; max-height:128px; resize:vertical; padding:12px; background:var(--space-surface); color:var(--foreground); border:1px solid var(--border-subtle); border-radius: var(--shape-control); line-height:1.5; }.studio-composer button { width:44px;height:44px;border:0;border-radius: var(--shape-control);background:var(--glow-cool);color:var(--space-deep);display:grid;place-items:center;cursor:pointer; }.studio-composer button:disabled {opacity:.45;cursor:not-allowed;}.studio-inline-error { margin:0 14px 14px; color:var(--error); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }.studio-spinner { width:14px;height:14px;border:2px solid rgba(0,0,0,.3);border-top-color:var(--space-deep);border-radius:50%;animation:studio-spin .7s linear infinite;}@keyframes studio-spin{to{transform:rotate(360deg)}}
+        .studio-message .studio-message-content { width:100%; max-width:100%; min-width:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; animation:none; overflow-wrap:anywhere; }
+        .studio-message-content p { white-space:normal; }
+        .studio-message-content .md-code-block pre { white-space:pre; }
+        .studio-message-content :is(.md-code-block,.md-table-wrap) { max-width:100%; }
+        .studio-message-details { margin:8px 0 0; padding-left:18px; color:var(--foreground-muted); font-size:var(--text-caption-size); line-height:var(--text-caption-line); overflow-wrap:anywhere; }
+        .studio-composer { padding:14px; display:flex; gap:10px; align-items:flex-end; border-top:1px solid var(--border-subtle); }.studio-composer textarea { flex:1; min-height:52px; max-height:128px; resize:vertical; padding:12px; background:var(--space-surface); color:var(--foreground); border:1px solid var(--border-subtle); border-radius: var(--shape-control); line-height:1.5; }.studio-composer button { width:44px;height:44px;border:0;border-radius: var(--shape-control);background:var(--glow-cool);color:var(--space-deep);display:grid;place-items:center;cursor:pointer; }.studio-composer button:disabled {opacity:.45;cursor:not-allowed;}.studio-inline-error { margin:0 14px 14px; color:var(--error); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 
         /* 工作流模式 */
         .studio-workflow { flex:1; overflow:auto; padding:18px; display:flex; flex-direction:column; }
@@ -832,7 +880,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
         .studio-wf-start:hover { filter:brightness(1.1); }
         .studio-wf-start:disabled { opacity:.45; cursor:not-allowed; }
 
-        @media (prefers-reduced-motion: reduce) { .studio-spinner { animation:none !important; } }
+
       `}</style>
     </section>
   );

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MediaItem } from "@/app/lib/workspace-media";
 import { prepareMediaDownload, saveMediaDownload } from "@/app/lib/media-download";
+import "./GalleryMedia.css";
 
 export default function GalleryMediaActions({ item }: { item: MediaItem }) {
   const request = useRef<AbortController | null>(null);
@@ -37,7 +38,7 @@ export default function GalleryMediaActions({ item }: { item: MediaItem }) {
 
   return <div className="gallery-download">
     <div className="gallery-actions">
-      <button type="button" className="gallery-filter-btn" disabled={pending} onClick={() => void download()} aria-label={`下载 ${item.sessionTitle}`}>{pending ? "正在下载…" : failed ? "重试下载" : "下载文件"}</button>
+      <button type="button" className="gallery-filter-btn" aria-disabled={pending} onClick={() => void download()} aria-label={`下载 ${item.sessionTitle}`}>{pending ? "正在下载…" : failed ? "重试下载" : "下载文件"}</button>
       {pending && <button type="button" className="gallery-filter-btn" onClick={() => { request.current?.abort(); setPending(false); setMessage("已取消下载"); }}>取消</button>}
       <a href={item.url} target="_blank" rel="noopener noreferrer" className="gallery-filter-btn" aria-label={`打开原文件：${item.sessionTitle}`}>打开原文件</a>
     </div>

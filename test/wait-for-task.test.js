@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+test("polling timeout and network loss are observation failures, distinct from terminal task failure", async () => {
+  const {waitForTask,TaskTerminalError}=await import("../app/lib/wait-for-task.ts");
+  let clock=0;
+  await assert.rejects(waitForTask(async()=>({status:'queued'}),{now:()=>clock,timeoutMs:1,delay:async()=>{clock=2;}}),error=>!(error instanceof TaskTerminalError)&&/后台执行/.test(error.message));
+  await assert.rejects(waitForTask(async()=>({status:'failed',error:'真正失败'})),error=>error instanceof TaskTerminalError);
+});
+
 test("terminal task failure stops immediately instead of retrying for eleven minutes", async () => {
   const { waitForTask } = await import("../app/lib/wait-for-task.ts");
   let calls = 0;

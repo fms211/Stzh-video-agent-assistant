@@ -7,8 +7,11 @@ const { createStudioContextService } = require("../studio-context-service.js");
 
 let db, store, context;
 const priorMode = process.env.STZH_CONTEXT_MODE, priorBytes = process.env.STZH_CONTEXT_INPUT_BYTES;
+const { MODE_KEYS } = require("../studio-context-rollout.js");
+const priorOverrides = Object.fromEntries(Object.values(MODE_KEYS).map(key => [key, process.env[key]]));
 test.beforeEach(() => {
   process.env.STZH_CONTEXT_MODE = "enforce";
+  for (const key of Object.values(MODE_KEYS)) delete process.env[key];
   delete process.env.STZH_CONTEXT_INPUT_BYTES;
   db = new Database(":memory:");
   db.exec("CREATE TABLE users(id INTEGER PRIMARY KEY); INSERT INTO users VALUES(1),(2); CREATE TABLE opc_sessions(id TEXT PRIMARY KEY,user_id INTEGER); CREATE TABLE opc_messages(id TEXT,session_id TEXT,role TEXT);");
@@ -16,6 +19,7 @@ test.beforeEach(() => {
 });
 test.afterEach(() => {
   db.close();
+  for (const [key,value] of Object.entries(priorOverrides)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   if (priorMode === undefined) delete process.env.STZH_CONTEXT_MODE; else process.env.STZH_CONTEXT_MODE = priorMode;
   if (priorBytes === undefined) delete process.env.STZH_CONTEXT_INPUT_BYTES; else process.env.STZH_CONTEXT_INPUT_BYTES = priorBytes;
 });
@@ -326,4 +330,33 @@ test("wire-budget summary selection includes a qualification and answer together
     included.push(hasUser);
   }
   assert.deepEqual(included,[true,false]);
+});
+
+
+test("per-mode rollout changes actual outgoing messages and every trace, not only UI status", () => {
+  memory(); process.env.STZH_CONTEXT_MODE="shadow";
+  process.env.STZH_CONTEXT_MODE_ASSISTANT="enforce"; process.env.STZH_CONTEXT_MODE_WORKFLOW="off";
+  const own=request(), applied=context.prepare(own);
+  assert.notDeepEqual(applied.messages,own.messages);
+  assert.equal(applied.trace.mode,"assistant"); assert.equal(applied.trace.rolloutSource,"mode_override"); assert.equal(applied.trace.applied,true);
+  const workflow=request({mode:"workflow"}), off=context.prepare(workflow);
+  assert.deepEqual(off.messages,workflow.messages); assert.equal(off.trace.rollout,"off"); assert.equal(off.trace.mode,"workflow");
+  for (const mode of ["coze","collaboration"]) {
+    const input=request({mode}), shadow=context.prepare(input);
+    assert.deepEqual(shadow.messages,input.messages); assert.equal(shadow.trace.rollout,"shadow"); assert.equal(shadow.trace.mode,mode); assert.equal(shadow.trace.applied,false);
+  }
+  process.env.STZH_CONTEXT_MODE="off";
+  const stopped=context.prepare(own);
+  assert.deepEqual(stopped.messages,own.messages); assert.equal(stopped.trace.rolloutSource,"global_off");
+});
+test("invalid override does not skip authorization; over-budget shadow retains rollout provenance", () => {
+  process.env.STZH_CONTEXT_MODE_ASSISTANT="invalid";
+  const off=context.prepare(request());
+  assert.equal(off.trace.rollout,"off"); assert.equal(off.trace.rolloutConfigurationValid,false);
+  assert.throws(()=>context.prepare(request({scope:{sessionId:"not-owned"}})),error=>error.status===404);
+  process.env.STZH_CONTEXT_MODE_ASSISTANT="shadow"; process.env.STZH_CONTEXT_INPUT_BYTES="4096";
+  const input=request({messages:[{role:"user",content:"x".repeat(5000)}]});
+  const result=context.prepare(input);
+  assert.deepEqual(result.messages,input.messages); assert.equal(result.trace.reason,"required_context_over_budget");
+  assert.equal(result.trace.rolloutSource,"mode_override"); assert.equal(result.trace.mode,"assistant");
 });

@@ -65,23 +65,64 @@ function waitForRequest<T>(request: AsyncRequest<T>): Promise<T> {
   });
 }
 
-export async function putWallpaper(asset: WallpaperAsset, ownerScope: string): Promise<void> {
+type WallpaperWriteTransaction = {
+  error?: unknown;
+  oncomplete: (() => void) | null;
+  onabort: (() => void) | null;
+  onerror: (() => void) | null;
+  abort(): void;
+  objectStore(name: string): {
+    get(id: string): AsyncRequest<WallpaperAsset | undefined>;
+    put(asset: WallpaperAsset): AsyncRequest<unknown>;
+    delete(id: string): AsyncRequest<unknown>;
+  };
+};
+
+/** Ownership check and mutation share one transaction; success means commit. */
+async function mutateWallpaper(id: string, ownerScope: string, change: (existing: WallpaperAsset | undefined) => WallpaperAsset | null | undefined): Promise<void> {
   const db = await withDb();
-  const record = { ...asset, ownerScope };
+  const apply = (existing: WallpaperAsset | undefined) => {
+    if (existing && existing.ownerScope !== ownerScope) throw new Error("无法修改不属于当前账号的壁纸");
+    return change(existing);
+  };
+  if (db instanceof Object && (db as { stores?: Map<string, unknown> }).stores instanceof Map) {
+    const store = (db as { stores: Map<string, { records: Map<string, unknown> }> }).stores.get(WALLPAPER_STORE);
+    if (!store) throw new Error("壁纸存储未初始化");
+    const next = apply(store.records.get(id) as WallpaperAsset | undefined);
+    if (next === null) store.records.delete(id);
+    else if (next !== undefined) store.records.set(id, next);
+    return;
+  }
+  const tx = (db as { transaction(name: string, mode: string): WallpaperWriteTransaction }).transaction(WALLPAPER_STORE, "readwrite");
+  if (!("oncomplete" in tx) || typeof tx.abort !== "function") throw new Error("当前壁纸存储无法确认事务完成");
+  await new Promise<void>((resolve, reject) => {
+    let failure: unknown;
+    const abort = (cause: unknown) => {
+      failure = cause;
+      try { tx.abort(); } catch { reject(cause); }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(failure || tx.error || new Error("壁纸存储事务已取消"));
+    tx.onerror = () => { failure ||= tx.error || new Error("壁纸存储事务失败"); };
+    try {
+      const store = tx.objectStore(WALLPAPER_STORE);
+      const read = store.get(id);
+      read.onerror = () => abort(read.error || new Error("无法核对壁纸归属"));
+      read.onsuccess = () => {
+        try {
+          const next = apply(read.result);
+          const write = next === null ? store.delete(id) : next !== undefined ? store.put(next) : null;
+          if (write) write.onerror = () => abort(write.error || new Error("壁纸写入失败"));
+        } catch (cause) { abort(cause); }
+      };
+    } catch (cause) { abort(cause); }
+  });
+}
+
+export async function putWallpaper(asset: WallpaperAsset, ownerScope: string): Promise<void> {
   try {
-    if (db instanceof Object && (db as { stores?: Map<string, unknown> }).stores instanceof Map) {
-      // 内存 shim 快捷路径（优先于 transaction 探测——shim 也实现了 transaction）
-      const store = (db as { stores: Map<string, { records: Map<string, unknown> }> }).stores.get(WALLPAPER_STORE);
-      if (!store) throw new Error("壁纸存储未初始化");
-      store.records.set(String(record.id), record);
-      return;
-    }
-    if (db && typeof (db as { transaction?: unknown }).transaction === "function") {
-      const tx = (db as { transaction(name: string, mode?: string): { objectStore(name: string): { put(value: unknown): unknown } } }).transaction(WALLPAPER_STORE, "readwrite");
-      await waitForRequest(tx.objectStore(WALLPAPER_STORE).put(record) as AsyncRequest<unknown>);
-      return;
-    }
-    throw new Error("当前环境不支持 IndexedDB（壁纸仅保留于本设备）");
+    if (asset.ownerScope !== ownerScope) throw new Error("壁纸所属账号与当前操作不一致");
+    await mutateWallpaper(asset.id, ownerScope, () => ({ ...asset, ownerScope }));
   } catch (error) {
     throw new Error(error instanceof Error ? `壁纸保存失败：${error.message}` : "壁纸保存失败");
   }
@@ -101,8 +142,8 @@ export async function getWallpaper(id: string, ownerScope: string): Promise<Wall
       const record = await waitForRequest(tx.objectStore(WALLPAPER_STORE).get(id) as AsyncRequest<WallpaperAsset | undefined>);
       return record && record.ownerScope === ownerScope ? record : null;
     }
-  } catch {
-    return null;
+  } catch (cause) {
+    throw new Error(cause instanceof Error ? `壁纸读取失败：${cause.message}` : "壁纸读取失败");
   }
   return null;
 }
@@ -112,7 +153,7 @@ export async function listWallpapers(ownerScope: string): Promise<WallpaperAsset
   try {
     if (db instanceof Object && (db as { stores?: Map<string, unknown> }).stores instanceof Map) {
       const store = (db as { stores: Map<string, { records: Map<string, unknown> }> }).stores.get(WALLPAPER_STORE);
-      if (!store) return [];
+      if (!store) throw new Error("壁纸存储未初始化");
       return [...store.records.values()]
         .filter((r) => (r as WallpaperAsset).ownerScope === ownerScope)
         .sort((a, b) => (b as WallpaperAsset).lastUsedAt - (a as WallpaperAsset).lastUsedAt) as WallpaperAsset[];
@@ -121,34 +162,21 @@ export async function listWallpapers(ownerScope: string): Promise<WallpaperAsset
     const tx = (db as { transaction(name: string): { objectStore(name: string): { getAll(): unknown } } }).transaction(WALLPAPER_STORE);
     const all = await waitForRequest(tx.objectStore(WALLPAPER_STORE).getAll() as AsyncRequest<WallpaperAsset[]>);
     return all.filter((r) => r.ownerScope === ownerScope).sort((a, b) => b.lastUsedAt - a.lastUsedAt);
-  } catch {
-    return [];
+  } catch (cause) {
+    throw new Error(cause instanceof Error ? `壁纸列表读取失败：${cause.message}` : "壁纸列表读取失败");
   }
 }
 
 export async function deleteWallpaper(id: string, ownerScope: string): Promise<void> {
-  const db = await withDb();
   try {
-    if (db instanceof Object && (db as { stores?: Map<string, unknown> }).stores instanceof Map) {
-      const store = (db as { stores: Map<string, { records: Map<string, unknown> }> }).stores.get(WALLPAPER_STORE);
-      if (store) {
-        const record = store.records.get(String(id)) as WallpaperAsset | undefined;
-        if (record && record.ownerScope === ownerScope) store.records.delete(String(id));
-      }
-      return;
-    }
-    const tx = (db as { transaction(name: string, mode?: string): { objectStore(name: string): { delete(key: string): unknown } } }).transaction(WALLPAPER_STORE, "readwrite");
-    await waitForRequest(tx.objectStore(WALLPAPER_STORE).delete(id) as AsyncRequest<unknown>);
-  } catch {
-    // 删除失败不抛（幂等语义）
+    await mutateWallpaper(id, ownerScope, existing => existing ? null : undefined);
+  } catch (cause) {
+    throw new Error(cause instanceof Error ? `壁纸删除失败：${cause.message}` : "壁纸删除失败");
   }
 }
 
 export async function touchWallpaper(id: string, ownerScope: string): Promise<void> {
-  const asset = await getWallpaper(id, ownerScope);
-  if (!asset) return;
-  const next = { ...asset, lastUsedAt: Date.now() };
-  await putWallpaper(next, ownerScope);
+  await mutateWallpaper(id, ownerScope, asset => asset ? { ...asset, lastUsedAt: Date.now() } : undefined);
 }
 
 // ---- Object URL 生命周期（模块级集中管理） ----

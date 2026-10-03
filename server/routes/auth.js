@@ -86,25 +86,29 @@ router.post("/api/auth/login", (req, res) => {
 
 // === 获取当前用户信息 ===
 router.get("/api/auth/me", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: { message: "未登录" } });
+  }
+  let decoded;
+  try { decoded = jwt.verify(authHeader.slice(7), JWT_SECRET); }
+  catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) return res.status(401).json({ error: { message: "token 无效或已过期" } });
+    return res.status(503).json({ error: { message: "认证服务暂时不可用，请稍后重试" } });
+  }
+  if (!decoded || typeof decoded !== "object" || !Number.isSafeInteger(decoded.userId) || decoded.userId <= 0) {
+    return res.status(401).json({ error: { message: "token 用户标识无效" } });
+  }
+
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: { message: "未登录" } });
-    }
-
-    const token = authHeader.slice(7);
-    const decoded = jwt.verify(token, JWT_SECRET);
-
     const user = db.prepare("SELECT id, username, display_name, created_at FROM users WHERE id = ?").get(decoded.userId);
-    if (!user) {
-      return res.status(401).json({ error: { message: "用户不存在" } });
-    }
-
-    res.json({
+    if (!user) return res.status(401).json({ error: { message: "用户不存在" } });
+    return res.json({
       user: { id: user.id, username: user.username, displayName: user.display_name || user.username, createdAt: user.created_at },
     });
-  } catch (error) {
-    res.status(401).json({ error: { message: "token 无效或已过期" } });
+  } catch {
+    // A database failure does not establish that the caller's JWT is invalid.
+    return res.status(503).json({ error: { message: "账户服务暂时不可用，请稍后重试" } });
   }
 });
 

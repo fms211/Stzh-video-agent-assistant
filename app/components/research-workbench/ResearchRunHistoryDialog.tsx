@@ -1,6 +1,8 @@
 "use client";
+import { LiquidMaterialBackdrop } from "@/app/components/LiquidMaterialBackdrop";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ModalDialog } from "../ModalDialog";
 import { Clock3, RefreshCw, X } from "lucide-react";
 import type { ResearchRuntimeAdapter, ResearchRunSummary } from "@/app/lib/research-runtime/adapter";
 import "./ResearchRunHistoryDialog.css";
@@ -40,97 +42,85 @@ export function ResearchRunHistoryDialog({ adapter, onSelect, onClose }: Props) 
   } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectingId, setSelectingId] = useState("");
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const [selectionError, setSelectionError] = useState("");
+  const titleId = useId();
+  const requestRef = useRef(0);
+  const refreshLock = useRef(false);
   const current = result?.adapter === adapter ? result : null;
 
   useEffect(() => {
-    let cancelled = false;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeRef.current?.focus();
+    const request = ++requestRef.current;
+    refreshLock.current = false;
+    setRefreshing(false);
+    setSelectingId("");
+    setSelectionError("");
 
     void adapter.listRuns(50).then((runs) => {
-      if (!cancelled) setResult({ adapter, runs, error: "" });
+      if (request === requestRef.current) setResult({ adapter, runs, error: "" });
     }).catch((error) => {
-      if (!cancelled) setResult({ adapter, runs: [], error: error instanceof Error ? error.message : "读取研究历史失败" });
+      if (request === requestRef.current) setResult({ adapter, runs: [], error: error instanceof Error ? error.message : "读取研究历史失败" });
     });
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ) || [])].filter((element) => element.getClientRects().length > 0);
-      if (!focusable.length) { event.preventDefault(); dialogRef.current?.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, [adapter, onClose]);
+    return () => { requestRef.current++; };
+  }, [adapter]);
 
   const refresh = async () => {
+    if (refreshLock.current) return;
+    refreshLock.current = true;
+    const request = ++requestRef.current;
     setRefreshing(true);
     try {
       const runs = await adapter.listRuns(50);
-      setResult({ adapter, runs, error: "" });
+      if (request === requestRef.current) setResult({ adapter, runs, error: "" });
     } catch (error) {
-      setResult({ adapter, runs: current?.runs || [], error: error instanceof Error ? error.message : "刷新研究历史失败" });
+      if (request === requestRef.current) setResult({ adapter, runs: current?.runs || [], error: error instanceof Error ? error.message : "刷新研究历史失败" });
     } finally {
-      setRefreshing(false);
+      if (request === requestRef.current) { refreshLock.current = false; setRefreshing(false); }
     }
   };
 
   const choose = (run: ResearchRunSummary) => {
     setSelectingId(run.runId);
-    onSelect(run);
-    onClose();
+    setSelectionError("");
+    try {
+      onSelect(run);
+      onClose();
+    } catch (error) {
+      setSelectingId("");
+      setSelectionError(error instanceof Error ? `打开运行失败：${error.message}` : "打开运行失败，请重试。原运行记录仍保留。");
+    }
   };
 
   return (
-    <div className="research-history-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <ModalDialog className="research-history-backdrop" labelledBy={titleId} onClose={onClose}>
       <div
-        ref={dialogRef}
-        className="research-history-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="research-history-title"
+        className="research-history-dialog liquid-material-host"
         aria-busy={!current || refreshing}
-        tabIndex={-1}
       >
+        <LiquidMaterialBackdrop />
         <header className="research-history-header">
           <div>
             <span className="research-history-eyebrow"><Clock3 size={13} aria-hidden="true" /> 账户运行记录</span>
-            <h2 id="research-history-title">研究历史</h2>
+            <h2 id={titleId}>研究历史</h2>
           </div>
           <div className="research-history-header-actions">
-            <button type="button" className="research-history-icon-button" aria-label="刷新研究历史" onClick={() => void refresh()} disabled={!current || refreshing}>
+            <button type="button" className="research-history-icon-button" aria-label="刷新研究历史" aria-disabled={refreshing || undefined} onClick={() => void refresh()} disabled={!current}>
               <RefreshCw size={15} aria-hidden="true" className={refreshing ? "is-spinning" : undefined} />
             </button>
-            <button ref={closeRef} type="button" className="research-history-icon-button" aria-label="关闭研究历史" onClick={onClose}>
+            <button autoFocus type="button" className="research-history-icon-button" aria-label="关闭研究历史" onClick={onClose}>
               <X size={16} aria-hidden="true" />
             </button>
           </div>
         </header>
         <p className="research-history-description">选择一条已保存的运行，继续查看计划、资料、产物和执行轨迹。</p>
+        {selectionError && <p className="research-history-selection-error" role="alert">{selectionError}</p>}
+        {current?.error && <p className="research-history-error" role="alert">{current.error}</p>}
         <div className="research-history-list" aria-live="polite">
           {!current ? (
             <p className="research-history-empty" role="status">正在读取账户运行记录…</p>
-          ) : current.error ? (
-            <p className="research-history-error" role="alert">{current.error}</p>
-          ) : current.runs.length === 0 ? (
+          ) : current.runs.length === 0 ? (current.error ? null : (
             <p className="research-history-empty" role="status">还没有研究运行记录。开始一次研究后，记录会保存在这里。</p>
-          ) : current.runs.map((run) => (
+          )) : current.runs.map((run) => (
             <button
               type="button"
               className="research-history-run"
@@ -155,6 +145,6 @@ export function ResearchRunHistoryDialog({ adapter, onSelect, onClose }: Props) 
           ))}
         </div>
       </div>
-    </div>
+    </ModalDialog>
   );
 }

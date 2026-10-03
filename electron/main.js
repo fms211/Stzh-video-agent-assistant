@@ -98,7 +98,7 @@ function startBackend() {
         realtimeServer = attachRealtime(backendServer);
         console.log(runtimeState.enabled
           ? "[Electron] 服务端任务运行时已启用"
-          : "[Electron] 服务端任务运行时未启用：缺少 Coze 运行配置");
+          : `[Electron] 视频任务运行时未启用（${runtimeState.reason}）`);
         console.log(`[Electron] 后端已启动: http://localhost:${port}`);
         resolve(port);
       });

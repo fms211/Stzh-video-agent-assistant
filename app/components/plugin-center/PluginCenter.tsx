@@ -1,4 +1,5 @@
 "use client";
+import { MaterialSelect } from "@/app/components/MaterialSelect";
 
 // 插件中心 — 四区域路由（发现 / 账户插件库 / 项目插件 / 恢复与诊断）
 // 规划 §8.1：subnav 四段；右侧固定项目选择器与「从来源安装」按钮；
@@ -82,15 +83,15 @@ export default function PluginCenter({ adapter, projects, projectLabels = {}, on
         ))}
         <div className="pc__subnav-spacer" />
         <label className="pc__project-picker">
-          项目
-          <select value={activeProjectId} onChange={(event) => { setActiveProjectId(event.target.value); pluginRuntime.selectProject(event.target.value); }} aria-label="选择项目">
+          <span className="pc__project-label">项目</span>
+          <MaterialSelect value={activeProjectId} onValueChange={selectedValue => { setActiveProjectId(selectedValue); pluginRuntime.selectProject(selectedValue); }} aria-label="选择项目">
             {!effectiveProjects.length && <option value="">请先创建项目</option>}
             {effectiveProjects.map((project) => (
               <option key={project} value={project}>
                 {projectLabels[project] || project}
               </option>
             ))}
-          </select>
+          </MaterialSelect>
         </label>
         <button type="button" className="pc__install-btn edge-glow--interactive" onClick={openInstallFlow}>
           从来源安装

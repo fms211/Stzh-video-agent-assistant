@@ -6,6 +6,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const httpFetch = global.fetch;
+const dns = require("node:dns/promises");
+const originalLookup = dns.lookup;
 const fixtureRoot = path.resolve(__dirname, "../../output/stage4");
 fs.mkdirSync(fixtureRoot, { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(fixtureRoot, "retrieval-input-test-"));
@@ -80,15 +82,20 @@ test.before(async () => {
 });
 test.beforeEach(() => {
   wires = [];
+  dns.lookup = async host => {
+    assert.equal(host, "retrieval-input-fixture.invalid", "Only the synthetic model host may resolve in this fixture");
+    return [{ address: "1.1.1.1", family: 4 }];
+  };
   global.fetch = async (url, options) => {
     assert.equal(url, "https://retrieval-input-fixture.invalid/v1/chat/completions", "only the synthetic model transport is allowed");
     wires.push(JSON.parse(options.body));
     return Response.json({ choices: [{ message: { content: unrelated + "；仅为模拟产物" } }] });
   };
 });
-test.afterEach(() => { global.fetch = httpFetch; });
+test.afterEach(() => { global.fetch = httpFetch; dns.lookup = originalLookup; });
 test.after(async () => {
   global.fetch = httpFetch;
+  dns.lookup = originalLookup;
   if (previousMode === undefined) delete process.env.STZH_CONTEXT_MODE; else process.env.STZH_CONTEXT_MODE = previousMode;
   await app.locals.researchRuntime?.stop();
   await app.locals.pluginService?.stop();

@@ -8,6 +8,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow-y: auto;
   color: var(--foreground, #e8ecf4);
   background: var(--space-deep, #050a14);
 }
@@ -16,6 +17,8 @@
 
 .rworkbench-header {
   display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -25,6 +28,9 @@
 
 .rworkbench-title {
   display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 8px;
   font-family: var(--font-ui);
@@ -41,6 +47,7 @@
 
 .rworkbench-header-actions {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
 }
@@ -71,7 +78,9 @@
   position: relative;
   display: flex;
   flex: 1;
-  min-height: 0;
+  /* 短屏或文字放大时保留阅读空间，由工作台滚动露出正文。 */
+  flex-shrink: 0;
+  min-height: min(320px, 50svh);
 }
 
 .rworkbench-center {
@@ -191,6 +200,8 @@
 
 .rrun-title {
   display: inline-flex;
+  min-width: 0;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 8px;
   font-family: var(--font-ui);
@@ -202,6 +213,8 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.rrun-title svg { flex-shrink: 0; }
 
 .rrun-metric {
   display: inline-flex;
@@ -327,6 +340,8 @@
   color: var(--foreground-muted, #b8a8b0);
 }
 
+.rrun-error > div { min-width: 0; overflow-wrap: anywhere; }
+
 .rrun-done {
   display: flex;
   align-items: center;
@@ -347,6 +362,7 @@
 
 .rplan-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -358,6 +374,9 @@
 
 .rplan-input {
   flex: 1;
+  flex-basis: 180px;
+  min-width: 0;
+  max-width: 100%;
   background: var(--space-surface, #0d1626);
   border: 1px solid var(--border-subtle, rgba(120, 140, 180, 0.25));
   border-radius: var(--shape-control);
@@ -372,6 +391,7 @@
 
 .rplan-budget {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -400,6 +420,7 @@
 
 .rplan-step {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -419,23 +440,23 @@
 
 .rplan-step-main {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
 }
 
 .rplan-step-kind {
   font-size: var(--text-caption-size);
   color: var(--glow-cool, #6088d8);
-  white-space: nowrap; line-height: var(--text-caption-line); }
+  white-space: normal; overflow-wrap: anywhere; line-height: var(--text-caption-line); }
 
 .rplan-step-title {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .rplan-step-toggle {
@@ -452,6 +473,7 @@
 
 .rplan-step-ops {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 4px;
 }
 
@@ -504,6 +526,7 @@
 
 .rins-statusbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -517,12 +540,16 @@
 
 .rins-statusbar-actions {
   display: inline-flex;
+  min-width: 0;
   gap: 6px;
   flex-wrap: wrap;
 }
 
 .rins-btn {
   display: inline-flex;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 4px;
   background: transparent;

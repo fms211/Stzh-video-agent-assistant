@@ -1,0 +1,313 @@
+{
+  "captured": "2026-10-03",
+  "source": "working-tree builds: batch57 (20 images), batch59 (plugins, glow, loader)",
+  "synthetic": true,
+  "modelCalls": 0,
+  "mediaCalls": 0,
+  "viewport": [
+    1440,
+    900
+  ],
+  "images": [
+    {
+      "file": "welcome.jpg",
+      "feature": "创作工作台欢迎卡",
+      "featureEnglish": "Workspace welcome card",
+      "scope": "空消息观测卡 / Empty observation card",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 90227,
+      "sha256": "df2814f5890f335fa89abb13da476c0247c8ed24206bbe632f86e6852fb2dba7",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "coze.jpg",
+      "feature": "Coze分镜讨论与历史",
+      "featureEnglish": "Coze storyboard discussion and history",
+      "scope": "预写正文与表格，未调用Coze / Prewritten text and table; no Coze call",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 97345,
+      "sha256": "f35cd52952c1a33afddc02a9d1081b0b9986e5a5c16cfb3d61b751822de33c51",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "assistant.jpg",
+      "feature": "单助手创意笔记",
+      "featureEnglish": "Assistant creative notes",
+      "scope": "预写回复，演示连接未实连 / Prewritten reply; demo provider is not connected",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 96113,
+      "sha256": "65f6e006a62718656401d057668d31b283aeb54c52e089a56de85d6759502af2",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "workflow.jpg",
+      "feature": "工作流选择与项目入口",
+      "featureEnglish": "Workflow selection and project entry",
+      "scope": "入口展示，未执行链式模型 / Entry view; no workflow model execution",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 87086,
+      "sha256": "ad04501272fceba929863b59940bfbce3494bf8a9bd4d2daeb54ec91ca7b4a3a",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "research.jpg",
+      "feature": "可编辑研究计划工作台",
+      "featureEnglish": "Editable research-plan workbench",
+      "scope": "待确认计划；未搜索或生成报告 / Pending plan; no search or report generation",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 103148,
+      "sha256": "7893be603520d5fa11a6cb67598945a02f5fe3dced9bf9aac29b6a2a51362704",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "collaboration.jpg",
+      "feature": "项目角色编队与协作预算",
+      "featureEnglish": "Project team and collaboration budget",
+      "scope": "预置项目与三张角色卡 / Seeded project and three role cards",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 88186,
+      "sha256": "079e319eb285431734dbb5d9ebd90e7046f9cbcc74284cdf0a1e6713b490be0c",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "collaboration-result.jpg",
+      "feature": "协作最终指令与风险",
+      "featureEnglish": "Collaboration final instruction and risks",
+      "scope": "预写历史，未讨论或转交Coze / Prewritten history; no model discussion or Coze handoff",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 97788,
+      "sha256": "26894ffe85af50d2a6d47a2d56666a6088893f16270912ccaa33234ae5b3c271",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "models.jpg",
+      "feature": "厂商预设与模型连接表单",
+      "featureEnglish": "Provider presets and model form",
+      "scope": "假密钥已加密，未查询真实厂商 / Encrypted fake credential; no live discovery",
+      "pixels": [
+        1434,
+        1491
+      ],
+      "bytes": 113234,
+      "sha256": "53cd7c1ca1e062e3be97405984870a36a9c8e19c39e8a13f7dda7bd9be215f0e",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "roles.jpg",
+      "feature": "个人角色库与编辑入口",
+      "featureEnglish": "Personal roles and editing entry",
+      "scope": "预写角色，未调用角色生成 / Prewritten roles; no generated role call",
+      "pixels": [
+        1434,
+        1548
+      ],
+      "bytes": 116127,
+      "sha256": "9200ebbfb1b761228119c1da7cc8b749041944ec8254004e6449225f0345ca49",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "plugins.jpg",
+      "feature": "插件发现与安装入口",
+      "featureEnglish": "Plugin discovery and installation entry",
+      "scope": "未安装包的空状态 / Empty state; no package installed",
+      "pixels": [
+        1434,
+        909
+      ],
+      "bytes": 85324,
+      "sha256": "9ba02e119a0cbb3871cd61ab95dba15c476be5273b7842cea5a1ed09ea9588f1",
+      "sourceBuild": "batch59"
+    },
+    {
+      "file": "memory.jpg",
+      "feature": "记忆管理与shadow说明",
+      "featureEnglish": "Memory management and shadow notice",
+      "scope": "已确认演示偏好，不等于应用到回答 / Confirmed demo preference; not applied to an answer",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 58121,
+      "sha256": "a37767095216f794c8d97e618b86751e61e89228363f00390ac151ed6f9591e6",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "login.jpg",
+      "feature": "登录与注册入口",
+      "featureEnglish": "Login and registration entry",
+      "scope": "账号与密码字段为空 / Account and password fields are empty",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 35474,
+      "sha256": "ac2bbf2c2a9436eb051ea1d75e42cdfc5ae3aa69cec0576e020c90c314b7f776",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "tasks.jpg",
+      "feature": "任务列表与当前详情",
+      "featureEnglish": "Tasks and selected details",
+      "scope": "预置排队、暂停和静态素材记录 / Seeded queue, pause and static-asset records",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 84605,
+      "sha256": "229628fa119c22aa17332f3de507bd0a499b7b6f75f5e4f81d2d5687cdcd02d1",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "statistics.jpg",
+      "feature": "频率统计与图例",
+      "featureEnglish": "Frequency statistics and legend",
+      "scope": "一项预置图片任务，不是真实生成量 / One seeded image task; not a real generation metric",
+      "pixels": [
+        1434,
+        974
+      ],
+      "bytes": 61328,
+      "sha256": "43a54d75b86f8a705c81ad5284c67e8e67b1e252e8f7653573cf6d37fba9a709",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "gallery.jpg",
+      "feature": "图片画廊与下载入口",
+      "featureEnglish": "Image gallery and download entry",
+      "scope": "现有品牌图标，不是AI作品 / Existing brand icon; not an AI-generated work",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 58051,
+      "sha256": "dcb335036122320dfeb81230937a6d825db3ca0b95f59f14088807a2bc0f4fbc",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "gallery-preview.jpg",
+      "feature": "素材预览弹窗",
+      "featureEnglish": "Asset preview dialog",
+      "scope": "现有品牌图标 / Existing brand icon",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 42879,
+      "sha256": "97661c388bf6124d636b50be31fd92e27670587c59799ec82fd9661525c14509",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "appearance.jpg",
+      "feature": "主题设置与预览",
+      "featureEnglish": "Themes and preview",
+      "scope": "默认主题 / Default theme",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 91542,
+      "sha256": "fc518362260b7f4d7438a86027133dba112649e8feaa87f0f4040e34bce1418a",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "glass.jpg",
+      "feature": "液态玻璃参数",
+      "featureEnglish": "Liquid-glass parameters",
+      "scope": "可滚动设置区域的参数视图 / Parameter view in a scrollable settings area",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 93682,
+      "sha256": "44330b5e67a1b3686aef145459101582e96a10a576c85149f67db736e0b254f6",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "galaxy.jpg",
+      "feature": "银河鼠标交互参数",
+      "featureEnglish": "Galaxy pointer-interaction parameters",
+      "scope": "参数面板的预览为静态 / Settings preview is static",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 76812,
+      "sha256": "7b32aae666d06dcf321ef97cb2ac470ec72ed3d9ca89ad4085d47099d7266bac",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "glow.jpg",
+      "feature": "边缘光参数与预览",
+      "featureEnglish": "Border-glow controls and preview",
+      "scope": "静态截图不能证明追光动效 / A still image does not validate pointer motion",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 83763,
+      "sha256": "d2ce655f6c2aae8f331fc65b18df35c3fb14aff5e45ab435a3441f866bee57c5",
+      "sourceBuild": "batch59"
+    },
+    {
+      "file": "loader.jpg",
+      "feature": "琉璃方块等待参数",
+      "featureEnglish": "Glass-cube waiting controls",
+      "scope": "排队、思考和暂停预览，未发起请求 / Queue, thinking and pause previews; no request started",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 84434,
+      "sha256": "af80b409a803876f677bec474c69ebb2fe5285f573c08faa64fe1e6ca27b34c5",
+      "sourceBuild": "batch59"
+    },
+    {
+      "file": "export-settings.jpg",
+      "feature": "导出格式与时间戳",
+      "featureEnglish": "Export format and timestamps",
+      "scope": "偏好入口，不是本次下载验收 / Preference entry; not a download check in this batch",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 68092,
+      "sha256": "e8ed7d3a0a3708af598e5ae60ace65c94f3a511317ff0895c7c828aef2b9bece",
+      "sourceBuild": "batch57"
+    },
+    {
+      "file": "retention.jpg",
+      "feature": "历史保留与保护范围",
+      "featureEnglish": "History retention and protected scope",
+      "scope": "默认关闭；未执行清理 / Disabled by default; no cleanup executed",
+      "pixels": [
+        1440,
+        900
+      ],
+      "bytes": 76195,
+      "sha256": "07c17ca36be2ea478938cda0e6f0c271aedc613917dc2a9037be05eaad174e95",
+      "sourceBuild": "batch57"
+    }
+  ],
+  "updated": "2026-10-04"
+}

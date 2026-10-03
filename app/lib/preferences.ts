@@ -1,10 +1,12 @@
 // 用户偏好设置管理 — 服务端 SQLite + localStorage 缓存
 
-import { savePrefToServer, savePrefsBatchToServer } from "./server-sync";
+import { savePrefsBatchToServer } from "./server-sync";
 import { currentDataOwner, workspaceDataKey } from "./data-owner";
-import { migrateStartPage, type MappedStartPage } from "./appearance-types";
-import { DEFAULT_GALAXY_SETTINGS, normalizeGalaxySettings, type GalaxySettings } from "./galaxy-settings";
-import { DEFAULT_COZE_GLOW, normalizeCozeGlow, type CozeGlowSettings } from "./coze-dialogue-settings";
+import type { MappedStartPage } from "./appearance-types";
+import { normalizeScalarPreferences, type ScalarPreferences } from "./preference-values";
+import { normalizeGalaxySettings, type GalaxySettings } from "./galaxy-settings";
+import { normalizeCozeGlow, type CozeGlowSettings } from "./coze-dialogue-settings";
+import { normalizeDialogueLoader, type DialogueLoaderSettings } from "./dialogue-loader-settings";
 
 function preferencesKey() {
   if (typeof window === "undefined") return "tszh:v2:guest:preferences";
@@ -13,63 +15,33 @@ function preferencesKey() {
 
 export type StartPage = MappedStartPage;
 
-export interface UserPreferences {
-  // 通知偏好
-  notificationSound: boolean;      // 提示音开关
-  desktopNotification: boolean;    // 桌面通知开关
-
-  // 对话设置
-  autoSave: boolean;               // 自动保存对话
-  maxMessages: number;             // 单会话最大消息数
-  historyDays: number;             // 历史记录保留天数（0=永久）
-
-  // 界面设置
-  startPage: StartPage;            // 起始页
-  particleEffects: boolean;        // 粒子效果开关
-  reducedMotion: boolean;          // 减少动画（无障碍）
-  cursorTrail: boolean;            // 兼容旧偏好字段；鼠标拖尾暂时停用
-  galaxySettings: GalaxySettings;  // 银河星场：官网可调参数与主题配色
+export interface UserPreferences extends ScalarPreferences {
+  galaxySettings: GalaxySettings;
   cozeGlow: CozeGlowSettings;
-
-  // 导出设置
-  exportFormat: "markdown" | "json" | "txt";  // 默认导出格式
-  includeTimestamp: boolean;       // 导出时包含时间戳
+  dialogueLoader: DialogueLoaderSettings;
 }
 
-const DEFAULT_PREFERENCES: UserPreferences = {
-  // 通知偏好
-  notificationSound: true,
-  desktopNotification: true,
-
-  // 对话设置
-  autoSave: true,
-  maxMessages: 500,
-  historyDays: 0,
-
-  // 界面设置
-  startPage: "studio",
-  particleEffects: true,
-  reducedMotion: false,
-  cursorTrail: false,
-  galaxySettings: DEFAULT_GALAXY_SETTINGS,
-  cozeGlow: DEFAULT_COZE_GLOW,
-
-  // 导出设置
-  exportFormat: "markdown",
-  includeTimestamp: true,
-};
+export function normalizePreferences(value: unknown): UserPreferences {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
+  return {
+    ...normalizeScalarPreferences(source),
+    galaxySettings: normalizeGalaxySettings(source.galaxySettings),
+    cozeGlow: normalizeCozeGlow(source.cozeGlow),
+    dialogueLoader: normalizeDialogueLoader(source.dialogueLoader),
+  };
+}
 
 // 读取偏好
 export function getPreferences(): UserPreferences {
-  if (typeof window === "undefined") return DEFAULT_PREFERENCES;
+  if (typeof window === "undefined") return normalizePreferences(null);
   try {
     const stored = localStorage.getItem(preferencesKey());
-    if (!stored) return DEFAULT_PREFERENCES;
-    const parsed = JSON.parse(stored);
-    // 合并默认值，防止新增字段缺失
-    return { ...DEFAULT_PREFERENCES, ...parsed, cursorTrail: false, cozeGlow: normalizeCozeGlow(parsed.cozeGlow), galaxySettings: normalizeGalaxySettings(parsed.galaxySettings), startPage: migrateStartPage(parsed.startPage ?? DEFAULT_PREFERENCES.startPage) };
+    if (!stored) return normalizePreferences(null);
+    // Read without rewriting the original record or touching conversation history.
+    return normalizePreferences(JSON.parse(stored));
   } catch {
-    return DEFAULT_PREFERENCES;
+    return normalizePreferences(null);
   }
 }
 
@@ -77,11 +49,15 @@ export function getPreferences(): UserPreferences {
 export function savePreferences(prefs: Partial<UserPreferences>): void {
   if (typeof window === "undefined") return;
   const current = getPreferences();
-  const normalized = { ...prefs, ...(prefs.galaxySettings ? { galaxySettings: normalizeGalaxySettings(prefs.galaxySettings) } : {}), ...(prefs.cozeGlow ? { cozeGlow: normalizeCozeGlow(prefs.cozeGlow) } : {}) };
-  const updated = { ...current, ...normalized, cursorTrail: false };
+  const updated = normalizePreferences({ ...current, ...prefs });
+  // Sync only supplied, recognized fields; never send invalid raw values or other settings.
+  const normalized: Record<string, unknown> = {};
+  for (const key of Object.keys(prefs) as Array<keyof UserPreferences>) {
+    if (Object.prototype.hasOwnProperty.call(updated, key)) normalized[key] = updated[key];
+  }
   localStorage.setItem(preferencesKey(), JSON.stringify(updated));
   // 异步同步到服务端
-  savePrefsBatchToServer(normalized as Record<string, unknown>).catch(() => {});
+  savePrefsBatchToServer(normalized).catch(() => {});
 }
 
 // 重置偏好

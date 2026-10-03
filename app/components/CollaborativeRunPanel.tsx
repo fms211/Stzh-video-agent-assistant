@@ -2,6 +2,7 @@
 
 import SquishSwitch from "@/app/components/SquishSwitch";
 import { StudioContextTrace } from "./StudioContextTrace";
+import { DialogueLatticeLoader } from "./DialogueLatticeLoader";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { CircleDotDashed, Play, Send, ShieldCheck, Sparkles, XCircle } from "lucide-react";
@@ -27,6 +28,9 @@ export default function CollaborativeRunPanel(props: Props) {
 
 function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, signedIn, compact = false, onRunningChange, onInspection, draftValue, onDraftChange }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(signedIn);
+  const [catalogError, setCatalogError] = useState("");
   const [projectId, setProjectId] = useState("");
   const memoryExclusions = useRequestMemoryExclusions(projectId);
   const [localTask, setLocalTask] = useState("");
@@ -38,12 +42,16 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   const [events, setEvents] = useState<CollaborativeEvent[]>([]);
   const [roles, setRoles] = useState<AgentRole[]>([]);
   const [teamRoleIds, setTeamRoleIds] = useState<string[]>([]);
+  const [teamDataProject, setTeamDataProject] = useState("");
   const [teamReadyProject, setTeamReadyProject] = useState("");
   const [teamRevision, setTeamRevision] = useState(0);
   const [teamDirty, setTeamDirty] = useState(false);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
   const [historyRevision, setHistoryRevision] = useState(0);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const busy = useRef(false);
   const epoch = useRef(0);
   const inspectionProjectName = run ? projects.find(project => project.id === run.projectId)?.name || run.projectId : "";
@@ -64,22 +72,26 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   useEffect(() => {
     if (!signedIn) return;
     let current = true;
+    setCatalogLoading(true); setCatalogError("");
     void Promise.all([
       creativeApi<{ projects: Project[] }>("/api/creative-projects"),
       creativeApi<{ roles: AgentRole[] }>("/api/agent-roles"),
     ]).then(([projectData, roleData]) => {
       if (!current) return;
-      setProjects(projectData.projects); setProjectId(projectData.projects[0]?.id || ""); setRoles(roleData.roles);
-    }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : "读取项目与角色失败"); });
+      setProjects(projectData.projects); setProjectId(previous => previous || projectData.projects[0]?.id || ""); setRoles(roleData.roles);
+    }).catch(cause => { if (current) setCatalogError(cause instanceof Error ? cause.message : "读取项目与角色失败"); })
+      .finally(() => { if (current) setCatalogLoading(false); });
     return () => { current = false; };
-  }, [signedIn]);
+  }, [signedIn, catalogRevision]);
   useEffect(() => {
-    setTeamReadyProject(""); setTeamDirty(false);
-    if (!signedIn || !projectId) { setTeamRoleIds([]); return; }
+    setTeamReadyProject(""); setTeamError("");
+    if (!signedIn || !projectId) { setTeamRoleIds([]); setTeamDataProject(""); setTeamDirty(false); setTeamLoading(false); return; }
     let current = true;
-    void creativeApi<{ team: AgentRole[] }>(`/api/creative-projects/${projectId}/team`)
-      .then(({ team }) => { if (current) { setTeamRoleIds(team.map(role => role.id)); setTeamReadyProject(projectId); } })
-      .catch(cause => { if (current) setError(cause instanceof Error ? cause.message : "读取编队失败，请重新加载"); });
+    setTeamLoading(true);
+    void creativeApi<{ team: AgentRole[] }>(`/api/creative-projects/${encodeURIComponent(projectId)}/team`)
+      .then(({ team }) => { if (current) { setTeamRoleIds(team.map(role => role.id)); setTeamDataProject(projectId); setTeamReadyProject(projectId); setTeamDirty(false); } })
+      .catch(cause => { if (current) setTeamError(cause instanceof Error ? cause.message : "读取编队失败，请重新加载"); })
+      .finally(() => { if (current) setTeamLoading(false); });
     return () => { current = false; };
   }, [projectId, signedIn, teamRevision]);
 
@@ -91,7 +103,7 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   async function operate(job: (api: ReturnType<typeof captureCreativeApi>, current: () => boolean) => Promise<void>) {
     if (busy.current) return;
     if (!signedIn) { onAuthRequired(); return; }
-    busy.current = true; setRunning(true); setError("");
+    busy.current = true; setRunning(true); setError(""); setNotice("");
     const generation = epoch.current;
     const current = () => generation === epoch.current;
     try { await job(captureCreativeApi(), current); }
@@ -114,7 +126,7 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   });
   const saveInstruction = () => operate(async (api, current) => {
     const saved = await flush(api);
-    if (current()) { setRun(saved); setInstruction(saved?.finalInstruction || ""); }
+    if (current()) { setRun(saved); setInstruction(saved?.finalInstruction || ""); setNotice("最终指令已保存，仍需人工确认后才会加入生成队列。"); }
   });
   const readLatestKeepingDraft = () => operate(async (api, current) => {
     if (!run) return;
@@ -123,6 +135,8 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   });
   const execute = (existing?: AgentRun) => operate(async (api, current) => {
     const excludedMemoryIds = [...memoryExclusions.ids];
+    if (!existing && (catalogLoading || catalogError)) throw new Error("请先成功读取项目与角色，再开始讨论。");
+    if (!existing && projectId && teamReadyProject !== projectId) throw new Error("项目编队尚未读取成功，请先重新加载编队。");
     if (!existing && teamDirty) throw new Error("请先保存修改后的项目编队，再开始讨论");
     await flush(api);
     if (!current()) return;
@@ -155,8 +169,8 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   const start = (event: FormEvent) => { event.preventDefault(); if (task.trim()) void execute(); };
   const saveTeam = () => operate(async (api, current) => {
     if (!projectId || teamReadyProject !== projectId) return;
-    await api(`/api/creative-projects/${projectId}/team`, { method: "PUT", body: JSON.stringify({ team: teamRoleIds.map(roleId => ({ roleId })) }) });
-    if (current()) setTeamDirty(false);
+    await api(`/api/creative-projects/${encodeURIComponent(projectId)}/team`, { method: "PUT", body: JSON.stringify({ team: teamRoleIds.map(roleId => ({ roleId })) }) });
+    if (current()) { setTeamDirty(false); setNotice("项目编队已保存，之后的新讨论使用这份编队。"); }
   });
   const confirmAndDispatch = () => operate(async (api, current) => {
     if (!run || run.status !== "awaiting_confirmation" || !instruction.trim()) return;
@@ -167,8 +181,12 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   });
   const exportRun = () => {
     if (!run) return;
-    const blob = new Blob([exportCollaborativeRun(run, events, instruction)], { type: "text/markdown;charset=utf-8" });
-    saveFileDownload({ blob, filename: `协作记录-${run.id}.md` });
+    setError(""); setNotice("");
+    try {
+      const blob = new Blob([exportCollaborativeRun(run, events, instruction)], { type: "text/markdown;charset=utf-8" });
+      saveFileDownload({ blob, filename: `协作记录-${run.id}.md` });
+      setNotice("协作记录已交给浏览器保存，请在下载列表核对。");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "导出暂未完成，请重试。"); }
   };
 
   // Recover a running history entry with read-only requests; never restart it automatically.
@@ -188,15 +206,18 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
   }, [signedIn, running, run?.id, run?.status]);
 
   return <section className={`collab-panel${compact ? " collab-panel--compact" : ""}`} aria-label="多角色协作编排">
+    <style>{`.collab-panel__feedback{font-size:var(--text-label-size);line-height:var(--text-label-line);color:var(--text-muted);overflow-wrap:anywhere;margin:12px 0}.collab-panel__feedback p{margin:0 0 8px}.collab-panel__feedback button{min-height:40px;max-width:100%;white-space:normal}`}</style>
     {!compact && <div className="collab-panel__heading"><div><span><Sparkles size={14} /> 协作编排</span><h2>先把创作想清楚，再交给 Coze。</h2></div><div className="collab-panel__guard"><ShieldCheck size={16} /> 最终指令必须人工确认</div></div>}
     {signedIn && <CollaborativeRunHistory selectedId={run?.id} disabled={running} revision={historyRevision} onSelect={id => void openRun(id)} />}
+    {signedIn && catalogLoading && <p className="collab-panel__feedback" role="status">正在读取项目与角色…</p>}
+    {signedIn && catalogError && <div className="collab-panel__feedback" role="alert"><p>{catalogError}</p><button type="button" className="studio-context-action" disabled={running || catalogLoading} onClick={() => setCatalogRevision(value => value + 1)}>重新读取项目与角色</button></div>}
     <form onSubmit={start} className="collab-panel__form">
       <textarea disabled={running} className="collab-border-flow" value={task} onChange={event => setTask(event.target.value)} placeholder="描述这次要讨论的创作任务" aria-label="多角色协作任务" />
       <div className="collab-panel__controls">
-        <StudioSelect disabled={running || teamDirty} value={projectId} onChange={setProjectId} label="选择创作项目"
+        <StudioSelect disabled={running || teamDirty || (signedIn && (catalogLoading || Boolean(catalogError)))} value={projectId} onChange={value => { setProjectId(value); setNotice(""); }} label="选择创作项目"
           className="studio-select--collab-project" options={[{ value: "", label: "新建未命名项目" }, ...projects.map(project => ({ value: project.id, label: project.name }))]} />
         <div className="collab-panel__budgets">{budgetOptions.map(option => <label key={option.key} className={`collab-border-flow${budget === option.key ? " is-active" : ""}`}><input disabled={running} type="radio" name="budget" value={option.key} checked={budget === option.key} onChange={() => setBudget(option.key)} /><b>{option.label}</b><small>{option.copy}</small></label>)}</div>
-        <button type="submit" disabled={running || !task.trim()}>{running ? <CircleDotDashed className="spin" size={17} /> : <Play size={17} />}{signedIn ? "新建并开始讨论" : "登录后开始"}</button>
+        <button type="submit" disabled={running || !task.trim() || (signedIn && (catalogLoading || Boolean(catalogError) || teamDirty || Boolean(projectId && teamReadyProject !== projectId)))}>{running ? <CircleDotDashed className="spin" size={17} /> : <Play size={17} />}{signedIn ? "新建并开始讨论" : "登录后开始"}</button>
       </div>
     </form>
     {signedIn && <RequestMemoryExclusions key={`exclusions:${projectId}`} mode="collaboration" projectId={projectId} value={memoryExclusions.ids} onChange={memoryExclusions.setIds} disabled={running} />}
@@ -204,15 +225,20 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
     {signedIn && projectId && roles.length > 0 && <section className="collab-team" aria-label="项目编队">
       <header><h3>项目编队</h3><p>修改后请保存，已停用角色不参与新运行。</p></header>
       <div className="collab-team__roles">{roles.map(role => <label key={role.id} className={`collab-team__role${role.enabled ? "" : " is-disabled"}`}>
-        <SquishSwitch disabled={running || teamReadyProject !== projectId || (!role.enabled && !teamRoleIds.includes(role.id))} checked={teamReadyProject === projectId && teamRoleIds.includes(role.id)} onChange={() => { setTeamDirty(true); setTeamRoleIds(current => current.includes(role.id) ? current.filter(id => id !== role.id) : [...current, role.id]); }} />
+        <SquishSwitch disabled={running || teamReadyProject !== projectId || (!role.enabled && !teamRoleIds.includes(role.id))} checked={teamDataProject === projectId && teamRoleIds.includes(role.id)} onChange={() => { setTeamDirty(true); setNotice(""); setTeamRoleIds(current => current.includes(role.id) ? current.filter(id => id !== role.id) : [...current, role.id]); }} />
         <span>{role.name}</span>{!role.enabled && <small>已停用，可移出</small>}
       </label>)}</div>
       <div className="collab-team__actions"><button type="button" className="studio-context-action studio-context-action--primary" onClick={() => void saveTeam()} disabled={running || teamReadyProject !== projectId}>保存编队</button>{teamDirty && <button type="button" className="studio-context-action" disabled={running} onClick={() => setTeamRevision(value => value + 1)}>放弃编队修改</button>}</div>
     </section>}
-    {signedIn && projectId && teamReadyProject !== projectId && <button type="button" disabled={running} onClick={() => setTeamRevision(value => value + 1)}>重新加载编队</button>}
+    {signedIn && projectId && teamLoading && <p className="collab-panel__feedback" role="status">正在读取项目编队…</p>}
+    {signedIn && projectId && teamError && <div className="collab-panel__feedback" role="alert"><p>{teamError}</p>{teamDirty && <p>本地编队修改仍保留；重新加载成功后会替换为服务器版本。</p>}<button type="button" className="studio-context-action" disabled={running || teamLoading} onClick={() => setTeamRevision(value => value + 1)}>重新加载编队</button></div>}
     {error && <p className="collab-panel__error" role="alert"><XCircle size={14} /> {error}</p>}
+    {notice && <p className="collab-panel__feedback" role="status">{notice}</p>}
+    {running && (!run || !["running", "queued"].includes(run.status)) && <DialogueLatticeLoader label="正在处理协作请求…" />}
     {run && <div className="collab-result">
-      <div className="collab-result__status" role="status">{collaborativeStatus(run)}</div>
+      {["running", "queued"].includes(run.status)
+        ? <DialogueLatticeLoader className="collab-result__status" label={collaborativeStatus(run)} />
+        : <div className="collab-result__status" role="status">{collaborativeStatus(run)}</div>}
       <p className="collab-run-task">{run.task}</p>
       {run.error && <p role="alert">{run.error}</p>}
       <div className="collab-history__toolbar">
@@ -226,7 +252,7 @@ function CollaborativeRunView({ currentConstraints, onDispatch, onAuthRequired, 
       {run.currentConstraints && Object.keys(run.currentConstraints).length > 0 && <details><summary>创建时创作参数</summary><p>以下参数随本次运行保存；修改顶部参数只影响新讨论。</p><dl>{Object.entries(run.currentConstraints).map(([key,value])=><div key={key}><dt>{({style:"风格",camera:"运镜",composition:"构图",duration:"时长（秒）",aspect:"画幅"} as Record<string,string>)[key] || key}</dt><dd>{value}</dd></div>)}</dl></details>}
       {events.filter(event => event.type === "context.prepared").map(event => <StudioContextTrace key={event.id} trace={event.payload} label={event.payload.stage ? `${event.payload.stage} · 上下文` : "角色上下文"} />)}
       {events.length > 0 && <details className="collab-result__timeline"><summary>运行事件 · {events.length} 条</summary>{events.map(event => <article key={event.id}><b>{event.payload.stage || event.type}</b><pre>{event.payload.output || JSON.stringify(event.payload, null, 2)}</pre></article>)}</details>}
-      <label>最终指令<textarea value={instruction} onChange={event => setInstruction(event.target.value)} disabled={running || run.status !== "awaiting_confirmation"} /></label>
+      <label>最终指令<textarea value={instruction} onChange={event => { setInstruction(event.target.value); setNotice(""); }} disabled={running || run.status !== "awaiting_confirmation"} /></label>
       {instruction !== (run.finalInstruction || "") && <div className="collab-history__toolbar"><button type="button" disabled={running} onClick={() => void readLatestKeepingDraft()}>读取最新版本，保留当前编辑</button><button type="button" disabled={running} onClick={() => setInstruction(run.finalInstruction || "")}>放弃当前编辑</button><details><summary>对照服务器已保存指令</summary><p className="collab-run-task">{run.finalInstruction || "尚无指令"}</p></details></div>}
       {run.status === "awaiting_confirmation" && <div className="collab-history__toolbar"><button type="button" disabled={running || instruction === (run.finalInstruction || "")} onClick={() => void saveInstruction()}>保存最终指令</button><span>{instruction === (run.finalInstruction || "") ? "已保存" : "有未保存修改，切换记录前会先保存"}</span></div>}
       <div className="collab-result__notes"><p><b>决策依据</b>{run.rationale || "尚无记录"}</p><p><b>风险/未决项</b>{run.risks || "尚无记录"}</p></div>
