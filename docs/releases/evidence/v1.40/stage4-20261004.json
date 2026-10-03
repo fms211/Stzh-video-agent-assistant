@@ -50,7 +50,12 @@
   "originalData": {
     "historyCount": 9,
     "unchanged": true,
-    "integrity": "ok"
+    "integrity": "ok",
+    "httpLoginVerified": true,
+    "identityConfirmed": true,
+    "conversationApiCount": 9,
+    "galleryCount": 0,
+    "browserUiLoginVerified": false
   },
   "dependencyAudit": {
     "beforeAll": {
@@ -85,5 +90,21 @@
     "Electron native ABI and installer",
     "live model discovery and answer-quality comparison/enforcement",
     "final user acceptance and main-branch merge"
-  ]
+  ],
+  "verifiedCodeCommit": "5090f07",
+  "github": {
+    "pullRequest": "https://github.com/fms211/Stzh-video-agent-assistant/pull/1",
+    "draft": true,
+    "merged": false
+  },
+  "physicalTouch": {
+    "available": false,
+    "userConfirmed": "暂无",
+    "verified": false
+  },
+  "providerDns": {
+    "verified": "2026-10-04",
+    "publicResolutionAvailable": false,
+    "liveModelTestsRun": false
+  }
 }
