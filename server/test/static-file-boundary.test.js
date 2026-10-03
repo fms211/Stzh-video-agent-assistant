@@ -19,6 +19,11 @@ fs.writeFileSync(path.join(privateRoot, "marker.txt"), privateMarker);
 fs.writeFileSync(path.join(publicRoot, "asset.txt"), publicMarker);
 fs.writeFileSync(path.join(publicRoot, "中文 空格.txt"), publicMarker);
 fs.writeFileSync(path.join(publicRoot, "index.html"), spaMarker);
+fs.writeFileSync(path.join(publicRoot, "login.html"), "EXPORTED_LOGIN_PAGE");
+fs.writeFileSync(path.join(publicRoot, "register.html"), "EXPORTED_REGISTER_PAGE");
+fs.mkdirSync(path.join(publicRoot, "guide"));
+fs.writeFileSync(path.join(publicRoot, "guide", "index.html"), "EXPORTED_DIRECTORY_PAGE");
+fs.writeFileSync(path.join(privateRoot, "login.html"), privateMarker);
 fs.mkdirSync(path.join(publicRoot, "inner"));
 fs.writeFileSync(path.join(publicRoot, "inner", "asset.txt"), publicMarker);
 fs.symlinkSync(privateRoot, path.join(publicRoot, "outside-link"), process.platform === "win32" ? "junction" : "dir");
@@ -105,4 +110,26 @@ test("SPA fallback works while API authentication and write methods retain their
   const write = await request("/asset.txt", "POST");
   assert.equal(write.status, 404);
   assert.ok(!write.body.includes(publicMarker));
+});
+
+
+test("exported auth and directory pages use their own HTML, including slash and HEAD requests", async () => {
+  for (const [route, marker] of [["/login", "EXPORTED_LOGIN_PAGE"], ["/login/", "EXPORTED_LOGIN_PAGE"], ["/register", "EXPORTED_REGISTER_PAGE"], ["/guide", "EXPORTED_DIRECTORY_PAGE"], ["/guide/", "EXPORTED_DIRECTORY_PAGE"]]) {
+    const response = await request(route);
+    assert.equal(response.status, 200);
+    assert.equal(response.body, marker, route);
+  }
+  assert.deepEqual(await request("/login", "HEAD"), { status: 200, body: "" });
+  const outside = await request("/outside-link/login");
+  assert.equal(outside.status, 404);
+  assert.ok(!outside.body.includes(privateMarker));
+});
+
+test("missing assets and private filenames never receive the SPA document", async () => {
+  for (const route of ["/_next/static/missing.js", "/missing.png", "/server/.env.local", "/.env.local", "/package.json", "/server/stzh.db"]) {
+    const response = await request(route);
+    assert.equal(response.status, 404, route);
+    assert.ok(!response.body.includes(spaMarker), route);
+    assert.ok(!response.body.includes(privateMarker), route);
+  }
 });

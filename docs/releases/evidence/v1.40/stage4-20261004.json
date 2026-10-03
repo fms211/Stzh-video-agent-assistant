@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-04",
+  "version": "1.40.0",
+  "source": "b11c3fb development branch plus batch60 dependency and static-route patch",
+  "platform": "Windows x64",
+  "node": "25.9.0",
+  "npm": "11.12.1",
+  "cleanClone": {
+    "rootCi": true,
+    "serverCi": true,
+    "newRandomSecrets": true,
+    "originalDatabaseUsed": false,
+    "initialApiRequests": 42,
+    "restartRequests": 5,
+    "testedAccounts": 2,
+    "testedProjects": 4
+  },
+  "codeRegression": {
+    "frontend": {
+      "passed": 650,
+      "failed": 0
+    },
+    "backend": {
+      "passed": 379,
+      "failed": 0
+    },
+    "relatedStaticAndOriginalEntry": {
+      "passed": 16,
+      "includedInBackend": true
+    }
+  },
+  "build": {
+    "next": "16.3.8",
+    "webpackPassed": true,
+    "candidateBuilds": 2,
+    "reason": "second build after removal of unused PPT dependencies"
+  },
+  "staticSmoke": {
+    "cloneAndOriginalPassed": true,
+    "resourcesMatched": 21,
+    "loginRegisterPagesMatched": true,
+    "privateFile404Checks": 4,
+    "nativeSqlite": true
+  },
+  "sourceVerification": {
+    "canonicalBuildInputsMatched": 250,
+    "generatedNextEnvExcluded": true,
+    "currentInputsIncludingBackendPatch": 252
+  },
+  "originalData": {
+    "historyCount": 9,
+    "unchanged": true,
+    "integrity": "ok"
+  },
+  "dependencyAudit": {
+    "beforeAll": {
+      "total": 35,
+      "critical": 2
+    },
+    "beforeProductionTree": {
+      "total": 11,
+      "critical": 1
+    },
+    "afterAll": {
+      "high": 16,
+      "critical": 0
+    },
+    "afterProductionTree": {
+      "total": 0
+    },
+    "serverTree": {
+      "total": 0
+    },
+    "remainingScope": "Electron/build/lint tooling; not full security acceptance"
+  },
+  "modelCalls": 0,
+  "mediaCalls": 0,
+  "mediaExecutorEnabled": false,
+  "contextMode": "shadow",
+  "browserVisualChecksThisBatch": false,
+  "unverified": [
+    "complete visual/error/keyboard/theme matrix",
+    "physical touch/IME/system color picker",
+    "other OS and Node versions",
+    "Electron native ABI and installer",
+    "live model discovery and answer-quality comparison/enforcement",
+    "final user acceptance and main-branch merge"
+  ]
+}

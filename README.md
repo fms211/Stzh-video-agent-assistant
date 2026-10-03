@@ -78,10 +78,10 @@ Web / Electron / Expo clients
 
 | Layer | Technology and purpose |
 |---|---|
-| Web | Next.js **16.2.4** static export, React **19.2.4**, TypeScript, Tailwind CSS 4; React Aria Components and Lucide |
+| Web | Next.js **16.3.8** static export, React **19.2.4**, TypeScript, Tailwind CSS 4; React Aria Components and Lucide |
 | Visuals / content | Motion, GSAP / @gsap/react; Three.js, React Three Fiber / Drei, OGL; react-markdown, remark-gfm, rehype-highlight / sanitize. React Bits / Aceternity are visual and attributed implementation references |
 | Backend / security / data | Node.js, Express 5, CORS, dotenv; SQLite / better-sqlite3, JWT / jsonwebtoken, bcryptjs, Node crypto AES-256-GCM; Multer uploads, ws realtime, Undici HTTP |
-| Orchestration / plugins / export | @langchain/langgraph state graphs, custom TaskRuntime and research runtime, plugin subprocesses; AJV contracts, semver / tar / yauzl packages; docx, pptxgenjs / pptx-automizer, qrcode document and pairing capabilities |
+| Orchestration / plugins / export | @langchain/langgraph state graphs, custom TaskRuntime and research runtime, plugin subprocesses; AJV contracts, semver / tar / yauzl packages; qrcode pairing; the repository report script uses docx, which is not a Web DOCX/PPT export feature |
 | Downstream | Coze Bot / Workflow APIs, OpenAI-compatible and Anthropic Messages providers; research search/page-reading depends on configured adapters or plugins and their quotas |
 | Optional RAG | Python, FastAPI / Uvicorn, ChromaDB, Sentence Transformers / BAAI bge-large-zh-v1.5; pandas, openpyxl, python-docx; retrieval, Wiki organization, configured MQE / HyDE |
 | Desktop / mobile | Electron 35, electron-builder; Expo 56, React Native 0.85, Expo Router, AsyncStorage, WebView, camera/notification/gesture/safe-area components and Capacitor Android dependencies. Source availability is not installer or mobile acceptance |
@@ -91,10 +91,10 @@ All direct dependencies and exact versions: [Web](package.json), [server](server
 
 ## Clone, configure and run
 
-Requires Git and npm; **Node.js 22.18+ is recommended** (local acceptance uses 25.9.0; a clean-clone installation was not tested in this batch); Python is only needed for RAG. SQLite is a native dependency: installation may require a matching Node/platform toolchain.
+Current phase-four setup uses the draft development branch below; main retains the published milestone. Requires Git and npm; **Node.js 22.18+ is recommended** (clean-clone acceptance uses 25.9.0 on Windows; other environments remain unverified); Python is only needed for RAG. SQLite is a native dependency: installation may require a matching Node/platform toolchain.
 
 ```bash
-git clone https://github.com/fms211/Stzh-video-agent-assistant.git
+git clone --branch fms688/v1.40 https://github.com/fms211/Stzh-video-agent-assistant.git
 cd Stzh-video-agent-assistant
 npm ci
 npm --prefix server ci
@@ -177,7 +177,7 @@ Electron needs `server/native/electron-v<ABI>/` bindings, not the Node SQLite bi
 
 ## Development status, regression, smoke and remaining work
 
-**Current progress (2026-10-04, batch 59):** Fixed the squeezed plugin-project label, stale settings scroll position after category changes, and square native color swatches. Updated plugins, glow and loader in the 23-image set; the other 20 retain their batch-57 provenance. 33 focused regressions and one build passed. Submission checks: backend 377/377; frontend initially 649/650, then 11/11 focused checks passed after fixing the obsolete event fixture, without rerunning the full frontend suite. Limited browser evidence for three plugin viewport widths and settings/swatches. The restored 18080 preview matches 251 build inputs, HTML and 21 resources; all nine existing histories are preserved and media execution is disabled. Live model discovery, memory effects/enforcement and independent answer-quality review, physical devices, remaining visual/error/keyboard combinations, clean installation and final main-branch delivery remain open. [Draft PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1) contains the uploaded development branch; it is not merged. Stage four needs user acceptance. [Batch notes](更新md/2026-10-04-59-插件标签与设置色盘细节修复.md) · [Capture scope](docs/releases/images/v1.40/current-web/README.md) · [Scope ledger](docs/knowledge/stage4-completion-ledger-20261003.md).
+**Current progress (2026-10-04, batch 60):** Clean-clone installation, 650 frontend/379 backend regressions, the final build and static startup checks passed. Fixed direct login/register routing and missing-resource fallback. Next is 16.3.8; unused PPT dependencies were removed. Production-tree audit: 0; full-tree audit: 16 high tooling findings remain, so this is not full security acceptance. An isolated two-account/four-project smoke covered 42 requests and 5 restart checks. Updated 18080 preserves nine original histories. Full UI combinations, physical touch, live model/memory evaluation and enforcement, tooling upgrades and user acceptance remain open. [Batch notes](更新md/2026-10-04-60-干净克隆与依赖安全启动修复.md) · [Evidence summary](docs/releases/evidence/v1.40/stage4-20261004.json) · [Draft PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1), not merged into main.
 
 **The table below records the 2026-10-01 release snapshot only. It does not cover the uncommitted 2026-10-03 changes.**
 

@@ -366,6 +366,15 @@ app.use((req, res, next) => {
     if (requestPath !== "/" && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       return sendOutput(filePath);
     }
+    // Missing assets/private filenames must not masquerade as the SPA document.
+    if (requestPath.startsWith("/_next/") || path.extname(requestPath)) return notFound();
+    // Next export can emit /login.html or /login/index.html. Keep every alias
+    // inside the same real output directory, including symlink checks.
+    for (const pagePath of [`${filePath}.html`, path.join(filePath, "index.html")]) {
+      if (isWithin(outputRoot, pagePath) && fs.existsSync(pagePath) && fs.statSync(pagePath).isFile()) {
+        return sendOutput(pagePath);
+      }
+    }
     const indexPath = path.join(outputRoot, "index.html");
     return fs.existsSync(indexPath) ? sendOutput(indexPath) : notFound();
   } catch (error) {

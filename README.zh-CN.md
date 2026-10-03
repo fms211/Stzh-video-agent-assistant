@@ -78,10 +78,10 @@ Web / Electron / Expo 客户端
 
 | 层次 | 技术与用途 |
 |---|---|
-| Web | Next.js **16.2.4**静态导出、React **19.2.4**、TypeScript、Tailwind CSS 4；React Aria Components交互、Lucide图标 |
+| Web | Next.js **16.3.8**静态导出、React **19.2.4**、TypeScript、Tailwind CSS 4；React Aria Components交互、Lucide图标 |
 | 视觉 / 内容 | Motion、GSAP / @gsap/react；Three.js、React Three Fiber / Drei、OGL；react-markdown、remark-gfm、rehype-highlight / sanitize。React Bits / Aceternity为视觉及注明来源的实现参考 |
 | 后端 / 安全 / 数据 | Node.js、Express 5、CORS、dotenv；SQLite / better-sqlite3、JWT / jsonwebtoken、bcryptjs、Node crypto AES-256-GCM；Multer上传、ws实时通信、Undici HTTP |
-| 编排 / 插件 / 导出 | @langchain/langgraph状态图，自有TaskRuntime、研究运行时及插件子进程；AJV契约、semver / tar / yauzl版本归档；docx、pptxgenjs / pptx-automizer、qrcode文档、演示与配对能力 |
+| 编排 / 插件 / 导出 | @langchain/langgraph状态图，自有TaskRuntime、研究运行时及插件子进程；AJV契约、semver / tar / yauzl版本归档；qrcode；docx用于仓库报告脚本，并非Web的DOCX/PPT导出功能文档、演示与配对能力 |
 | 下游 | Coze Bot / Workflow API、OpenAI兼容和Anthropic Messages多厂商模型；搜索、网页读取等研究工具依赖具体适配器或插件及各自配额 |
 | 可选 RAG | Python、FastAPI / Uvicorn、ChromaDB、Sentence Transformers / BAAI bge-large-zh-v1.5；pandas、openpyxl、python-docx；检索、Wiki式组织、MQE / HyDE按配置启用 |
 | 桌面 / 手机 | Electron 35、electron-builder；Expo 56、React Native 0.85、Expo Router、AsyncStorage、WebView、相机／通知／手势／安全区组件，含Capacitor安卓依赖。源码存在不等于本版安装包或手机已验收 |
@@ -91,10 +91,10 @@ Web / Electron / Expo 客户端
 
 ## 克隆、配置与启动
 
-需要Git和npm，推荐Node.js **22.18+**（本机验收使用25.9.0；本轮未实测全新克隆安装）；Python仅RAG需要。SQLite为原生依赖，安装失败需匹配Node版本和平台编译环境。
+需要Git与npm；推荐 **Node.js22.18+**，本批干净克隆实际使用Windows x64/Node25.9.0，其他环境未验证；根项目最低版本20.9.0。Python仅用于可选RAG。SQLite是原生依赖，安装可能需要匹配的编译工具链。当前阶段四按下方开发分支验证；main保留已发布阶段成果。
 
 ```bash
-git clone https://github.com/fms211/Stzh-video-agent-assistant.git
+git clone --branch fms688/v1.40 https://github.com/fms211/Stzh-video-agent-assistant.git
 cd Stzh-video-agent-assistant
 npm ci
 npm --prefix server ci
@@ -177,7 +177,7 @@ Electron需 `server/native/electron-v<ABI>/`绑定，不能以Node二进制替�
 
 ## 进度、回归、冒烟与待办
 
-**当前进度（2026-10-04，第59批）**：修复插件项目标签挤排、设置分类切换保留旧滚动位置、原生色盘直角边；更新23张展示图中的插件、辉光、等待3张，其余20张保留57批来源。相关33项回归及一次构建通过；提交前后端377/377，前端首次649/650、夹具补修后相关11/11（未重跑全量）。插件1440/960/390布局及设置切换/色盘有局部页面证据。18080已恢复并匹配251份构建源、HTML及21项资源，现有9条历史完整保留，媒体关闭。真实模型列表、四模式记忆效果/启用与独立答案质量复核、实体设备、剩余视觉/错误/键盘组合、清洁安装及最终主分支交付仍未全部完成；已上传开发分支并建立[草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)，尚未合并，阶段四需用户满意确认。[本批记录](更新md/2026-10-04-59-插件标签与设置色盘细节修复.md) · [截图范围](docs/releases/images/v1.40/current-web/README.md) · [完成清单](docs/knowledge/stage4-completion-ledger-20261003.md)。
+**当前进度（2026-10-04，第60批）**：干净克隆的前后端安装、650项前端/379项后端回归、最终构建与静态启动核对通过；修复直接登录/注册路径及缺失资源回退。Next升级16.3.8，移除无调用入口的PPT辅助依赖：生产依赖树审计0项，全部依赖仍有16项高危工具链问题，不能称全面安全通过。隔离双账号/四项目42项请求及重启5项检查通过；18080已更新，9条原历史保留。剩余完整UI组合、真实触屏、模型列表/记忆效果与启用、工具链升级和用户确认未完。[本批记录](更新md/2026-10-04-60-干净克隆与依赖安全启动修复.md) · [验收摘要](docs/releases/evidence/v1.40/stage4-20261004.json) · [草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)，尚未合并main。
 
 **下表仅为2026-10-01的1.40历史快照记录，不覆盖2026-10-03的未提交修改。**
 
