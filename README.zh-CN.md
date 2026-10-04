@@ -116,6 +116,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 JWT_SECRET=填入第一项随机结果
 STZH_LLM_ENCRYPTION_KEY=填入第二项随机结果
 PORT=8080
+STZH_MEDIA_EXECUTOR_ENABLED=0
 # 真实Coze执行才需以下项；密钥不要放进NEXT_PUBLIC变量
 # COZE_API_TOKEN=你的令牌
 # COZE_BOT_ID=已发布Bot的ID
@@ -131,7 +132,7 @@ npm --prefix server start
 npm run dev
 ```
 
-本机验收原账号与历史时，可在服务端环境设置 `STZH_MEDIA_EXECUTOR_ENABLED=0` 后启动；此进程不领取 `video.generate` 任务，也不启动该执行器的附件清理定时器。支持 `0/false/off` 关闭、`1/true/on` 开启；未设置沿用原启动方式，无Coze配置仍禁用，非法值禁用并显示原因。该开关只控制此进程启动，不会取消运行中的任务或停止其他进程；单助手、研究及插件仍需分别控制调用。变更后需重启对应服务。
+本机验收原账号与历史时，必须在服务端环境设置 `STZH_MEDIA_EXECUTOR_ENABLED=0` 后启动；此进程不领取 `video.generate` 任务，也不启动该执行器的附件清理定时器。支持 `0/false/off` 关闭、`1/true/on` 开启；未设置沿用原启动方式，无Coze配置仍禁用，非法值禁用并显示原因。该开关只控制此进程启动，不会取消运行中的任务或停止其他进程；单助手、研究及插件仍需分别控制调用。变更后需重启对应服务。
 
 天气为可选功能：仅在`server/.env.local`设置`QWEATHER_API_HOST`、`QWEATHER_API_KEY`、`QWEATHER_LOCATION`与`QWEATHER_CITY`，浏览器只读取`/api/weather`。未配置时显示“天气暂不可用”。旧前端密钥已公开，须由拥有者撤销并换新；本机验收禁用天气出站，本轮未做真实天气服务验收。
 
@@ -179,18 +180,22 @@ Electron需 `server/native/electron-v<ABI>/better_sqlite3.node` 绑定，不能�
 
 ## 进度、检查与待办
 
-**当前进度（2026-10-04，第61批）**：修复工作流字段/操作区与读屏名称，天气凭据改服务端持有，限定Tailwind应用源码扫描后干净/增量构建通过。后端390通过；前端首轮652/656，相关生命周期4项及天气/真实解析器7项复测通过，未再跑全量。独立浏览器完成45主题/页/宽度几何、6组工作流文字布局及频率图30秒稳定检查，原9条历史保持。正式复审/交接、真实模型与记忆启用、触屏/剩余UI状态、工具链15高危、旧天气key撤销与用户/主分支确认尚缺。[本批记录](更新md/2026-10-04-61-工作流排版与天气凭据保护.md) · [草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)。
+**2026-10-04**：历史清理已阻止迟到正文、列表和上传确认恢复已删记录。main技术说明已协调合入开发分支，草稿PR冲突已消除、尚未合并main。已提供普通前后端复查和开发交接；安全插件正式报告封存失败，不能作为验收通过结果。
 
-**下表仅为2026-10-01的1.40历史快照记录，不覆盖2026-10-03的未提交修改。**
+| 最新检查 | 实际范围/结果 |
+|---|---|
+| 相关回归 | **43/43通过**，含5项删除竞态；未宣称最终全量重跑 |
+| 构建 | 生产及同源Webpack预览构建通过；首个默认产物含开发API地址，没有部署它 |
+| 接口冒烟 | 独立本机合成数据库 **26项通过**，无真实模型/媒体调用 |
+| 浏览器冒烟 | 五页1440/960/390共15组根布局；四模式、Escape焦点、刷新登录通过，代表截图复查 |
+| 原库预览 |18080已更新，HTML及21资源与冻结构建一致；原9条历史不变、数据库完整性ok、媒体关闭 |
 
-可复现源码命令：`npm run build`、`npm run lint`、`npm run test:p0`（前端后接后端），或 `npm --prefix server test`。已跟踪只读冒烟脚本需要另配隔离环境与测试账号；完整条件见[验证指南](docs/TESTING.md)。本次统一文档更新核对源码、链接、路径、命令与配置，未重新执行业务全量回归、构建或付费外部调用。
+[交接与各部分状态](docs/handoffs/stage4-web-20261004.md) · [普通复查与工具故障](docs/reviews/stage4-web-20261004.md) · [本轮公开证据](docs/releases/evidence/v1.40/stage4-20261004-closeout.json) · [草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)。
 
-复现：`npm run build -- --webpack`、`npm run test:p0`（前端后接后端）；单独后端 `npm --prefix server test`。只读冒烟 `scripts/stage4-readonly-smoke.cjs`需另配隔离预览与 `STZH_SMOKE_BASE`、`STZH_SMOKE_USER`、`STZH_SMOKE_PASSWORD`，不会自动创建环境。见[页面证据](docs/releases/evidence/v1.40/browser-smoke.json)、[接口证据](docs/releases/evidence/v1.40/api-smoke.json)、[详细验收](docs/releases/v1.40.zh-CN.md)。旧证据对应上述历史快照；本轮命令、失败复测与环境边界见上述逐批记录。不要在媒体执行器开启的生产环境直接运行验收脚本。
+此前全量计数及更广主题/文字检查按各批范围保留在[61批](更新md/2026-10-04-61-工作流排版与天气凭据保护.md)和历史发布记录，不与本轮相加。复现：`npm run build -- --webpack`、`npm run test:p0`，或`npm --prefix server test`。只读冒烟需另配隔离环境和测试账号，见[验证指南](docs/TESTING.md)；不能指向媒体执行器开启的生产环境。
 
-- **待联调**：真实模型列表、生产Coze权限／配额、StylePromptMaster和LinkReader等工具；曾遇鉴权、限流与网络安全拦截，不能标全通过。
-- **媒体链路状态**：用户确认此前两条混剪链路成功生成；连贯模式在Coze底层试用成功，本轮未完成生成是额度不足，不能据此判定功能不可用。本轮未重新核验这些历史结果，也未调用视频或付费媒体接口；画廊记录存在、链接有效和当前可播放须分别验证。
-- **待跨设备**：实体触屏、OS原生字体放大、200%文字的剩余状态/主题组合、真实IME确认键和真实厂商验证成功时辉光。
-- **待交付完善**：手机阶段五、新Electron安装包、生产部署验收、RAG路径可移植化和真实语料。插件／研究按服务分别验收，本轮UI不能代替全部第三方链路。
+- **仍未完成**：真实模型发现、Coze权限/配额和第三方工具；默认shadow下的记忆独立质量与enforce灰度；实体触屏/IME/原生字号及剩余UI状态；工具链15项高危、旧天气凭据撤销、生产/Electron/手机交付及用户确认。阶段四仍在继续。
+- **媒体事实**：用户确认此前两条混剪链路成功生成，连贯模式曾在Coze底层试用成功；后续未生成因额度不足，不能据此说功能坏了。本轮没有重新核验这些历史结果。画廊有记录、链接有效和当前播放须分别验证；视频和付费媒体调用继续排除。
 
 ## 代码导航与许可
 

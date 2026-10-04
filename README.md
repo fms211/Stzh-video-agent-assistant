@@ -116,6 +116,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 JWT_SECRET=first-generated-value
 STZH_LLM_ENCRYPTION_KEY=second-generated-value
 PORT=8080
+STZH_MEDIA_EXECUTOR_ENABLED=0
 # Only needed for real Coze execution; never put secrets in NEXT_PUBLIC variables
 # COZE_API_TOKEN=your-token
 # COZE_BOT_ID=your-published-bot-id
@@ -179,18 +180,22 @@ Electron requires a matching SQLite binding under server/native/electron-v<ABI>/
 
 ## Development status, checks and remaining work
 
-**Current progress (2026-10-04, batch 61):** Fixed workflow field/action layout and accessible labels, moved optional weather credentials to the server, and scoped Tailwind scanning to application sources for stable clean/incremental builds. Backend 390 passed; frontend initial 652/656, followed by 4 lifecycle and 7 weather/resolver checks passing without another full run. Independent-browser checks covered 45 theme/page/width geometries, six workflow text/layout cases and30-second chart stability. Nine original histories are preserved. Full final review/handoff, live model/memory verification, touch/remaining UI states, tooling15 high findings, legacy weather-key revocation and user/main acceptance remain open. [Batch notes](更新md/2026-10-04-61-工作流排版与天气凭据保护.md) · [Draft PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1).
+**2026-10-04:** History cleanup now rejects late message/list/upload responses. Main's technical guides have been reconciled into the development branch; draft PR #1 has no merge conflict and remains unmerged. Ordinary frontend/backend review and a developer handoff are provided. The formal security-plugin report failed to seal and is not an acceptance result.
 
-**The table below records the 2026-10-01 release snapshot only. It does not cover the uncommitted 2026-10-03 changes.**
+| Latest check | Actual scope/result |
+|---|---|
+| Focused regression | **43/43 passed**, including five deletion-race cases; no new full-suite claim |
+| Build | Production and same-origin Webpack preview builds passed; the initial default build contained a development API URL and was not deployed |
+| API smoke | **26 passed** on a separate synthetic local database; no real model/media calls |
+| Browser smoke | Five pages at1440/960/390:15 root layout checks; four modes, Escape focus and authenticated refresh passed; representative screenshots reviewed |
+| Original preview |18080 updated; HTML and21 static resources match the frozen build; nine histories unchanged, database integrity ok, media executor off |
 
-Reproducible source commands: `npm run build`, `npm run lint`, `npm run test:p0` (frontend followed by backend), or `npm --prefix server test`. The tracked read-only smoke script requires a separately prepared isolated environment and test account; see [validation guide](docs/TESTING.md). This documentation update checks source, links, paths, commands and configuration; it does not rerun full business regression, builds or paid external calls.
+[Handoff and module status](docs/handoffs/stage4-web-20261004.md) · [Ordinary review and tool failure](docs/reviews/stage4-web-20261004.md) · [Current evidence](docs/releases/evidence/v1.40/stage4-20261004-closeout.json) · [Draft PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1).
 
-Reproduce code checks with `npm run build -- --webpack` and `npm run test:p0` (frontend then backend); backend only: `npm --prefix server test`. Read-only smoke `scripts/stage4-readonly-smoke.cjs` needs a separately prepared isolated preview plus `STZH_SMOKE_BASE`, `STZH_SMOKE_USER`, `STZH_SMOKE_PASSWORD`; it does not create the environment. [UI evidence](docs/releases/evidence/v1.40/browser-smoke.json), [API evidence](docs/releases/evidence/v1.40/api-smoke.json), [full acceptance notes](docs/releases/v1.40.en.md). Those artifacts cover the historical snapshot. The latest dated batch records contain current commands, failure retests and environment limits; do not run acceptance scripts on a production service with media execution enabled.
+Earlier test counts and wider theme/text checks retain their dated scope in [batch61](更新md/2026-10-04-61-工作流排版与天气凭据保护.md) and the historical release notes. Reproduce with `npm run build -- --webpack`, `npm run test:p0`, or `npm --prefix server test`. Read-only smoke needs a separately prepared local environment and test credentials: [validation guide](docs/TESTING.md). Do not run it against a production service with media execution enabled.
 
-- **Pending integrations:** real provider model lists, production Coze permissions/quota, StylePromptMaster and LinkReader tools; authentication, rate limits and network security blocks prevent an all-passed claim.
-- **Media history:** the user confirms two earlier montage chains generated successfully and coherent mode worked in the underlying Coze service. The later coherent-mode run lacked quota; this does not establish a broken feature. These historical outcomes were not reverified in this round. Video and paid-media calls remain excluded; gallery records, valid links and current playback require separate checks.
-- **Pending device checks:** physical touch, OS-native font scaling, remaining state/theme combinations at 200% text size, real IME confirmation and glow after actual provider verification.
-- **Pending delivery:** mobile phase five, a new Electron installer, production deployment acceptance, portable RAG paths and real-corpus checks. Research/plugins require per-service acceptance; local UI checks do not validate every third-party workflow.
+- **Still open:** real provider discovery, Coze permissions/quota and third-party tools; default memory shadow, independent answer-quality checks and enforce rollout; physical touch/IME/native text scaling and uncovered UI states;15 high tooling audit entries, legacy weather-key revocation, production/Electron/mobile delivery and user acceptance. Phase four remains in progress.
+- **Media history:** the user confirms two earlier montage chains generated successfully and coherent mode worked in the underlying Coze service. The later run lacked quota; this is not evidence of a broken feature. Those outcomes were not reverified this round. Gallery records, link validity and playback require separate checks. Video and paid-media calls remain excluded.
 
 ## Source map and licensing
 

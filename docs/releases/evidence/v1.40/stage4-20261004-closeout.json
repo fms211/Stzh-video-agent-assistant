@@ -1,0 +1,166 @@
+{
+  "checkedAt": "2026-10-04T02:48:39.375Z",
+  "sourceCommit": "ee26e7b",
+  "documentationMerge": "c397653",
+  "version": "1.40.0",
+  "focusedRegression": {
+    "passed": 43,
+    "total": 43
+  },
+  "build": {
+    "productionPassed": true,
+    "sameOriginWebpackPassed": true,
+    "developmentApiUrlFiles": 0
+  },
+  "originalPreview": {
+    "httpStatus": 200,
+    "htmlMatches": true,
+    "staticAssetsMatched": 21,
+    "mediaExecutorEnabled": false,
+    "historyCount": 9,
+    "historyPreserved": true,
+    "databaseIntegrity": "ok"
+  },
+  "apiSmoke": {
+    "passed": 26,
+    "scope": "local read-only API and HTML entry smoke; not browser interaction; no model, workflow execution, or media generation"
+  },
+  "browserSmoke": {
+    "scope": "isolated synthetic browser navigation/modes/layout/focus/refresh; not real model or physical touch",
+    "layouts": [
+      {
+        "page": "模型与角色",
+        "width": 1440,
+        "client": 1440,
+        "scroll": 1440,
+        "theme": "deep-space"
+      },
+      {
+        "page": "任务中心",
+        "width": 1440,
+        "client": 1440,
+        "scroll": 1440,
+        "theme": "deep-space"
+      },
+      {
+        "page": "工作统计",
+        "width": 1440,
+        "client": 1440,
+        "scroll": 1440,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创作画廊",
+        "width": 1440,
+        "client": 1440,
+        "scroll": 1440,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创意工坊",
+        "width": 1440,
+        "client": 1440,
+        "scroll": 1440,
+        "theme": "deep-space"
+      },
+      {
+        "page": "模型与角色",
+        "width": 960,
+        "client": 960,
+        "scroll": 960,
+        "theme": "deep-space"
+      },
+      {
+        "page": "任务中心",
+        "width": 960,
+        "client": 960,
+        "scroll": 960,
+        "theme": "deep-space"
+      },
+      {
+        "page": "工作统计",
+        "width": 960,
+        "client": 960,
+        "scroll": 960,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创作画廊",
+        "width": 960,
+        "client": 960,
+        "scroll": 960,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创意工坊",
+        "width": 960,
+        "client": 960,
+        "scroll": 960,
+        "theme": "deep-space"
+      },
+      {
+        "page": "模型与角色",
+        "width": 390,
+        "client": 390,
+        "scroll": 390,
+        "theme": "deep-space"
+      },
+      {
+        "page": "任务中心",
+        "width": 390,
+        "client": 390,
+        "scroll": 390,
+        "theme": "deep-space"
+      },
+      {
+        "page": "工作统计",
+        "width": 390,
+        "client": 390,
+        "scroll": 390,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创作画廊",
+        "width": 390,
+        "client": 390,
+        "scroll": 390,
+        "theme": "deep-space"
+      },
+      {
+        "page": "创意工坊",
+        "width": 390,
+        "client": 390,
+        "scroll": 390,
+        "theme": "deep-space"
+      }
+    ],
+    "modes": [
+      "单助手",
+      "工作流",
+      "协作编排",
+      "Coze 创作"
+    ],
+    "settingsEscapeFocus": true,
+    "refreshAuthenticated": true,
+    "pageErrors": []
+  },
+  "fixture": {
+    "synthetic": true,
+    "originalDatabase": false,
+    "realModelCalls": 0,
+    "mediaCalls": 0,
+    "blockedOutbound": 0
+  },
+  "securityReview": {
+    "fixedRange": "3af5267..8dee3ae",
+    "changedSourceFilesReviewed": 109,
+    "formalPluginReport": "failed_missing_scan_manifest",
+    "ordinaryMarkdown": "docs/reviews/stage4-web-20261004.md"
+  },
+  "limits": [
+    "No full regression rerun on the new commit",
+    "No real model/media/weather calls",
+    "No physical touch or native font scaling",
+    "Not stage-four completion or production security acceptance"
+  ]
+}
