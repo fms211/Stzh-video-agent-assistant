@@ -17,6 +17,7 @@ async function setup(t) {
   account(1);
   let source = fs.readFileSync(path.resolve(__dirname, '../app/lib/sync.ts'), 'utf8');
   for (const file of ['auth', 'data-owner']) source = source.replace(`from "./${file}"`, `from "${pathToFileURL(path.resolve(__dirname, `../app/lib/${file}.ts`)).href}"`);
+  source = source.replace('from "./history-retirement.ts"', `from "${pathToFileURL(path.resolve(__dirname, '../app/lib/history-retirement.ts')).href}"`);
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   const api = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
   return { api, values, account };

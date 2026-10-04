@@ -10,6 +10,7 @@ import {
   apiListSessions,
 } from "./opc-agent-api";
 import { currentDataOwner, ownerScope, type DataOwner } from "./data-owner";
+import { assertHistoryAvailable, isHistoryRetired } from "./history-retirement.ts";
 
 const MAX_SESSIONS = 50;
 const MAX_MESSAGES_PER_SESSION = 200;
@@ -50,21 +51,23 @@ function parse<T>(value: string | null, fallback: T): T {
 
 function localSessions(scope = ownerScope(owner())): OpcAgentSession[] {
   if (!isBrowser) return [];
-  return parse(localStorage.getItem(opcKey(scope, "sessions")), []);
+  return parse<OpcAgentSession[]>(localStorage.getItem(opcKey(scope, "sessions")), []).filter(session => !isHistoryRetired(scope, session.id));
 }
 
 function saveLocalSessions(sessions: OpcAgentSession[], scope = ownerScope(owner())) {
   if (!isBrowser) return;
-  localStorage.setItem(opcKey(scope, "sessions"), JSON.stringify(sessions));
+  localStorage.setItem(opcKey(scope, "sessions"), JSON.stringify(sessions.filter(session => !isHistoryRetired(scope, session.id))));
 }
 
 function localMessages(sessionId: string, scope = ownerScope(owner())): OpcAgentMessage[] {
   if (!isBrowser || !sessionId) return [];
+  if (isHistoryRetired(scope, sessionId)) return [];
   return parse(localStorage.getItem(opcKey(scope, "messages", sessionId)), []);
 }
 
 function saveLocalMessages(sessionId: string, messages: OpcAgentMessage[], scope = ownerScope(owner())) {
   if (!isBrowser || !sessionId) return;
+  assertHistoryAvailable(scope, sessionId);
   localStorage.setItem(
     opcKey(scope, "messages", sessionId),
     JSON.stringify(messages.slice(-MAX_MESSAGES_PER_SESSION)),
@@ -95,6 +98,7 @@ export function getActiveSessionId(mode: "chat" | "workflow" = "chat"): string {
 }
 
 export function setActiveSessionId(id: string, mode: "chat" | "workflow" = "chat") {
+  if (isBrowser && id) assertHistoryAvailable(ownerScope(owner()), id);
   if (isBrowser) localStorage.setItem(`${opcKey(ownerScope(owner()), "active")}${mode === "workflow" ? ":workflow" : ""}`, id);
   if (isBrowser) window.dispatchEvent(new Event("tszh_active_session_changed"));
 }
@@ -111,6 +115,10 @@ const fingerprint = (message: OpcAgentMessage) => JSON.stringify(message);
 export async function loadMessages(sessionId: string, strict = false): Promise<OpcAgentMessage[]> {
   if (!sessionId) return [];
   const scope = ownerScope(owner());
+  if (isHistoryRetired(scope, sessionId)) {
+    if (strict) assertHistoryAvailable(scope, sessionId);
+    return [];
+  }
   if (hasAuthenticatedOwner()) {
     const context = captureOpcRequestContext();
     try {
@@ -119,6 +127,7 @@ export async function loadMessages(sessionId: string, strict = false): Promise<O
       for (let offset = 0; ; offset += 200) {
         const page = await apiGetMessages(sessionId, 200, context, offset);
         if (scope !== ownerScope(owner())) return [];
+        assertHistoryAvailable(scope, sessionId);
         if (page.length && page.every(message => seen.has(message.id))) throw new Error("对话分页重复，请重试");
         remote = [...page.filter(message => !seen.has(message.id)), ...remote];
         page.forEach(message => seen.add(message.id));
@@ -140,6 +149,7 @@ export async function loadMessages(sessionId: string, strict = false): Promise<O
 export async function saveMessages(sessionId: string, messages: OpcAgentMessage[]): Promise<void> {
   if (!sessionId || !isBrowser) return;
   const scope = ownerScope(owner());
+  assertHistoryAvailable(scope, sessionId);
   const snapshot = JSON.parse(JSON.stringify(messages.slice(-MAX_MESSAGES_PER_SESSION))) as OpcAgentMessage[];
   saveLocalMessages(sessionId, snapshot, scope);
   if (!hasAuthenticatedOwner()) return;
@@ -148,6 +158,7 @@ export async function saveMessages(sessionId: string, messages: OpcAgentMessage[
   const title = messages.find(message => message.role === "user")?.content.slice(0, 30) || messages.find(message => message.workflowName)?.workflowName || "新对话";
   const work = (queues.get(key) || Promise.resolve()).catch(() => {}).then(async () => {
     if (scope !== ownerScope(owner())) return;
+    assertHistoryAvailable(scope, sessionId);
     const ack = fingerprints(scope, sessionId);
     const changed = snapshot.filter(message => ack[message.id] !== fingerprint(message));
     if (!changed.length) return;
@@ -158,6 +169,7 @@ export async function saveMessages(sessionId: string, messages: OpcAgentMessage[
       metadata: Object.fromEntries(Object.entries(message).filter(([field]) => !["id", "timestamp", "role", "content"].includes(field))),
     })), context);
     if (count !== changed.length) throw new Error("部分对话未同步，请重试");
+    assertHistoryAvailable(scope, sessionId);
     for (const message of changed) ack[message.id] = fingerprint(message);
     // Pin acknowledgement to its original owner even if the UI switched while the request was pending.
     localStorage.setItem(key, JSON.stringify(Object.fromEntries(snapshot.filter(message => ack[message.id]).map(message => [message.id, ack[message.id]]))));
@@ -168,6 +180,7 @@ export async function saveMessages(sessionId: string, messages: OpcAgentMessage[
 
 export async function upsertSession(sessionId: string, messages: OpcAgentMessage[], mode: "chat" | "workflow" = "chat") {
   if (!isBrowser || !sessionId) return;
+  assertHistoryAvailable(ownerScope(owner()), sessionId);
   const title = messages.find((message) => message.role === "user")?.content?.slice(0, 30) || messages.find(message => message.workflowName)?.workflowName || "新对话";
   const nextSession: OpcAgentSession = {
     id: sessionId,
@@ -203,6 +216,7 @@ export async function getSessions(strict = false): Promise<OpcAgentSession[]> {
       if (scope !== ownerScope(owner())) return [];
       const merged = new Map(localSessions(scope).map(session => [session.id, session]));
       for (const session of remote) {
+        if (isHistoryRetired(scope, session.id)) continue;
         const mapped = { id: session.id, title: session.title, timestamp: session.updated_at * 1000, messageCount: session.message_count, mode: session.mode || "chat" as const };
         if (!merged.has(session.id) || merged.get(session.id)!.timestamp < mapped.timestamp) merged.set(session.id, mapped);
         else if (session.mode || !merged.get(session.id)!.mode) merged.set(session.id, { ...merged.get(session.id)!, mode: mapped.mode });

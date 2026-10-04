@@ -1,5 +1,6 @@
 import { getToken, resolveApiBase } from "./auth";
 import { currentDataOwner, ownerScope } from "./data-owner";
+import { markHistoryRetired } from "./history-retirement.ts";
 
 export type RetentionPolicy = { enabled: boolean; days: number };
 const scope = () => ownerScope(currentDataOwner(localStorage));
@@ -39,7 +40,10 @@ export async function sweepHistory() {
   const result = await request<{ expiredIds: string[]; deferred?: string }>("/sweep", { clientId, sessionIds });
   if (!Array.isArray(result?.expiredIds) || result.expiredIds.some(id => typeof id !== "string" || !id) || result.expiredIds.some(id => sessionIds.includes(id))) throw new Error("清理响应无效，当前本地历史已保留");
   const expired = new Set(result.expiredIds);
-  let changed = false;
+  // Record deletion before removing caches or notifying views. A late response
+  // in this or another tab must see the tombstone before committing anything.
+  markHistoryRetired(owner, result.expiredIds);
+  let changed = expired.size > 0;
   for (const listKey of [`tszh:v2:${owner}:sessions`, `tszh:v2:opc:${owner}:sessions`]) {
     const raw = localStorage.getItem(listKey);
     if (!raw) continue;

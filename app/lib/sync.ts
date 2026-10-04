@@ -1,5 +1,6 @@
 import { getToken, resolveApiBase } from "./auth";
-import { currentDataOwner, workspaceDataKey, type DataOwner } from "./data-owner";
+import { currentDataOwner, workspaceDataKey, ownerScope, type DataOwner } from "./data-owner";
+import { assertHistoryAvailable, isHistoryRetired } from "./history-retirement.ts";
 
 const API_BASE = typeof window !== "undefined"
   ? resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location)
@@ -60,10 +61,11 @@ function captureSyncOwner() {
 // === 会话管理 ===
 export function loadSessions(): HistorySession[] {
   if (typeof window === "undefined") return [];
-  return lsGet<HistorySession[]>(sessionsKey(), []);
+  return lsGet<HistorySession[]>(sessionsKey(), []).filter(session => !isHistoryRetired(ownerScope(owner()), session.id));
 }
 
 export async function saveSessions(sessions: HistorySession[], { localOnly = false }: { localOnly?: boolean } = {}) {
+  sessions = sessions.filter(session => !isHistoryRetired(ownerScope(owner()), session.id));
   const previous = new Map(loadSessions().map(session => [session.id, session]));
   lsSet(sessionsKey(), sessions);
   if (localOnly) return;
@@ -89,10 +91,12 @@ export async function saveSessions(sessions: HistorySession[], { localOnly = fal
 // === 消息管理 ===
 export function loadMessages(id: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
+  if (isHistoryRetired(ownerScope(owner()), id)) return [];
   return lsGet<ChatMessage[]>(messagesKey(id), []);
 }
 
 export async function saveMessages(id: string, messages: ChatMessage[]) {
+  if (isHistoryRetired(ownerScope(owner()), id)) return;
   lsSet(messagesKey(id), messages);
 
   // 如果有 token，同步到服务端
@@ -138,6 +142,7 @@ export function getActiveSessionId(): string | null {
 
 export function setActiveSessionId(id: string | null) {
   if (typeof window === "undefined") return;
+  if (id) assertHistoryAvailable(ownerScope(owner()), id);
   if (id) localStorage.setItem(activeKey(), id);
   else localStorage.removeItem(activeKey());
   window.dispatchEvent(new Event("tszh_active_session_changed"));
@@ -145,7 +150,7 @@ export function setActiveSessionId(id: string | null) {
 
 // === 从服务端拉取会话列表（登录后首次加载） ===
 export async function fetchServerSessions({ strict = false }: { strict?: boolean } = {}): Promise<HistorySession[]> {
-  const { token, isCurrent } = captureSyncOwner();
+  const { token, dataOwner, isCurrent } = captureSyncOwner();
   if (!token) return [];
 
   try {
@@ -158,7 +163,7 @@ export async function fetchServerSessions({ strict = false }: { strict?: boolean
     if (!Array.isArray(data?.conversations) || data.conversations.some((item: unknown) => !item || typeof item !== "object" || typeof (item as { id?: unknown }).id !== "string" || !(item as { id: string }).id)) {
       throw new Error("会话响应格式不正确，请重试");
     }
-    return data.conversations.map((c: any) => ({
+    return data.conversations.filter((c: { id: string }) => !isHistoryRetired(ownerScope(dataOwner), c.id)).map((c: any) => ({
       id: c.id,
       title: c.title,
       timestamp: new Date(c.updated_at).getTime(),
@@ -172,15 +177,17 @@ export async function fetchServerSessions({ strict = false }: { strict?: boolean
 
 // === 从服务端拉取消息 ===
 export async function fetchServerMessages(convId: string, { strict = false }: { strict?: boolean } = {}): Promise<ChatMessage[]> {
-  const { token, isCurrent } = captureSyncOwner();
+  const { token, dataOwner, isCurrent } = captureSyncOwner();
   if (!token) return [];
 
   try {
+    assertHistoryAvailable(ownerScope(dataOwner), convId);
     const res = await fetch(`${API_BASE}/api/conversations/${convId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`消息读取失败（${res.status}），请重试`);
     const data = await res.json();
+    assertHistoryAvailable(ownerScope(dataOwner), convId);
     if (!isCurrent()) {
       if (strict) throw new DOMException("账户已切换", "AbortError");
       return [];
@@ -322,7 +329,8 @@ export async function syncServerToLocal(): Promise<{ ok: boolean; failed: number
   try {
     const serverSessions = await fetchServerSessions({ strict: true });
     if (!isCurrent()) return { ok: false, failed: 0 };
-    if (serverSessions.length > 0) lsSet(sessionsKey(dataOwner), serverSessions);
+    const available = serverSessions.filter(session => !isHistoryRetired(ownerScope(dataOwner), session.id));
+    if (serverSessions.length > 0) lsSet(sessionsKey(dataOwner), available);
     // An empty server response keeps the existing local copy; it does not delete history.
     return { ok: true, failed: 0 };
   } catch {
