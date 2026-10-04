@@ -2,7 +2,7 @@
 
 **从创意讨论到任务追踪，把 AI 视频创作放进同一个工作台。**
 
-[English](README.md) · **版本 1.40** · [发布与验收记录](docs/releases/v1.40.zh-CN.md)
+[English](README.md) · **版本 1.40** · [历史发布与验收记录](docs/releases/v1.40.zh-CN.md)
 
 腾昇智和面向短视频与 AIGC 创作者：统一管理提示词、参考文件、模型连接、项目记忆、角色和结果。**阶段四仍在开发与体验收尾，1.40是阶段成果，不代表Web开发结束。** Web功能、交互、美观与安全完成并经用户实际满意确认后，才进入阶段五手机端开发。本轮已恢复本地构建、相关回归与视觉冒烟；仍有未覆盖项，详见下方证据。
 
@@ -173,24 +173,17 @@ npm ci
 npm start
 ```
 
-Electron需 `server/native/electron-v<ABI>/`绑定，不能以Node二进制替代；Expo真机需可访问的后端及设备权限。本轮未验证这些可选安装流程。
+Electron需 `server/native/electron-v<ABI>/better_sqlite3.node` 绑定，不能以Node二进制替代；源码不提供自动准备脚本。Expo真机需可访问的后端及设备权限，手机package版本1.0.0。详见[Electron](electron/README.md)、[手机](Tszh-App/README.md)、[RAG](rag-service/RAG学习笔记.md)；本轮未验证这些可选安装流程。
 
 </details>
 
-## 进度、回归、冒烟与待办
+## 进度、检查与待办
 
 **当前进度（2026-10-04，第61批）**：修复工作流字段/操作区与读屏名称，天气凭据改服务端持有，限定Tailwind应用源码扫描后干净/增量构建通过。后端390通过；前端首轮652/656，相关生命周期4项及天气/真实解析器7项复测通过，未再跑全量。独立浏览器完成45主题/页/宽度几何、6组工作流文字布局及频率图30秒稳定检查，原9条历史保持。正式复审/交接、真实模型与记忆启用、触屏/剩余UI状态、工具链15高危、旧天气key撤销与用户/主分支确认尚缺。[本批记录](更新md/2026-10-04-61-工作流排版与天气凭据保护.md) · [草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)。
 
 **下表仅为2026-10-01的1.40历史快照记录，不覆盖2026-10-03的未提交修改。**
 
-| 检查 | 真实结果 |
-|---|---|
-| 构建 | 生产构建通过，同源预览已更新 |
-| 前端回归 | 发布快照 **518/518通过**；首轮7项测试替身／旧断言修复后全量复测 |
-| 后端回归 | 工作区 **315/315通过**；发布快照首轮314/315，修正Electron检查依赖本机二进制后**2项相关复测通过**；未声称修正后快照再次全量运行 |
-| 集中冒烟 | 真实Express＋全新隔离库 **26项通过**；页面入口、账号/API等，生成执行器关闭 |
-| 页面 / 视觉 | 五页、四模式、草稿、历史、项目/记忆、Esc焦点、模型表单、辉光参数通过；1440/960/390宽DOM边界、三主题、减少动画／透明度通过 |
-| 状态 / 统计 | 模拟排队、运行、暂停、失败、重试成功通过；频率图33秒宽度稳定。模拟不算真实Coze或视频验收 |
+可复现源码命令：`npm run build`、`npm run lint`、`npm run test:p0`（前端后接后端），或 `npm --prefix server test`。已跟踪只读冒烟脚本需要另配隔离环境与测试账号；完整条件见[验证指南](docs/TESTING.md)。本次统一文档更新核对源码、链接、路径、命令与配置，未重新执行业务全量回归、构建或付费外部调用。
 
 复现：`npm run build -- --webpack`、`npm run test:p0`（前端后接后端）；单独后端 `npm --prefix server test`。只读冒烟 `scripts/stage4-readonly-smoke.cjs`需另配隔离预览与 `STZH_SMOKE_BASE`、`STZH_SMOKE_USER`、`STZH_SMOKE_PASSWORD`，不会自动创建环境。见[页面证据](docs/releases/evidence/v1.40/browser-smoke.json)、[接口证据](docs/releases/evidence/v1.40/api-smoke.json)、[详细验收](docs/releases/v1.40.zh-CN.md)。旧证据对应上述历史快照；本轮命令、失败复测与环境边界见上述逐批记录。不要在媒体执行器开启的生产环境直接运行验收脚本。
 
@@ -203,4 +196,4 @@ Electron需 `server/native/electron-v<ABI>/`绑定，不能以Node二进制替�
 
 `app/` Web · `server/` API/任务/插件 · `shared/`契约/上下文 · `rag-service/`检索 · `electron/`桌面 · `Tszh-App/`手机 · `test/`及`server/test/`回归 · `docs/releases/`证据。
 
-[记忆API](docs/knowledge/studio-memory-api.md) · [1.40更新与回退](更新md/2026-10-01-15-Web1.40视觉交互与发布.md)。历史使用文档可能早于现实现，启动以本README和源码为准。第三方许可见 `public/licenses/`和 `docs/third-party-notices/`；尚无统一根许可证，不应推定全部源码可自由再分发。
+[记忆API](docs/knowledge/studio-memory-api.md) · [1.40更新与回退](更新md/2026-10-01-15-Web1.40视觉交互与发布.md)。当前技术说明见[文档导航](docs/README.md)、[后端配置](BACKEND_SETUP.md)和[使用指南](USAGE.md)；历史发布、研究和阶段记录保持原文。第三方许可见 `public/licenses/`和 `docs/third-party-notices/`；尚无统一根许可证，不应推定全部源码可自由再分发。

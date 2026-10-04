@@ -2,7 +2,7 @@
 
 **One workspace for creative briefs, AI conversations and production tracking.**
 
-[简体中文](README.zh-CN.md) · **Version 1.40** · [Release and acceptance notes](docs/releases/v1.40.en.md)
+[简体中文](README.zh-CN.md) · **Version 1.40** · [Historical release and acceptance notes](docs/releases/v1.40.en.md)
 
 Stzh brings prompts, reference files, model connections, project memory, roles and results together for short-video and AIGC creators. **Web phase four is still in development and experience refinement; 1.40 is a milestone, not the end of Web development.** Phase five mobile work follows completion of Web functionality, interaction, visual polish and security, plus user acceptance. Local build, focused regression and visual smoke checks have resumed; uncovered cases remain explicit below.
 
@@ -173,24 +173,17 @@ npm ci
 npm start
 ```
 
-Electron needs `server/native/electron-v<ABI>/` bindings, not the Node SQLite binary. Expo devices need a reachable backend and device permissions. These optional installation flows were not validated in this documentation update.
+Electron requires a matching SQLite binding under server/native/electron-v<ABI>/better_sqlite3.node; Node binaries cannot replace it and no automatic preparation script is provided. Expo devices need a reachable backend and permissions; the mobile package version is 1.0.0. See [Electron](electron/README.md), [mobile](Tszh-App/README.md) and [RAG](rag-service/RAG学习笔记.md). These optional installation flows are not validated in this update.
 
 </details>
 
-## Development status, regression, smoke and remaining work
+## Development status, checks and remaining work
 
 **Current progress (2026-10-04, batch 61):** Fixed workflow field/action layout and accessible labels, moved optional weather credentials to the server, and scoped Tailwind scanning to application sources for stable clean/incremental builds. Backend 390 passed; frontend initial 652/656, followed by 4 lifecycle and 7 weather/resolver checks passing without another full run. Independent-browser checks covered 45 theme/page/width geometries, six workflow text/layout cases and30-second chart stability. Nine original histories are preserved. Full final review/handoff, live model/memory verification, touch/remaining UI states, tooling15 high findings, legacy weather-key revocation and user/main acceptance remain open. [Batch notes](更新md/2026-10-04-61-工作流排版与天气凭据保护.md) · [Draft PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1).
 
 **The table below records the 2026-10-01 release snapshot only. It does not cover the uncommitted 2026-10-03 changes.**
 
-| Check | Actual result |
-|---|---|
-| Build | Production build passed; same-origin preview updated |
-| Frontend regression | Release snapshot **518/518 passed** after fixing seven initial test-double/outdated-assertion failures |
-| Backend regression | Workspace **315/315 passed**; initial release snapshot 314/315, then **two related checks passed** after removing a local-binary assumption from the Electron entry check. No claim of another full snapshot run after that fix |
-| Concentrated smoke | Real Express + fresh isolated DB: **26 passed**; page entries and account/API checks, generation executor disabled |
-| UI / visual | Five pages, four modes, drafts, history, project/memory, Escape focus, model form and glow controls; 1440/960/390 DOM boundaries, three themes, reduced motion/transparency passed |
-| State / statistics | Locally simulated queue/run/pause/failure/retry-success passed; chart width stable for 33 seconds. Simulation is not real Coze/video acceptance |
+Reproducible source commands: `npm run build`, `npm run lint`, `npm run test:p0` (frontend followed by backend), or `npm --prefix server test`. The tracked read-only smoke script requires a separately prepared isolated environment and test account; see [validation guide](docs/TESTING.md). This documentation update checks source, links, paths, commands and configuration; it does not rerun full business regression, builds or paid external calls.
 
 Reproduce code checks with `npm run build -- --webpack` and `npm run test:p0` (frontend then backend); backend only: `npm --prefix server test`. Read-only smoke `scripts/stage4-readonly-smoke.cjs` needs a separately prepared isolated preview plus `STZH_SMOKE_BASE`, `STZH_SMOKE_USER`, `STZH_SMOKE_PASSWORD`; it does not create the environment. [UI evidence](docs/releases/evidence/v1.40/browser-smoke.json), [API evidence](docs/releases/evidence/v1.40/api-smoke.json), [full acceptance notes](docs/releases/v1.40.en.md). Those artifacts cover the historical snapshot. The latest dated batch records contain current commands, failure retests and environment limits; do not run acceptance scripts on a production service with media execution enabled.
 
@@ -203,4 +196,4 @@ Reproduce code checks with `npm run build -- --webpack` and `npm run test:p0` (f
 
 `app/` Web · `server/` API/tasks/plugins · `shared/` contracts/context · `rag-service/` retrieval · `electron/` desktop · `Tszh-App/` mobile · `test/` and `server/test/` regression · `docs/releases/` evidence.
 
-[Memory API](docs/knowledge/studio-memory-api.md) · [1.40 changes and rollback](更新md/2026-10-01-15-Web1.40视觉交互与发布.md). Older usage documents may predate the current implementation; use this README and source for startup. Third-party notices: `public/licenses/`, `docs/third-party-notices/`. There is no project-wide root license; unrestricted redistribution of all source should not be assumed.
+[Memory API](docs/knowledge/studio-memory-api.md) · [1.40 changes and rollback](更新md/2026-10-01-15-Web1.40视觉交互与发布.md). Current technical guides are indexed in [documentation navigation](docs/README.md), [backend setup](BACKEND_SETUP.md) and [usage](USAGE.md); historical releases, research and phase records keep their original scope. Third-party notices: `public/licenses/`, `docs/third-party-notices/`. There is no project-wide root license; unrestricted redistribution of all source should not be assumed.

@@ -1,289 +1,106 @@
-# 腾昇智和 · 云服务器部署指南
+# 腾昇智和 · 静态Web与Express部署
 
-> 服务器：阿里云 ECS Windows  
-> IP：121.199.20.161  
-> 端口：8080  
-> 最后更新：2026-06-07
+本文按main版本1.40.0源码核对（2026-10-02）。推荐使用完整干净检出或受跟踪源码包，确保server/shared/out版本一致。阶段4仍未完成，本次只更新说明，未做实际服务器部署。
 
----
+## 部署结构与前提
 
-## 前置条件
+~~~text
+HTTPS入口/反向代理
+  → Node server/server.js（API、SSE、WebSocket、out静态页面）
+  → 可写数据目录（SQLite、附件、插件数据、JWT材料）
+  → 可选独立Python RAG / 外部Coze和模型服务
+~~~
 
-- 阿里云 ECS Windows 服务器
-- 本地电脑已安装 Node.js v25.x
+准备Node.js22.18+与npm、目标平台SQLite原生依赖运行/编译环境、持久数据目录和HTTPS入口。前端构建需要根目录开发依赖；服务端运行依赖在 `server/package.json`。源代码和前端导出不包含用户账户、知识库或外部密钥。
 
----
+## 构建
 
-## 第一步：本地构建前端
+从干净main检出安装两组依赖：
 
-```powershell
-cd D:\fms688_stzh-Agent
+~~~bash
+npm ci
+npm --prefix server ci
+~~~
+
+根目录 `.env.local` 设置：
+
+~~~dotenv
+NEXT_PUBLIC_AGENT_BACKEND_URL=
+~~~
+
+确保终端不存在覆盖它的同名旧变量，然后：
+
+~~~bash
 npm run build
-```
+~~~
 
----
+产物为根目录 `out/`。当前 `output: "export"`，不能用根目录 `npm start`（next start）托管生产API或页面。分域托管时在构建前填实际HTTPS后端；浏览器始终需要独立Express。
 
-## 第二步：打包部署文件
+## 上传与目标机安装
 
-### 方法一：PowerShell 命令
-```powershell
-cd D:\fms688_stzh-Agent
-Compress-Archive -Path server\start.js,server\server-express.js,server\db.js,server\routes,server\package.json,server\node_modules,out,deploy\ecosystem.config.js,deploy\.env.example -DestinationPath deploy\stzh-full.zip -Force
-```
+完整源码可通过Git检出或 `git archive` 导出，再将对应 `out/` 一并传输。保留 `server/` 全部受跟踪源码及锁文件、`shared/`、`out/`。不要上传开发机 `node_modules` 或将其当成目标平台原生依赖。
 
-### 方法二：手动压缩
-选中以下文件/文件夹，右键「发送到 → 压缩文件夹」：
-```
-server/start.js
-server/server-express.js
-server/db.js
-server/routes/
-server/package.json
-server/node_modules/    ← 必须包含，服务器编译 native 模块很麻烦
-out/
-deploy/ecosystem.config.js
-deploy/.env.example
-```
+在目标机项目根目录：
 
----
+~~~bash
+npm --prefix server ci --omit=dev
+~~~
 
-## 第三步：上传到服务器
+手动创建 `server/.env.local`：
 
-### 方式 A：远程桌面拖拽
-```powershell
-mstsc /v:121.199.20.161
-```
-登录后直接把 zip 拖进服务器窗口。
+~~~dotenv
+PORT=8080
+JWT_SECRET=<至少32字符的独立随机材料>
+STZH_LLM_ENCRYPTION_KEY=<至少32字符的另一项随机材料>
+STZH_CONTEXT_MODE=shadow
+# 采用绝对路径，替换为目标机实际可写目录
+# STZH_DATA_DIR=<绝对数据目录>
+# 真实媒体执行需要Coze配置
+# COZE_API_TOKEN=<服务端令牌>
+# COZE_BOT_ID=<已发布BotID>
+# COZE_BASE_URL=https://api.coze.cn
+# 独立RAG服务可选
+# STZH_RAG_URL=http://127.0.0.1:5000
+~~~
 
-### 方式 B：scp 命令
-```powershell
-scp D:\fms688_stzh-Agent\deploy\stzh-full.zip Administrator@121.199.20.161:C:\stzh\
-```
+环境文件没有随库提供的example可复制，密钥生成及其他变量见[后端配置](../BACKEND_SETUP.md)。仅启动Web/账户功能不要求Coze令牌；未配置媒体执行器时任务会排队。
 
----
+## 启动与进程管理
 
-## 第四步：服务器上解压
+~~~bash
+npm --prefix server start
+~~~
 
-在服务器 CMD 里：
-```cmd
-cd C:\stzh
-powershell Expand-Archive -Path stzh-full.zip -DestinationPath . -Force
-```
+访问8080页面及 `/health`。需要已有PM2管理时，在根目录采用明确入口：
 
-解压后结构：
-```
-C:\stzh\
-├── start.js
-├── server-express.js
-├── db.js
-├── routes\
-├── package.json
-├── node_modules\
-├── ecosystem.config.js
-├── .env.example
-└── out\
-    ├── index.html
-    └── ...
-```
-
----
-
-## 第五步：安装 Node.js
-
-1. 下载 https://nodejs.org/zh-cn （**v25.x LTS**，必须和本地版本一致）
-2. 安装时勾选「Add to PATH」
-3. **关掉 CMD 重新打开**
-4. 验证：`node -v` 应显示 `v25.x.x`
-
----
-
-## 第六步：安装编译工具（better-sqlite3 需要）
-
-### 安装 Python
-1. 下载 https://www.python.org/downloads/ （Python 3.12，下载 .exe 安装包，不是 .tgz）
-2. 安装时**勾选 "Add python.exe to PATH"**
-3. 点 Install Now
-
-### 安装 Visual Studio Build Tools
-1. 下载 https://visualstudio.microsoft.com/visual-cpp-build-tools/
-2. 点 "Download Build Tools"
-3. 运行安装程序，选择 **"Desktop development with C++"**
-4. 点底部 "安装"
-5. **关掉 CMD 重新打开**
-
----
-
-## 第七步：配置环境变量
-
-在 `C:\stzh\` 下创建 `.env.local` 文件：
-
-```
-COZE_API_TOKEN=你的token
-COZE_BOT_ID=你的bot_id
-COZE_USER_ID=stzh_user
-COZE_BASE_URL=https://api.coze.cn
-JWT_SECRET=改成一个随机长字符串至少32位
-API_SECRET_KEY=
-PORT=80
-```
-
-> 可以从本地 `server/.env.local` 复制内容，只改 PORT=80
-
----
-
-## 第八步：编译 native 模块 + 启动
-
-```cmd
-cd C:\stzh\node_modules\better-sqlite3
-npx node-gyp rebuild --release
-cd C:\stzh
-npm install -g pm2
-pm2 start start.js --name stzh
+~~~bash
+pm2 start server/server.js --name stzh --cwd .
+pm2 logs stzh
 pm2 save
-```
+~~~
 
-验证：
-```cmd
-pm2 list
-```
-状态应为 `online`。
+PM2安装和系统开机启动需按目标机已有运维方式配置；`pm2 save` 只保存进程列表，不证明已完成Windows开机启动。
 
----
+反向代理需保持 `/api/*` 与 `/ws/*` 可达、支持WebSocket Upgrade及SSE流式响应，合理设置长任务超时。使用HTTPS页面时API/WS也应使用HTTPS/WSS。公网仅暴露业务入口，RAG作为内部服务；当前Python服务没有本项目JWT鉴权。
 
-## 第九步：配置防火墙
+## 仓库旧脚本的已知缺口
 
-### 阿里云安全组
-```
-阿里云控制台 → ECS 实例 → 安全组 → 入方向 → 手动添加：
-  协议类型: 自定义 TCP
-  端口范围: 8080/8080
-  授权对象: 0.0.0.0/0
-  描述: STZH 应用
-```
+| 文件 | 当前实际问题 |
+|---|---|
+| [package.bat](package.bat) | 引用不存在的 `server/.env.example`；白名单漏掉 `app.js`、安全/鉴权、任务/插件/研究等依赖和shared/服务端锁文件；不能作为当前完整部署包 |
+| [setup-server.bat](setup-server.bat) | 引用不存在的 `deploy/.env.example`；采用旧安装/PM2入口及写死的访问提示；结尾的自启提示不构成目标机验证 |
+| [ecosystem.config.js](ecosystem.config.js) | cwd为deploy，script为 `./start.js`，但实际启动器在server；不能原样作为当前部署配置 |
+| `server/start.js` | 旧云启动器默认80，仍加载统一app/Runtime；日志中的API_SECRET_KEY提示不是当前JWT权限状态 |
+| `deploy/stzh-full.zip` | 已跟踪归档不能推定与最新main一致，按当前干净源码重建交付包 |
 
-### Windows 防火墙
-```cmd
-netsh advfirewall firewall add rule name="STZH 8080" dir=in action=allow protocol=TCP localport=8080
-```
+本任务不修改这些脚本；上面的手动流程使用当前真实入口，运行旧脚本前需要独立修复与验证。
 
----
+## 检查、升级与回退
 
-## 第十步：验证
+1. 记录提交、Node版本、实际端口/数据目录；确认 `out/index.html` 存在。
+2. 验证 `/health`、登录、静态资源、任务只读查询、通知与WS重连；缺少Coze配置时执行器禁用属于预期。
+3. 真实模型、Coze媒体、RAG语料、插件外部链路和手机配对分别验收，不从服务存活推导全部可用。
+4. 升级前做数据库与附件的一致性备份，同时保留加密材料；不以复制一个活跃WAL主文件充当完整备份。
+5. 用新的源码/产物目录切换版本，保持独立数据目录。遇错误恢复匹配的旧代码/产物；若涉及源码已有迁移，先核对兼容性，不删表或删除用户数据。
 
-浏览器打开 http://121.199.20.161:8080
-
-看到页面 → 注册 → 登录 → 使用 ✅
-
----
-
-## 日常维护
-
-```cmd
-pm2 list              查看进程状态
-pm2 logs stzh         查看实时日志
-pm2 logs stzh --err   只看错误日志
-pm2 restart stzh      重启服务
-pm2 stop stzh         停止服务
-pm2 flush stzh        清空日志
-```
-
----
-
-## 更新部署
-
-当代码有更新时：
-
-### 本地
-```powershell
-cd D:\fms688_stzh-Agent
-npm run build
-```
-
-### 上传新的 out/ 到服务器
-```powershell
-scp -r D:\fms688_stzh-Agent\out Administrator@121.199.20.161:C:\stzh\
-```
-
-### 服务器上重启
-```cmd
-pm2 restart stzh
-```
-
-> 注意：不要覆盖 `C:\stzh\.env.local` 和 `C:\stzh\stzh.db`（数据库）
-
----
-
-## 常见问题
-
-### better-sqlite3 报错 ERR_DLOPEN_FAILED
-原因：Node.js 版本不匹配  
-解决：本地和服务器都要用 v25.x，然后在服务器上重新编译：
-```cmd
-cd C:\stzh\node_modules\better-sqlite3
-npx node-gyp rebuild --release
-pm2 restart stzh
-```
-
-### 页面能打开但注册/登录报错
-原因：前端 JS 里 API 地址写死了 localhost  
-解决：本地重新 `npm run build`，上传新的 `out/` 到服务器
-
-### 浏览器访问不了
-检查清单：
-1. 阿里云安全组是否放行了 8080 端口
-2. Windows 防火墙是否放行了 8080 端口
-3. PM2 进程是否在线：`pm2 list`
-
----
-
-## SSH 远程连接
-
-### 开启 SSH（服务器上执行）
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-```
-
-### 连接（本地 PowerShell）
-```powershell
-ssh Administrator@121.199.20.161
-```
-
-### scp 上传文件
-```powershell
-scp D:\fms688_stzh-Agent\deploy\stzh-full.zip Administrator@121.199.20.161:C:\stzh\
-scp -r D:\fms688_stzh-Agent\out Administrator@121.199.20.161:C:\stzh\
-```
-
-### WinSCP（图形化拖拽）
-下载 https://winscp.net/ ，新建连接输入 IP 和密码即可。
-
----
-
-## 完整命令速查（从零开始）
-
-```cmd
-:: 服务器上依次执行（前提：Node.js、Python、VS Build Tools 已安装）
-
-:: 1. 解压
-cd C:\stzh
-powershell Expand-Archive -Path stzh-full.zip -DestinationPath . -Force
-
-:: 2. 编译 native 模块
-cd C:\stzh\node_modules\better-sqlite3
-npx node-gyp rebuild --release
-
-:: 3. 安装 PM2 并启动
-cd C:\stzh
-npm install -g pm2
-pm2 start start.js --name stzh
-pm2 save
-
-:: 4. 防火墙
-netsh advfirewall firewall add rule name="STZH 8080" dir=in action=allow protocol=TCP localport=8080
-
-:: 5. 验证
-pm2 list
-:: 浏览器打开 http://121.199.20.161:8080
-```
+Docker可选方案见[DOCKER-DEPLOY.md](DOCKER-DEPLOY.md)；本轮验证范围见[TESTING.md](../docs/TESTING.md)。
