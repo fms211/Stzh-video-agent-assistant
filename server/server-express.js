@@ -31,6 +31,9 @@ app.get("/health", (req, res) => {
 
 // === JWT 中间件（非阻塞：有 token 就解析，没有也放行） ===
 const { attachUser, requireUser } = require("./middleware/auth.js");
+// Shared public forecast, with fixed server configuration and bounded upstream access.
+app.use(require("./routes/weather.js"));
+
 app.use(attachUser);
 
 // === 挂载路由模块（auth / conversations / templates / generations / user-settings） ===

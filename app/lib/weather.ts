@@ -1,13 +1,10 @@
 // 和风天气 API 服务
 // 文档: https://dev.qweather.com/docs/api/
 
-const WEATHER_KEY = "tszh_weather";
-const CACHE_DURATION = 30 * 60 * 1000; // 30分钟缓存
+import { resolveApiBase } from "./auth";
 
-// 和风天气配置
-const QWEATHER_API_HOST = "pb5u9x7yxj.re.qweatherapi.com";
-const QWEATHER_API_KEY = "9db88dc4a7fd44da846e4f53e843a495";
-const QWEATHER_LOCATION_ID = "101280601"; // 深圳
+const WEATHER_KEY = "tszh_weather_v2";
+const CACHE_DURATION = 30 * 60 * 1000; // 30分钟缓存
 
 export interface WeatherData {
   temp: number;        // 温度
@@ -94,7 +91,9 @@ function getCachedWeather(): WeatherData | null {
     const cached = localStorage.getItem(WEATHER_KEY);
     if (!cached) return null;
     const data = JSON.parse(cached);
-    if (Date.now() - data.updateTime > CACHE_DURATION) return null;
+    if (!Number.isFinite(data.updateTime) || data.updateTime > Date.now() || Date.now() - data.updateTime > CACHE_DURATION
+      || ![data.temp, data.humidity, data.windScale, data.feelsLike].every(Number.isFinite)
+      || ![data.text, data.icon, data.windDir, data.city].every(value => typeof value === "string")) return null;
     return data;
   } catch {
     return null;
@@ -107,63 +106,23 @@ function cacheWeather(data: WeatherData): void {
   localStorage.setItem(WEATHER_KEY, JSON.stringify(data));
 }
 
-// 获取实时天气（使用和风天气新版 API）
+// 浏览器只读取同源服务端结果；第三方凭据不会进入网页或 URL。
 export async function fetchWeather(): Promise<WeatherData | null> {
-  // 先检查缓存
   const cached = getCachedWeather();
-  if (cached) {
-    console.log("使用缓存的天气数据:", cached);
-    return cached;
-  }
-
+  if (cached) return cached;
   try {
-    const url = `https://${QWEATHER_API_HOST}/v7/weather/now?location=${QWEATHER_LOCATION_ID}`;
-    console.log("请求天气 API:", url);
-
-    // 获取实时天气（新版 API 使用 Header 传递 Key）
-    const res = await fetch(url, {
-      headers: {
-        "X-QW-Api-Key": QWEATHER_API_KEY,
-      },
-    });
-    console.log("HTTP 状态:", res.status);
-    const data = await res.json();
-    console.log("天气 API 返回:", JSON.stringify(data, null, 2));
-
-    if (data.code === "200" && data.now) {
-      const weatherData: WeatherData = {
-        temp: parseInt(data.now.temp),
-        text: data.now.text,
-        icon: data.now.icon,
-        humidity: parseInt(data.now.humidity),
-        windDir: data.now.windDir,
-        windScale: parseInt(data.now.windScale),
-        feelsLike: parseInt(data.now.feelsLike),
-        city: "深圳",
-        updateTime: Date.now(),
-      };
-
-      console.log("解析后的天气数据:", weatherData);
-      // 缓存数据
-      cacheWeather(weatherData);
-      return weatherData;
-    } else {
-      console.error("天气 API 错误:", data.code, data);
-      // 如果是授权错误，尝试使用旧版 API 格式
-      if (data.code === "400" || data.code === "401" || data.code === "403") {
-        console.log("尝试旧版 API 格式...");
-        const oldUrl = `https://devapi.qweather.com/v7/weather/now?location=${QWEATHER_LOCATION_ID}&key=${QWEATHER_API_KEY}`;
-        const oldRes = await fetch(oldUrl);
-        const oldData = await oldRes.json();
-        console.log("旧版 API 返回:", oldData);
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error("获取天气失败:", error);
-    return null;
-  }
+    const res = await fetch(`${resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location)}/api/weather`, { cache: "no-store", signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const result = await res.json();
+    const data = result?.available === true ? result.data : null;
+    if (!data || ![data.temp, data.humidity, data.windScale, data.feelsLike, data.updateTime].every(Number.isFinite)
+      || typeof data.text !== "string" || typeof data.icon !== "string" || typeof data.windDir !== "string" || typeof data.city !== "string") return null;
+    const weather: WeatherData = { temp: data.temp, humidity: data.humidity, windScale: data.windScale,
+      feelsLike: data.feelsLike, updateTime: data.updateTime, text: data.text, icon: data.icon, windDir: data.windDir, city: data.city };
+    // A denied browser cache must not turn a confirmed response into a failure.
+    try { cacheWeather(weather); } catch { /* Current response remains available. */ }
+    return weather;
+  } catch { return null; }
 }
 
 // 获取天气描述（用于氛围效果）
@@ -171,10 +130,10 @@ export function getWeatherMood(iconCode: string): "sunny" | "cloudy" | "rainy" |
   const code = parseInt(iconCode);
   if (code >= 100 && code <= 103) return "sunny";
   if (code === 104 || (code >= 150 && code <= 153)) return "cloudy";
+  if (code >= 302 && code <= 304) return "stormy";
   if (code >= 300 && code <= 399) return "rainy";
   if (code >= 400 && code <= 499) return "snowy";
   if (code >= 500 && code <= 515) return "foggy";
-  if (code >= 302 && code <= 304) return "stormy";
   return "sunny";
 }
 

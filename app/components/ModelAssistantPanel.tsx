@@ -3,7 +3,7 @@
 import SquishSwitch from "@/app/components/SquishSwitch";
 import { DialogueLatticeLoader } from "./DialogueLatticeLoader";
 import { isPendingDialogueReply } from "@/app/lib/dialogue-loader-settings";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Bot, ChevronDown, History, MessageSquare, Play, Send, Sparkles, Workflow } from "lucide-react";
 import { creativeApi, type SafeProvider } from "@/app/lib/creative-agent-api";
 import { saveFileDownload } from "@/app/lib/media-download";
@@ -79,6 +79,7 @@ function formatOpcContext(context: OpcContext) {
 }
 
 export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, onAuthRequired, onSeedConsumed, onLaunchRuntime, onOpenResearchHistory, onOpenModelCenter, onSendingChange, onAssistantInspection, onWorkflowInspection, initialMode, compact, draftValue, onDraftChange }: { seed: string; opcContext: OpcContext; remoteEnabled: boolean; onAuthRequired: () => void; onSeedConsumed: () => void; onLaunchRuntime?: (input: ResearchLaunchInput) => void | Promise<boolean>; onOpenResearchHistory?: () => void; onOpenModelCenter?: () => void; onSendingChange?: (sending: boolean) => void; onAssistantInspection?: (state: AssistantInspectorState) => void; onWorkflowInspection?: (state: WorkflowInspectorState) => void; initialMode?: "chat" | "workflow"; compact?: boolean; draftValue?: string; onDraftChange?: (draft: string) => void }) {
+  const workflowFormId = useId();
   const { user } = useAuth();
   const [researchProject, setResearchProject] = useState<{ owner: number; id: string } | null>(null);
   const researchProjectId = researchProject?.owner === user?.id ? researchProject?.id || "" : "";
@@ -678,6 +679,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
             </div>
           ) : (
             <div className="studio-workflow-form">
+              <div className="studio-workflow-fields">
               <button type="button" className="studio-wf-back" onClick={() => { setActiveWfId(null); setWfInput({}); setWfError(null); }}>
                 <ArrowLeft size={13} /> 返回
               </button>
@@ -693,11 +695,11 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
               </div>
               {activeWf.fields.map((f) => (
                 <div key={f.key} className="studio-wf-field">
-                  <label className="studio-wf-label">{f.label}{f.required && <span className="studio-wf-required">*</span>}</label>
+                  <label className="studio-wf-label" htmlFor={`${workflowFormId}-${f.key}`}>{f.label}{f.required && <span className="studio-wf-required" aria-hidden="true">*</span>}</label>
                   {f.type === "textarea" ? (
-                    <textarea className="studio-wf-input" placeholder={f.placeholder} value={wfInput[f.key] || ""} onChange={(e) => setWfInput((p) => ({ ...p, [f.key]: e.target.value }))} rows={3} />
+                    <textarea id={`${workflowFormId}-${f.key}`} aria-required={f.required || undefined} className="studio-wf-input" placeholder={f.placeholder} value={wfInput[f.key] || ""} onChange={(e) => setWfInput((p) => ({ ...p, [f.key]: e.target.value }))} rows={3} />
                   ) : (
-                    <input className="studio-wf-input" type="text" placeholder={f.placeholder} value={wfInput[f.key] || ""} onChange={(e) => setWfInput((p) => ({ ...p, [f.key]: e.target.value }))} />
+                    <input id={`${workflowFormId}-${f.key}`} aria-required={f.required || undefined} className="studio-wf-input" type="text" placeholder={f.placeholder} value={wfInput[f.key] || ""} onChange={(e) => setWfInput((p) => ({ ...p, [f.key]: e.target.value }))} />
                   )}
                 </div>
               ))}
@@ -706,6 +708,8 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
               {activeWf.runtimeMode === "research-workbench" && remoteEnabled && user && researchProjectId && <StudioProjectNotes key={`notes:${researchExclusionScope}`} projectId={researchProjectId} disabled={researchLaunching} />}
               {wfError && <div className="studio-wf-error" role="alert">{wfError}</div>}
               {workflowDraftWarning && <div className="studio-wf-error" role="alert">{workflowDraftWarning}</div>}
+              </div>
+              <div className="studio-workflow-actions">
               <button
                 type="button"
                 className="studio-wf-start"
@@ -733,6 +737,7 @@ export default function ModelAssistantPanel({ seed, opcContext, remoteEnabled, o
                 {wfRunning ? <DialogueLatticeLoader compact decorative /> : <Play size={14} />}
                 {activeWf.runtimeMode === "research-workbench" && onLaunchRuntime ? "生成研究计划" : "开始执行"}
               </button>
+              </div>
             </div>
           )}
         </div>

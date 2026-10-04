@@ -1,4 +1,5 @@
-@import "tailwindcss";
+/* Only application UI declares Tailwind utilities; keep temporary linked checkouts out of build contexts. */
+@import "tailwindcss" source("./");
 @import "highlight.js/styles/github-dark.css";
 
 /* Component flex/grid styles must not expose a closed native dialog before showModal. */
@@ -3307,11 +3308,16 @@ textarea::placeholder {
 .product-shell .cws-workspace:not([data-creative-mode="coze"]) .cws-composer { flex: 1; min-height: 0; max-height: none; overflow: hidden; }
 .product-shell .cws-workspace:not([data-creative-mode="coze"]) :is(.cws-composer__content, .cws-composer__mode) { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .product-shell .cws-workspace .cws-composer :is(.studio-assistant.is-compact, .collab-panel--compact) { flex: 1; min-height: 0; width: 100%; margin: 0; overflow: auto; border-radius: var(--shape-card); background: var(--surface-reading); }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact { display: flex; flex-direction: column; overflow: hidden; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact { display: flex; flex-direction: column; overflow: auto; }
 .product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-chat { flex: 1; min-height: 0; max-height: none; }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow { flex: 1; min-height: 0; max-height: none; display: flex; overflow: hidden; }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact :is(.studio-workflow-list, .studio-workflow-form) { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
-.product-shell .cws-workspace .cws-composer .studio-wf-start { position: sticky; bottom: 0; z-index: 1; min-height: 40px; box-shadow: 0 -6px 18px var(--space-panel); }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow { flex: 1; min-height: min(280px, 50svh); max-height: none; display: flex; overflow: hidden; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow-list { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow-form { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.product-shell .cws-workspace .cws-composer .studio-workflow-fields { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.product-shell .cws-workspace .cws-composer .studio-workflow-actions { flex: none; padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: var(--surface-reading); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start { position: static; min-height: 40px; margin: 0; box-shadow: none; background: var(--glow-warm); color: var(--space-deep); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start:hover:not(:disabled) { background: color-mix(in srgb, var(--glow-warm) 86%, var(--foreground)); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start:disabled { background: color-mix(in srgb, var(--foreground) 8%, var(--space-panel)); color: var(--text-muted); }
 .product-shell .cws-workspace :is(.cws-composer__assistant, .cws-composer__workflow) { flex: 1; min-height: 0; max-height: none; overflow: hidden; }
 .product-shell .cws-workspace .studio-composer { flex-shrink: 0; }
 .product-shell .wsd-dock__content { padding: 8px; background: transparent; }

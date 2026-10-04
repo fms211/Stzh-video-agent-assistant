@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-04",
+  "version": "1.40.0",
+  "frontendFullInitial": {
+    "tests": 656,
+    "pass": 652,
+    "fail": 4,
+    "cause": "legacy lifecycle mock lacked useId"
+  },
+  "frontendRelatedRetest": {
+    "tests": 4,
+    "pass": 4
+  },
+  "weatherClientRetest": {
+    "tests": 7,
+    "pass": 7,
+    "realResolverUsed": true
+  },
+  "backendFull": {
+    "tests": 390,
+    "pass": 390
+  },
+  "build": {
+    "passedFinalCleanAndIncremental": true,
+    "scanBase": "app/",
+    "failedAttemptsRetained": true,
+    "oldWeatherKeyAbsentFromFinalAssets": true
+  },
+  "ui": {
+    "independentBrowserAuthorized": true,
+    "chromeSyntheticOnly": true,
+    "pagesThemesWidths": 45,
+    "actualThemeAndNoHorizontalOverflow": true,
+    "workflowDeployedNormalAnd200Text": 6,
+    "allFieldsFullyVisibleAndHitTested": true,
+    "draftModesRetained": 4,
+    "modelMenuEscapeRestoresFocus": true,
+    "settingsEscapeRestoresFocus": true,
+    "assistantErrorMocked": true,
+    "frequencyCanvasWidth": 1258,
+    "frequencyObservationMs": 30108,
+    "screenshots": "private output/playwright/stage4-20261004; representative images viewed, not all45 image/state combinations"
+  },
+  "originalData": {
+    "histories": 9,
+    "unchanged": true,
+    "integrity": "ok",
+    "sourceHashes": 259
+  },
+  "weather": {
+    "keyClientRemoved": true,
+    "serverOnlyOptionalConfig": true,
+    "realProviderCalls": 0,
+    "oldPublishedKeyRotation": "owner action required"
+  },
+  "modelCalls": 0,
+  "mediaCalls": 0,
+  "physicalTouchVerified": false,
+  "formalFrontBackendFinalReview": "pending",
+  "handoffMarkdown": "after final review",
+  "remaining": [
+    "model public DNS and live memory evaluation/enforcement",
+    "remaining UI error/keyboard/200% combinations and device checks",
+    "legacy weather credential revoke/replace",
+    "15 high development/build/desktop dependency findings",
+    "main merge and user acceptance"
+  ]
+}

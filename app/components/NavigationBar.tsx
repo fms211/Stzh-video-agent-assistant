@@ -156,6 +156,7 @@ export default function NavigationBar({
 
   // 天气状态
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherIcon, setWeatherIcon] = useState<string>("🌤️");
   const [glowColor, setGlowColor] = useState<string>("var(--glow-warm)");
 
@@ -263,12 +264,15 @@ export default function NavigationBar({
     return () => clearInterval(timer);
   }, []);
 
-  // 获取天气
+  // 获取天气；缺失配置和离线状态不显示伪造温度。
   useEffect(() => {
+    let disposed = false;
     const loadWeather = async () => {
       const data = await fetchWeather();
+      if (disposed) return;
+      setWeather(data);
+      setWeatherLoading(false);
       if (data) {
-        setWeather(data);
         setWeatherIcon(getWeatherIcon(data.icon));
         const mood = getWeatherMood(data.icon);
         setGlowColor(getWeatherGlowColor(mood));
@@ -276,7 +280,7 @@ export default function NavigationBar({
     };
     loadWeather();
     const timer = setInterval(loadWeather, 30 * 60 * 1000);
-    return () => clearInterval(timer);
+    return () => { disposed = true; clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -460,13 +464,17 @@ export default function NavigationBar({
               <span className="nav-time">{time}</span>
               <span className="nav-date">{date}</span>
             </div>
-            {weather && (
+            {weather ? (
               <div className="nav-weather-block pixel-corners">
                 <span className="nav-weather-icon">{weatherIcon}</span>
                 <div className="nav-weather-info">
                   <span className="nav-weather-temp">{weather.temp}°</span>
                   <span className="nav-weather-text">{weather.text}</span>
                 </div>
+              </div>
+            ) : (
+              <div className="nav-weather-block" title={weatherLoading ? "正在读取天气" : "天气暂不可用"}>
+                <span className="nav-weather-text">{weatherLoading ? "天气加载中…" : "天气暂不可用"}</span>
               </div>
             )}
           </div>

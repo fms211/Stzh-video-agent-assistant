@@ -21,7 +21,7 @@ async function main() {
   // not a process manager and never stops/replaces someone else's service.
   await assertPortAvailable();
   const backup = await backupOriginalWebPreview(prepared);
-  Object.assign(process.env, prepared.effective);
+  Object.assign(process.env, prepared.effective, { STZH_WEATHER_ENABLED: "0" });
   const { createLocalModelPreviewFetch } = require(path.join(root, "server/lib/local-model-preview.js"));
   const network = createLocalModelPreviewFetch(global.fetch);
   global.fetch = network.fetch;

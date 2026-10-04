@@ -13,6 +13,7 @@ function harness(overrides = {}) {
   let cursor = 0, timerId = 0, mounted = true;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
   const react = {
+    useId() { const index = cursor++; return (hooks[index] ||= { kind: "id", value: `workflow-field-fixture-${index}` }).value; },
     useState(initial) {
       const index = cursor++;
       const slot = hooks[index] ||= { kind: "state", value: typeof initial === "function" ? initial() : initial };
