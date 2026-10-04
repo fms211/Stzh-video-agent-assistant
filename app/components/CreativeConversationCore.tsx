@@ -10,6 +10,8 @@ import { useEffect, useRef, useState, useCallback, useId } from "react";
 import { AlertCircle, ChevronDown, Download } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { StudioContextTrace } from "./StudioContextTrace";
+import { DialogueLatticeLoader } from "./DialogueLatticeLoader";
+import { isPendingDialogueReply } from "@/app/lib/dialogue-loader-settings";
 import ResultCard from "./ResultCard";
 import MarkdownRenderer from "./MarkdownRenderer";
 import WelcomeScreen from "./WelcomeScreen";
@@ -19,13 +21,17 @@ import { logCall, logGeneration } from "@/app/lib/tracker";
 import { useAuth } from "./AuthProvider";
 import { createConversation, createTask, getTask, getToken, uploadAttachments } from "@/app/lib/auth";
 import { RequestMemoryExclusions, useRequestMemoryExclusions } from "./RequestMemoryExclusions";
-import { waitForTask } from "@/app/lib/wait-for-task";
+import { waitForTask, TaskTerminalError } from "@/app/lib/wait-for-task";
+import { useCozeTaskRecovery } from "@/app/hooks/useCozeTaskRecovery";
+import { cozeTaskLabel, cozeRecoveryStatus } from "@/app/lib/coze-task-recovery";
 import { saveFileDownload } from "@/app/lib/media-download";
+import { exportCozeConversation } from "@/app/lib/coze-export";
 import { usePreferences } from "@/app/hooks/usePreferences";
 import { useConversationRecovery } from "@/app/hooks/useConversationRecovery";
 import { useSessionProject } from "@/app/hooks/useSessionProject";
 import { prepareCozeHistory } from "@/shared/coze-history.cjs";
 import { creativeConstraints } from "@/app/lib/creative-context";
+import { currentDataOwner, ownerScope } from "@/app/lib/data-owner";
 import type { CreativeContext } from "@/app/lib/appearance-types";
 import { ResearchProjectSelect } from "./research-workbench/ResearchProjectSelect";
 import { StudioProjectNotes } from "./StudioProjectNotes";
@@ -69,7 +75,7 @@ import {
 } from "@/app/lib/sync";
 
 function loadSessions(): HistorySession[] { return syncLoadSessions(); }
-function saveSessions(s: HistorySession[]) { syncSaveSessions(s); }
+function saveSessions(s: HistorySession[], options?: { localOnly?: boolean }) { syncSaveSessions(s, options); }
 function loadMessages(id: string): ChatMessage[] { return syncLoadMessages(id); }
 function saveMessages(id: string, msgs: ChatMessage[]) { syncSaveMessages(id, msgs); }
 function deleteMessages(id: string) { syncRemoveMessages(id); }
@@ -77,6 +83,11 @@ function getActiveId(): string | null { return getActiveSessionId(); }
 function setActiveId(id: string | null) { setActiveSessionId(id); }
 
 export type ConversationSubmit = (prompt: string, files?: File[]) => boolean | void;
+
+function readConversationDataScope() {
+  if (typeof window === "undefined") return { owner: "guest", token: null as string | null };
+  return { owner: ownerScope(currentDataOwner(localStorage)), token: getToken() };
+}
 
 type Props = {
   creativeContext?: CreativeContext;
@@ -86,7 +97,7 @@ type Props = {
   onThinkingChange?: (v: boolean) => void;
   onMessageSent?: () => void;
   onReset?: () => void;
-  onTaskStatusChange?: (status: { active: boolean; label: string } | null) => void;
+  onTaskStatusChange?: (status: { owner: string; active: boolean; label: string } | null) => void;
   onDialogueStateChange?: (state: CozeDialogueState) => void;
   onGoHome?: () => void;
   onSubmitRef?: React.MutableRefObject<ConversationSubmit | null>;
@@ -103,6 +114,7 @@ type Props = {
   showMemoryExclusions?: boolean;
   /** 会话坞状态上提（sessions/stagedFiles/activeSessionId + 操作，供 WorkspaceSessionDock 渲染） */
   onDockStateChange?: (state: {
+    owner: string;
     sessions: HistorySession[];
     files: StagedFile[];
     activeSessionId: string;
@@ -147,6 +159,14 @@ export default function CreativeConversationCore({
 }: Props) {
   const { user } = useAuth();
   const { prefs } = usePreferences();
+  const [dataScope, setDataScope] = useState(readConversationDataScope);
+  const dataScopeRef = useRef(dataScope);
+  const viewerOwner = user ? `user:${user.id}` : "guest";
+  const isCurrentDataScope = () => {
+    const current = readConversationDataScope();
+    return dataScope.owner === viewerOwner && dataScope.owner === current.owner && dataScope.token === current.token;
+  };
+  const dataReady = isCurrentDataScope();
   const [sessionId, setSessionId] = useState<string>("");
   const sessionProject = useSessionProject(user?.id,sessionId);
   const projectId = sessionProject.projectId;
@@ -163,9 +183,23 @@ export default function CreativeConversationCore({
   const [firstSubmission, setFirstSubmission] = useState({ scope: "", revision: 0 });
   const invalidateHistoryRecovery = useConversationRecovery(sessionId, user?.id, hydrated, setMessages, setRecoveryState);
   const [isThinking, setIsThinking] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<{ scope: string; error: boolean; message: string } | null>(null);
   const submittingRef = useRef(false);
   const submissionRevision = useRef(0);
-  const [pendingMessage, setPendingMessage] = useState<{ id: string; sessionId: string; owner: number | undefined } | null>(null);
+  useEffect(() => () => { submissionRevision.current += 1; }, []);
+  const [pendingMessage, setPendingMessage] = useState<{ id: string; sessionId: string; owner: number | undefined; taskStatus?: string } | null>(null);
+  const [taskRecoveryRevision, setTaskRecoveryRevision] = useState(0);
+  const taskRecovery = useCozeTaskRecovery(sessionId, user?.id, hydrated && dataReady && !!user, setMessages, taskRecoveryRevision);
+  const isBusy = isThinking || Object.keys(taskRecovery.tasks).length > 0;
+  useEffect(() => { onThinkingChange?.(isBusy); }, [isBusy, onThinkingChange]);
+  useEffect(() => {
+    const recoveryStatus = cozeRecoveryStatus(taskRecovery);
+    if (recoveryStatus) onTaskStatusChange?.({ owner: dataScope.owner, ...recoveryStatus });
+    else if (!isThinking) onTaskStatusChange?.(null);
+    if (pendingMessage && taskRecovery.settled.includes(pendingMessage.id) && !submittingRef.current) {
+      setPendingMessage(null); setIsThinking(false);
+    }
+  }, [taskRecovery.label, taskRecovery.error, taskRecovery.loading, taskRecovery.settled, pendingMessage, isThinking, dataScope.owner, onTaskStatusChange]);
   const [contextPanel, setContextPanel] = useState<{ scope: string; panel: "project" | "memory" | null }>({ scope: "", panel: null });
   const [projectCaption, setProjectCaption] = useState({ id: "", name: "" });
   const contextId = useId();
@@ -175,12 +209,12 @@ export default function CreativeConversationCore({
   useEffect(() => {
     onDialogueStateChange?.({
       scope: dialogueScope,
-      ready: hydrated && !!sessionId && (!user || messages.length > 0 || (recoveryState.scope === dialogueScope && !recoveryState.pending)),
-      hasMessages: messages.length > 0,
+      ready: dataReady && hydrated && !!sessionId && (!user || messages.length > 0 || (recoveryState.scope === dialogueScope && !recoveryState.pending)),
+      hasMessages: dataReady && messages.length > 0,
       firstSubmission: firstSubmission.scope === dialogueScope ? firstSubmission.revision : 0,
-      panelOpen: !!openContextPanel,
+      panelOpen: dataReady && !!openContextPanel,
     });
-  }, [dialogueScope, hydrated, sessionId, user, messages.length, recoveryState, firstSubmission, openContextPanel, onDialogueStateChange]);
+  }, [dialogueScope, dataReady, hydrated, sessionId, user, messages.length, recoveryState, firstSubmission, openContextPanel, onDialogueStateChange]);
   const handleProjectNameChange = useCallback((name: string) => {
     setProjectCaption(previous => previous.id === projectId && previous.name === name ? previous : { id: projectId, name });
   }, [projectId]);
@@ -202,6 +236,9 @@ export default function CreativeConversationCore({
   const { reducedMotion } = useCreativeMotion();
 
   useEffect(() => {
+    const currentScope = readConversationDataScope();
+    dataScopeRef.current = currentScope;
+    setDataScope(currentScope);
     const id = getActiveId() || createId();
     setSessionId(id);
     setMessages(loadMessages(id));
@@ -211,6 +248,17 @@ export default function CreativeConversationCore({
 
   useEffect(() => {
     const reloadOwnerData = () => {
+      const currentScope = readConversationDataScope();
+      // A same-account background refresh must not discard an in-flight request.
+      if (currentScope.owner === dataScopeRef.current.owner && currentScope.token === dataScopeRef.current.token && submittingRef.current) return;
+      if (currentScope.owner !== dataScopeRef.current.owner) {
+        setStagedFiles([]);
+        setSidebarFiles(undefined);
+        setSuggestions([]);
+        setFirstSubmission({ scope: "", revision: 0 });
+      }
+      dataScopeRef.current = currentScope;
+      setDataScope(currentScope);
       submissionRevision.current += 1;
       submittingRef.current = false;
       setPendingMessage(null);
@@ -234,7 +282,7 @@ export default function CreativeConversationCore({
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
-  useEffect(() => { if (hydrated) setActiveId(sessionId); }, [sessionId, hydrated]);
+  useEffect(() => { if (hydrated && dataReady) setActiveId(sessionId); }, [sessionId, hydrated, dataReady]);
 
   const handledFocusRevision = useRef(0);
   useEffect(() => {
@@ -242,7 +290,7 @@ export default function CreativeConversationCore({
       handledFocusRevision.current = 0;
       return;
     }
-    if (!hydrated || handledFocusRevision.current === focusConversation.revision) return;
+    if (!hydrated || !dataReady || handledFocusRevision.current === focusConversation.revision) return;
     handledFocusRevision.current = focusConversation.revision;
     if (sessionId === focusConversation.id) return;
     resetPendingRequest();
@@ -251,7 +299,7 @@ export default function CreativeConversationCore({
     setMessages(loadMessages(focusConversation.id));
     setActiveId(focusConversation.id);
     onReset?.();
-  }, [focusConversation, hydrated, invalidateHistoryRecovery, onReset, resetPendingRequest, sessionId, user]);
+  }, [focusConversation, hydrated, dataReady, invalidateHistoryRecovery, onReset, resetPendingRequest, sessionId, user]);
 
   // 暴露 submitPrompt 给父组件（用于开场白快捷入口）
   useEffect(() => {
@@ -260,25 +308,30 @@ export default function CreativeConversationCore({
 
   // 登录后从服务端拉取会话列表
   useEffect(() => {
-    if (!user || !hydrated) return;
+    if (!user || !hydrated || !dataReady) return;
+    let cancelled = false;
+    const capturedScope = dataScope;
     fetchServerSessions().then((serverSessions) => {
+      const current = readConversationDataScope();
+      if (cancelled || current.owner !== capturedScope.owner || current.token !== capturedScope.token) return;
       if (serverSessions.length > 0) {
         setSessions(serverSessions);
-        saveSessions(serverSessions);
+        saveSessions(serverSessions, { localOnly: true });
       }
     });
-  }, [user, hydrated]);
+    return () => { cancelled = true; };
+  }, [user?.id, hydrated, dataReady, dataScope]);
 
   const setThinking = useCallback((v: boolean) => {
-    setIsThinking(v); onThinkingChange?.(v);
-  }, [onThinkingChange]);
+    setIsThinking(v);
+  }, []);
 
   // 能谱：coze 思考/任务信号汇入共享 store
   useEffect(() => {
-    const releaseThinking = isThinking ? "thinking" : "idle";
+    const releaseThinking = isBusy ? "thinking" : "idle";
     globalEnergyStore.setSource("coze-thinking", releaseThinking);
     return () => globalEnergyStore.clearSource("coze-thinking");
-  }, [isThinking]);
+  }, [isBusy]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -293,16 +346,21 @@ export default function CreativeConversationCore({
   // Persist current session (debounced, only after hydration, respects autoSave pref)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!hydrated || messages.length === 0) return;
+    if (!hydrated || !dataReady || messages.length === 0) return;
     if (!prefs.autoSave) return;
     if (persistTimer.current) clearTimeout(persistTimer.current);
+    const capturedScope = dataScope;
     persistTimer.current = setTimeout(() => {
-      saveMessages(sessionId, messages);
+      const current = readConversationDataScope();
+      if (current.owner !== capturedScope.owner || current.token !== capturedScope.token) return;
       const existing = sessionsRef.current.find((s) => s.id === sessionId);
+      // Opening cached history is not a new conversation activity.
+      if (existing && JSON.stringify(loadMessages(sessionId)) === JSON.stringify(messages)) return;
+      saveMessages(sessionId, messages);
       const title = messages.find((m) => m.role === "user")?.text?.slice(0, 40) || "新对话";
       const updated: HistorySession = {
         id: sessionId, title, timestamp: Date.now(),
-        messageCount: messages.filter((m) => m.role === "user" || m.payload || m.isError).length,
+        messageCount: messages.length,
       };
       const next = existing
         ? sessionsRef.current.map((s) => (s.id === sessionId ? updated : s))
@@ -311,7 +369,7 @@ export default function CreativeConversationCore({
       saveSessions(next);
     }, 300);
     return () => { if (persistTimer.current) clearTimeout(persistTimer.current); };
-  }, [messages, sessionId, hydrated, prefs.autoSave]);
+  }, [messages, sessionId, hydrated, prefs.autoSave, dataReady, dataScope]);
 
   // Enforce maxMessages limit
   useEffect(() => {
@@ -321,6 +379,7 @@ export default function CreativeConversationCore({
   }, [messages, hydrated, prefs.maxMessages]);
 
   async function submitPrompt(prompt: string, files: File[], revision: number) {
+    let submittedTaskId: string | null = null;
     const submissionToken = getToken();
     const isCurrentSubmission = () => getToken() === submissionToken && submissionRevision.current === revision;
     const currentConstraints = creativeConstraints(creativeContext);
@@ -372,15 +431,18 @@ export default function CreativeConversationCore({
       });
       if (!isCurrentSubmission()) return;
       const taskId = created.task.id;
+      submittedTaskId = taskId;
+      setTaskRecoveryRevision(value => value + 1);
       memoryExclusions.consumed(excludedMemoryIds);
       const task = await waitForTask(() => isCurrentSubmission()
         ? getTask(taskId).then((result) => result.task)
         : Promise.reject(new Error("账户已切换")), {
         onUpdate(task) {
           if (!isCurrentSubmission()) return;
+          setPendingMessage(current => current?.id === thinkingMsg.id && current.sessionId === sessionId && current.taskStatus !== task.status ? { ...current, taskStatus: task.status } : current);
           const label = task.status === "queued" ? "已排队，等待服务器调度"
             : task.status === "paused" ? "任务已暂停，可在任务中心继续" : task.stage || "正在生成";
-          onTaskStatusChange?.({ active: true, label });
+          onTaskStatusChange?.({ owner: dataScope.owner, active: true, label });
           setMessages((prev) => prev.some(message => message.id === thinkingMsg.id && message.text !== label)
             ? prev.map(message => message.id === thinkingMsg.id ? { ...message, text: label } : message)
             : prev);
@@ -429,6 +491,13 @@ export default function CreativeConversationCore({
       return;
     } catch (err) {
       if (!isCurrentSubmission()) return;
+      if (submittedTaskId && !(err instanceof TaskTerminalError)) {
+        // Observation failure is not execution failure. Reconnect to the same task.
+        setMessages(prev => prev.map(message => message.id === thinkingMsg.id
+          ? { ...message, isError: false, errorText: undefined, text: "任务仍在后台执行，正在重新连接进度…" } : message));
+        setTaskRecoveryRevision(value => value + 1);
+        return;
+      }
       setThinking(false);
       setPendingMessage(null);
       globalEnergyStore.clearSource("coze-task");
@@ -442,8 +511,10 @@ export default function CreativeConversationCore({
   }
 
   function requestPrompt(prompt: string, files: File[]) {
+    if (!isCurrentDataScope()) return false;
     if (!prompt.trim() && !files.length) return false;
-    if (submittingRef.current) return false;
+    if (submittingRef.current || isBusy || taskRecovery.loading) return false;
+    if (taskRecovery.error) { notify("任务进度尚未确认", "请等待进度连接恢复，避免重复提交"); return false; }
     if (!sessionProject.ready) { notify("项目上下文未就绪", "请先恢复或重新选择此会话的项目"); return false; }
     if (!canUseWorkspaceCapability(accessMode, "generate")) {
       onDraftChange(prompt);
@@ -465,6 +536,7 @@ export default function CreativeConversationCore({
   };
 
   const loadSession = (id: string) => {
+    if (!isCurrentDataScope()) return;
     if (id === sessionId) return;
     resetPendingRequest();
     invalidateHistoryRecovery();
@@ -476,6 +548,7 @@ export default function CreativeConversationCore({
   };
 
   const newChat = () => {
+    if (!isCurrentDataScope()) return sessionId;
     resetPendingRequest();
     invalidateHistoryRecovery();
     const id = createId();
@@ -488,6 +561,7 @@ export default function CreativeConversationCore({
   };
 
   const deleteSession = (id: string) => {
+    if (!isCurrentDataScope()) return;
     deleteMessages(id);
     const next = sessions.filter((s) => s.id !== id);
     setSessions(next);
@@ -495,66 +569,32 @@ export default function CreativeConversationCore({
     if (id === sessionId) newChat();
   };
 
-  const exportConversation = () => {
-    const format = prefs.exportFormat;
-    const includeTs = prefs.includeTimestamp;
-    const timestamp = includeTs ? new Date().toLocaleString("zh-CN") : "";
-    const fileId = `tszh-${sessionId.slice(0, 8)}`;
+  useEffect(() => {
+    const refresh = () => { if (isCurrentDataScope()) setSessions(loadSessions()); };
+    window.addEventListener("tszh_history_retention_changed", refresh);
+    return () => window.removeEventListener("tszh_history_retention_changed", refresh);
+  }, [isCurrentDataScope]);
 
-    if (format === "json") {
-      const data = {
-        exportedAt: new Date().toISOString(),
-        sessionId,
-        messages: messages.map((m) => ({
-          role: m.role,
-          text: m.text,
-          payload: m.payload,
-          contextTrace: m.contextTrace,
-          isError: m.isError,
-          errorText: m.errorText,
-        })),
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      saveFileDownload({ blob, filename: `${fileId}.json` });
-    } else if (format === "txt") {
-      const lines: string[] = [];
-      if (timestamp) lines.push(`腾昇智和 · 对话记录 — ${timestamp}\n`);
-      else lines.push("腾昇智和 · 对话记录\n");
-      for (const m of messages) {
-        if (m.role === "user") lines.push(`[用户] ${m.text}\n`);
-        else if (m.isError) lines.push(`[错误] ${m.errorText}\n`);
-        else if (m.payload) {
-          if (m.payload.videoUrl) lines.push(`[Agent] 视频: ${m.payload.videoUrl}\n`);
-          if (m.payload.imageUrls) m.payload.imageUrls.forEach((u) => lines.push(`[Agent] 图片: ${u}\n`));
-        } else if (m.text) {
-          lines.push(`[Agent] ${m.text}\n`);
-        }
-      }
-      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-      saveFileDownload({ blob, filename: `${fileId}.txt` });
-    } else {
-      const lines: string[] = ["# 腾昇智和 · 对话记录\n"];
-      if (timestamp) lines.push(`> ${timestamp}\n`);
-      for (const m of messages) {
-        if (m.role === "user") lines.push(`### 用户\n${m.text}\n`);
-        else if (m.isError) lines.push(`### 错误\n${m.errorText}\n`);
-        else if (m.payload) {
-          lines.push(`### Agent\n`);
-          if (m.payload.videoUrl) lines.push(`- 视频: ${m.payload.videoUrl}\n`);
-          if (m.payload.imageUrls) m.payload.imageUrls.forEach((u: string) => lines.push(`- 图片: ${u}\n`));
-          lines.push(`- requestId: ${m.payload.requestId}\n`);
-        } else if (m.text) {
-          lines.push(`### Agent\n${m.text}\n`);
-        }
-      }
-      const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
-      saveFileDownload({ blob, filename: `${fileId}.md` });
+  const exportConversation = () => {
+    if (!isCurrentDataScope()) return;
+    try {
+      const format = prefs.exportFormat;
+      const includeTs = prefs.includeTimestamp;
+      const timestamp = includeTs ? new Date().toLocaleString("zh-CN") : "";
+      const fileId = `tszh-${sessionId.slice(0, 8)}`;
+
+      const file = exportCozeConversation(messages, { format, sessionId, timestamp, exportedAt: new Date().toISOString() });
+      saveFileDownload({ blob: new Blob([file.content], { type: file.type }), filename: `${fileId}.${file.extension}` });
+      setExportFeedback({ scope: dialogueScope, error: false, message: "对话记录已交给浏览器保存，请在下载列表核对。" });
+    } catch (cause) {
+      setExportFeedback({ scope: dialogueScope, error: true, message: cause instanceof Error ? `导出未完成：${cause.message}。当前对话仍保留，可重试。` : "导出未完成，当前对话仍保留，可重试。" });
     }
   };
 
   // 会话坞状态上提（sessions/stagedFiles/activeSessionId 变化时同步给 Workspace）
   useEffect(() => {
     onDockStateChange?.({
+      owner: dataScope.owner,
       sessions,
       files: stagedFiles,
       activeSessionId: sessionId,
@@ -562,13 +602,14 @@ export default function CreativeConversationCore({
       onSessionDelete: deleteSession,
       onNewChat: newChat,
       onFileClick: (file) => {
+        if (!isCurrentDataScope()) return;
         setSidebarFiles([file.file]);
-        setTimeout(() => setSidebarFiles(undefined), 100);
+        setTimeout(() => { if (isCurrentDataScope()) setSidebarFiles(undefined); }, 100);
       },
-      onClearFiles: () => setStagedFiles([]),
+      onClearFiles: () => { if (isCurrentDataScope()) setStagedFiles([]); },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, stagedFiles, sessionId, onDockStateChange]);
+  }, [sessions, stagedFiles, sessionId, dataScope, viewerOwner, onDockStateChange]);
 
   // insertFragment 注入（revision 去重）
   useEffect(() => {
@@ -582,6 +623,8 @@ export default function CreativeConversationCore({
   const showContext = showMemoryExclusions && user && accessMode === "authenticated";
   const projectLabel = projectId ? (projectCaption.id === projectId && projectCaption.name ? projectCaption.name : "已关联项目") : "未关联";
   const toggleContextPanel = (panel: "project" | "memory") => setContextPanel({ scope: exclusionScope, panel: openContextPanel === panel ? null : panel });
+
+  if (!dataReady) return <div className="coze-dialogue"><DialogueLatticeLoader label="正在切换对话账户…" /></div>;
 
   return (
     <div className="coze-dialogue" onKeyDown={event => {
@@ -611,9 +654,10 @@ export default function CreativeConversationCore({
           </>}
           {messages.length > 0 && <button type="button" className="coze-context-export" onClick={exportConversation} aria-label="导出对话" title={`导出 ${prefs.exportFormat.toUpperCase()}`}><Download size={16} aria-hidden="true" /></button>}
         </div>
+        {exportFeedback?.scope === dialogueScope && <p className="coze-context-feedback" role={exportFeedback.error ? "alert" : "status"} style={{ overflowWrap: "anywhere" }}>{exportFeedback.message}</p>}
         {showContext && <div className="coze-context-panel" hidden={!openContextPanel}>
           <div id={`${contextId}-project-panel`} role="region" aria-labelledby={`${contextId}-project-trigger`} hidden={openContextPanel !== "project"}>
-            <fieldset disabled={isThinking}><ResearchProjectSelect key={`${user.id}:${sessionId}`} id={`${contextId}-project`} disabled={isThinking} onProjectNameChange={handleProjectNameChange} label="Coze 创作项目" description="切换项目会新建会话，保留原历史，避免带入旧项目对话。选择按账户和会话保存在本机，重新打开时恢复。" value={projectId} onChange={id=>{if(id===projectId&&sessionProject.ready)return;const nextSession=newChat();sessionProject.select(id,nextSession);}} /></fieldset>
+            <fieldset disabled={isBusy}><ResearchProjectSelect key={`${user.id}:${sessionId}`} id={`${contextId}-project`} disabled={isBusy} onProjectNameChange={handleProjectNameChange} label="Coze 创作项目" description="切换项目会新建会话，保留原历史，避免带入旧项目对话。选择按账户和会话保存在本机，重新打开时恢复。" value={projectId} onChange={id=>{if(id===projectId&&sessionProject.ready)return;const nextSession=newChat();sessionProject.select(id,nextSession);}} /></fieldset>
             {sessionProject.error && <p role="alert">{sessionProject.error} {!sessionProject.ready && <button type="button" className="studio-context-action" disabled={isThinking} onClick={()=>{const nextSession=newChat();sessionProject.select("",nextSession);}}>新建不关联项目的会话</button>}</p>}
             {projectId && <StudioProjectNotes key={`notes:${exclusionScope}`} projectId={projectId} disabled={isThinking} />}
           </div>
@@ -622,22 +666,28 @@ export default function CreativeConversationCore({
           </div>
         </div>}
       </div>}
-      <div ref={viewportRef} className="chat-viewport">
+      <div ref={viewportRef} className="chat-viewport" role="region" aria-label="Coze 对话消息" tabIndex={0}>
       {showWelcome && onWelcomeStart && (
         <WelcomeScreen onStart={onWelcomeStart} />
       )}
 
+      {taskRecovery.error && <p className="coze-task-status" role="status">任务进度暂时不可用：{taskRecovery.error}。系统会尝试重新连接，不会重新提交生成。</p>}
       <div className="chat-messages">
         <PluginSlot slot="chat.message.after" contributions={[]} projectId="project-a" />
 
         {messages.map((msg, idx) => {
+          const recoveredTask = msg.role === "agent" ? taskRecovery.tasks[msg.id] : undefined;
+          if (recoveredTask) return <div key={msg.id} className="chat-message-group coze-message-group--agent">
+            <DialogueLatticeLoader className="coze-task-status" label={cozeTaskLabel(recoveredTask)}
+              animate={["queued", "running"].includes(recoveredTask.status)} />
+          </div>;
           if (msg.isError) {
             return (
               <div key={msg.id} className="chat-message-group coze-message-group--agent">
                 <div className="coze-message-error" role="alert">
                   <AlertCircle size={18} aria-hidden="true" />
                   <div><strong>请求失败</strong><p>{msg.errorText}</p></div>
-                  <button type="button" onClick={retry} disabled={isThinking} className="settings-chip active">重试</button>
+                  <button type="button" onClick={retry} disabled={isBusy || taskRecovery.loading || !!taskRecovery.error} className="settings-chip active">重试</button>
                 </div>
               </div>
             );
@@ -649,11 +699,10 @@ export default function CreativeConversationCore({
               </div>
             );
           }
-          if (isThinking && pendingMessage?.id === msg.id && pendingMessage.sessionId === sessionId && pendingMessage.owner === user?.id) {
+          if (pendingMessage && isPendingDialogueReply(pendingMessage, msg.id, sessionId, isThinking) && pendingMessage.owner === user?.id) {
             return <div key={msg.id} className="chat-message-group coze-message-group--agent">
-              <div className="coze-task-status" role="status" aria-live="polite" aria-atomic="true">
-                <span className="coze-task-status__dot" aria-hidden="true" /><span>{msg.text || "正在提交任务…"}</span>
-              </div>
+              <DialogueLatticeLoader className="coze-task-status" label={msg.text || "正在提交任务…"}
+                animate={!pendingMessage.taskStatus || ["queued", "running"].includes(pendingMessage.taskStatus)} />
             </div>;
           }
           const precedingUserMsg = messages.slice(0, idx).reverse().find((m) => m.role === "user");
@@ -686,7 +735,7 @@ export default function CreativeConversationCore({
 
       </div>
 
-      {suggestions.length > 0 && !isThinking && (
+      {suggestions.length > 0 && !isBusy && (
         <div className="suggestions-bar">
           {suggestions.map((s, i) => (
             <button

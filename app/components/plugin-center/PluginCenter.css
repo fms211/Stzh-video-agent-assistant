@@ -50,10 +50,16 @@
 
 .pc__project-picker {
   display: inline-flex;
+  flex: 0 1 300px;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   color: var(--text-muted);
   font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+.pc__project-label { flex: none; white-space: nowrap; }
+.pc__project-picker .studio-select { flex: 1; min-width: 0; }
 
 .pc__project-picker select {
   border: 1px solid var(--border-subtle);
@@ -237,14 +243,17 @@
   font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 
 .pc-discover__filters input[type="search"] {
-  min-width: 220px;
+  min-width: min(220px, 100%);
   flex: 1;
-  max-width: 360px;
+  max-width: min(360px, 100%);
 }
+
+.pc-discover > .pc-note { flex-wrap: wrap; }
+.pc-discover > .pc-note > span { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 
 .pc-discover__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -325,11 +334,16 @@
 }
 
 .pc-drawer__head h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: var(--text-body-size);
   color: var(--foreground); line-height: var(--text-body-line); }
 
+.pc-drawer__head > button { flex-shrink: 0; }
+
 .pc-drawer__body {
+  overscroll-behavior: contain;
   flex: 1;
   overflow-y: auto;
   padding: 14px 16px;
@@ -373,6 +387,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .pc-drawer-backdrop {
@@ -772,9 +787,12 @@
   }
 
   .pc__subnav {
-    overflow-x: auto;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
+
+  .pc__subnav-spacer { display: none; }
+  .pc__project-picker { flex: 1 1 220px; }
+  .pc__install-btn { flex: none; }
 
   .pc__subnav-btn {
     white-space: nowrap;

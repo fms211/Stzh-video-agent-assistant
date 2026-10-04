@@ -11,7 +11,9 @@ export function notificationCacheKey() {
 
 // Pin credentials and cache ownership for the lifetime of a mounted feed.
 export function captureNotificationClient() {
-  const token = getToken(), key = notificationCacheKey();
+  const token = getToken(), user = getCachedUser();
+  const owner = token && user ? `user:${user.id}` : "guest";
+  const key = `tszh:v2:${owner}:notifications`;
   const base = typeof window === "undefined" ? "" : resolveApiBase(process.env.NEXT_PUBLIC_AGENT_BACKEND_URL, window.location);
   const current = () => getToken() === token && notificationCacheKey() === key;
   const assertCurrent = () => { if (!current()) throw new DOMException("通知账户已切换", "AbortError"); };
@@ -28,7 +30,7 @@ export function captureNotificationClient() {
     return response;
   }
   return {
-    current, cached,
+    owner, current, cached,
     async read() {
       assertCurrent();
       if (!token) return cached();
@@ -46,23 +48,30 @@ export function captureNotificationClient() {
   };
 }
 
-export function createNotificationFeed(client: ReturnType<typeof captureNotificationClient>, changed: (state: { rows: NotificationRow[]; busy: boolean; error: string }) => void) {
-  let rows = client.cached(), busy = false, disposed = false, revision = 0;
-  const emit = (error = "") => { if (!disposed && client.current()) changed({ rows, busy, error }); };
+export function createNotificationFeed(client: ReturnType<typeof captureNotificationClient>, changed: (state: { rows: NotificationRow[]; busy: boolean; loading: boolean; error: string }) => void) {
+  let rows = client.cached(), busy = false, loading = true, disposed = false, revision = 0;
+  const emit = (error = "") => { if (!disposed && client.current()) changed({ rows, busy, loading, error }); };
   const refresh = async () => {
-    if (disposed || busy) return;
+    if (disposed || busy || !client.current()) return;
     const version = ++revision;
+    const current = () => !disposed && version === revision && client.current();
+    loading = true; emit();
+    let message = "";
     try {
       const result = await client.read();
-      if (disposed || version !== revision || !client.current()) return;
-      rows = result; client.save(rows); emit();
-    } catch (error) { if (!disposed && version === revision) emit(error instanceof Error ? error.message : "读取通知失败"); }
+      if (!current()) return;
+      rows = result;
+      try { client.save(rows); }
+      catch { message = "通知已读取，但本机缓存未保存；重新打开时需再次联网读取。"; }
+    } catch (error) { message = error instanceof Error ? error.message : "读取通知失败"; }
+    finally { if (current()) { loading = false; emit(message); } }
   };
   return {
+    current: () => !disposed && client.current(),
     refresh,
     async mutate(action: "read" | "clear") {
       if (disposed || busy || !client.current()) return;
-      ++revision; busy = true; emit();
+      ++revision; loading = false; busy = true; emit();
       try {
         const result = await client.mutate(action, rows);
         if (disposed || !client.current()) return;

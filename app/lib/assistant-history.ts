@@ -6,6 +6,16 @@ export function assistantContentWithReferences(content: string, referenceNotes?:
   return notes.length ? `> 资料状态：\n${notes.map(note => `> - ${note.replace(/\r?\n/g, " ")}`).join("\n")}\n\n${content}` : content;
 }
 
+/** Descriptive metadata only: never export attachment previews or credentials. */
+export function assistantMessageDetails(message: OpcAgentMessage): string[] {
+  const attachments = Array.isArray(message.attachments) ? message.attachments.filter(file => file && typeof file.name === "string") : [];
+  const sources = Array.isArray(message.ragSources) ? message.ragSources.filter(source => source && typeof source.name === "string") : [];
+  return [
+    ...attachments.map(file => `附件：${file.name}（${typeof file.type === "string" && file.type ? file.type : "未知类型"}，${Number.isFinite(file.size) && file.size >= 0 ? `${file.size} 字节` : "大小未知"}）`),
+    ...sources.map(source => `检索来源：${source.name}（${typeof source.kb_type === "string" ? source.kb_type : "未知类型"}；相关度 ${Number.isFinite(source.score) ? source.score : "未知"}，不代表已核实）`),
+  ];
+}
+
 export function assistantSessionMode(id: string, messages: OpcAgentMessage[] = []): "chat" | "workflow" {
   return id.startsWith("opc_workflow_") || messages.some(message => ["workflow", "workflow-step", "action-cards"].includes(message.role)) ? "workflow" : "chat";
 }
@@ -46,6 +56,8 @@ export function exportAssistantConversation(messages: OpcAgentMessage[], title =
     const when = Number.isFinite(date.getTime()) ? date.toISOString() : "时间未知";
     const name = [labels[message.role] || message.role, message.workflowName, message.stepName].filter(Boolean).join(" · ");
     const input = message.workflowInput ? `\n\n输入参数：\n${Object.entries(message.workflowInput).map(([key, value]) => `- ${key}: ${value}`).join("\n")}` : "";
-    return `## ${name}\n\n${when}${message.isError ? " · 执行失败" : ""}\n\n${assistantContentWithReferences(message.content || "（无文本内容）", message.referenceNotes)}${input}`;
+    const details = assistantMessageDetails(message);
+    const metadata = details.length ? `\n\n附件与资料：\n${details.map(detail => `- ${detail.replace(/\r?\n/g, " ")}`).join("\n")}` : "";
+    return `## ${name}\n\n${when}${message.isError ? " · 执行失败" : ""}\n\n${assistantContentWithReferences(message.content || "（无文本内容）", message.referenceNotes)}${input}${metadata}`;
   }).join("\n\n---\n\n") + "\n";
 }

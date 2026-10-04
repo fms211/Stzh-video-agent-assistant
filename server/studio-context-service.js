@@ -19,9 +19,7 @@ function inputCeiling() {
   const value = Number(process.env.STZH_CONTEXT_INPUT_BYTES || 65536);
   return Number.isSafeInteger(value) && value >= 4096 && value <= 1048576 ? value : 65536;
 }
-function rolloutMode() {
-  return ["off", "shadow", "enforce"].includes(process.env.STZH_CONTEXT_MODE) ? process.env.STZH_CONTEXT_MODE : "shadow";
-}
+const { rolloutMode, resolveContextRollout } = require("./studio-context-rollout.js");
 function normalizeExcludedMemoryIds(value = []) {
   if (!Array.isArray(value) || value.length > 100 || value.some(id => typeof id !== "string" || !id.trim() || id.length > 200)) throw new MemoryError("INVALID_CONTEXT", "临时排除列表无效（最多100条）");
   return [...new Set(value)];
@@ -35,7 +33,9 @@ function createStudioContextService(db) {
     if (typeof historyOmitted !== "boolean") throw new MemoryError("INVALID_CONTEXT", "历史省略标记无效");
     currentConstraints = normalizeCurrentConstraints(currentConstraints);
     const excluded = normalizeExcludedMemoryIds(excludedMemoryIds);
-    const rollout = rolloutMode();
+    const resolution = resolveContextRollout(mode);
+    const { rollout } = resolution;
+    const rolloutTrace = { mode: resolution.mode, rollout, rolloutSource: resolution.source, rolloutConfigurationValid: resolution.configurationValid };
     if (!Array.isArray(messages) || messages.length === 0 || messages.length > 200
       || messages.some(message => !message || !["system", "user", "assistant"].includes(message.role) || typeof message.content !== "string")) {
       throw new MemoryError("INVALID_CONTEXT", "对话上下文格式无效");
@@ -64,7 +64,7 @@ function createStudioContextService(db) {
     scope = Object.fromEntries(["sessionId", "projectId", "runId"]
       .filter(key => authorized[key] !== undefined).map(key => [key, authorized[key]]));
     if (rollout === "off") {
-      return { messages, trace: { rollout, applied: false } };
+      return { messages, trace: { ...rolloutTrace, applied: false } };
     }
     const selection = store.search(userId, { query: selectionQuery, mode, ...scope, currentConstraints, limit: 20, excludedMemoryIds: excluded }, { restrictionQuery });
     const eligible = selection.selected;
@@ -95,7 +95,7 @@ function createStudioContextService(db) {
     }
     const baselineBytes = measure(assemble());
     if (baselineBytes > ceiling) {
-      const trace = { rollout, applied: false, reason: "required_context_over_budget", inputBytes: baselineBytes, ceiling, removedHistoryMessages: removed, retrieval };
+      const trace = { ...rolloutTrace, applied: false, reason: "required_context_over_budget", inputBytes: baselineBytes, ceiling, removedHistoryMessages: removed, retrieval };
       if (rollout === "shadow") return { messages, trace };
       throw new MemoryError("CONTEXT_OVER_BUDGET", "当前输入和必要规则超过上下文容量，请缩短输入；原始对话仍保留", 413);
     }
@@ -164,7 +164,7 @@ function createStudioContextService(db) {
     }
     const prepared = assemble(reference);
     const trace = {
-      rollout, applied: rollout === "enforce", estimator: "utf8-bytes-plus-16", ceiling,
+      ...rolloutTrace, applied: rollout === "enforce", estimator: "utf8-bytes-plus-16", ceiling,
       inputBytes: measure(prepared), originalInputBytes: measure(messages), removedHistoryMessages: removed,
       modelCapacity: capacity, capacitySource: capacity?.contextWindowTokens != null ? "user_configuration" : "unknown",
       summary: summaryTrace,

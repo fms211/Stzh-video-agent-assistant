@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Image from "next/image";
-import { Download, RefreshCw, Pencil } from "lucide-react";
-import { needsUnoptimized } from "@/app/lib/needsUnoptimized";
+import { RefreshCw, Pencil } from "lucide-react";
+import GalleryImage from "./GalleryImage";
+import GalleryMediaActions from "./GalleryMediaActions";
+import GalleryPreview from "./GalleryPreview";
+import { normalizeMediaUrl, type MediaItem } from "@/app/lib/workspace-media";
 
 type AgentPayload = {
   requestId: string;
@@ -21,31 +23,19 @@ type Props = {
 };
 
 export default function ResultCard({ payload, originalPrompt, onRegenerate, onModify }: Props) {
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
-
-  // 下载媒体文件
-  const handleDownload = useCallback(async () => {
-    const url = payload.videoUrl || payload.imageUrls?.[0];
-    if (!url) return;
-    setDownloading(true);
-    try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      const ext = payload.videoUrl ? ".mp4" : url.match(/\.(png|jpg|jpeg|webp|gif)/i)?.[0] || ".png";
-      a.download = `tszh-${payload.requestId.slice(0, 8)}${ext}`;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      // 降级：直接打开链接
-      window.open(url, "_blank");
-    } finally {
-      setDownloading(false);
-    }
-  }, [payload]);
+  const [preview, setPreview] = useState<MediaItem | null>(null);
+  const safeUrl = (value: unknown) => {
+    const url = normalizeMediaUrl(value);
+    if (!url) return null;
+    const parsed = new URL(url);
+    return parsed.username || parsed.password ? null : url;
+  };
+  const videoUrl = safeUrl(payload.videoUrl);
+  const imageUrls = (payload.imageUrls || []).map(safeUrl).filter((url): url is string => !!url);
+  const media = (url: string, index = 0): MediaItem => ({
+    id: `${payload.requestId}-${videoUrl ? "video" : `image-${index}`}`, type: videoUrl ? "video" : "image", url,
+    sessionTitle: "Coze结果", sessionId: "", timestamp: 0,
+  });
 
   // 重新生成
   const handleRegenerate = useCallback(() => {
@@ -61,33 +51,27 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
     onModify(`基于上面的结果，${base}，但是请`);
   }, [originalPrompt, onModify]);
 
-  const hasMedia = !!(payload.videoUrl || (payload.imageUrls && payload.imageUrls.length > 0));
+  const downloadUrl = videoUrl || imageUrls[0];
+  const hasMedia = !!downloadUrl;
 
   return (
     <>
       <div className="result-card edge-glow edge-glow-sweep">
-        {payload.videoUrl ? (
+        {videoUrl ? (
           <div className="result-card-video">
-            <video controls src={payload.videoUrl} />
+            <video controls src={videoUrl} />
           </div>
-        ) : payload.imageUrls ? (
+        ) : imageUrls.length > 0 ? (
           <>
             <div className="result-card-images">
-              {payload.imageUrls.map((url, i) => (
+              {imageUrls.map((url, i) => (
                 <button
                   key={url}
                   type="button"
-                  onClick={() => setLightboxUrl(url)}
+                  onClick={() => setPreview(media(url, i))}
                   aria-label={`预览图片 ${i + 1}`}
                 >
-                  <Image
-                    src={url}
-                    alt={`生成图片 ${i + 1}`}
-                    width={320}
-                    height={240}
-                    sizes="33vw"
-                    unoptimized={needsUnoptimized(url)}
-                  />
+                  <GalleryImage item={media(url, i)} />
                 </button>
               ))}
             </div>
@@ -107,16 +91,7 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
         {/* 操作按钮栏 */}
         {hasMedia && (
           <div className="result-card-actions">
-            <button
-              type="button"
-              className="result-action-btn"
-              onClick={handleDownload}
-              disabled={downloading}
-              aria-label="下载"
-            >
-              <span className="result-action-icon"><Download size={13} strokeWidth={1.8} /></span>
-              <span className="result-action-label">{downloading ? "下载中…" : "下载"}</span>
-            </button>
+            <GalleryMediaActions key={`${payload.requestId}:${downloadUrl}`} item={media(downloadUrl!)} />
             {originalPrompt && onRegenerate && (
               <button
                 type="button"
@@ -145,9 +120,9 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
         {/* 底部元信息 */}
         <div className="result-card-meta">
           <span className="result-card-id">id: {payload.requestId.slice(0, 8)}</span>
-          {payload.imageUrls && payload.imageUrls.length > 1 && (
+          {imageUrls.length > 1 && (
             <div className="result-card-links">
-              {payload.imageUrls.map((url, i) => (
+              {imageUrls.map((url, i) => (
                 <a key={url} href={url} target="_blank" rel="noreferrer" aria-label={`打开图片 ${i + 1}`}>
                   {i + 1}
                 </a>
@@ -157,33 +132,25 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
         </div>
       </div>
 
-      {lightboxUrl && (
-        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
-          <button className="lightbox-close" onClick={() => setLightboxUrl(null)} aria-label="关闭预览">
-            &times;
-          </button>
-          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-            <Image
-              src={lightboxUrl}
-              alt="放大预览"
-              width={1200}
-              height={900}
-              sizes="90vw"
-              unoptimized={needsUnoptimized(lightboxUrl)}
-            />
-          </div>
-        </div>
-      )}
+      {preview && <GalleryPreview item={preview} onClose={() => setPreview(null)} />}
 
       <style>{`
         .result-card-actions {
           display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
           gap: 6px;
           padding: 8px 12px;
           border-top: 1px solid var(--border-subtle);
         }
+        .result-card-actions .gallery-download { flex: 1 1 220px; min-width: 0; }
+        .result-card-images { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; padding: 12px; }
+        .result-card-images button { min-width: 0; overflow: hidden; padding: 0; border: 1px solid var(--border-subtle); border-radius: var(--shape-control); background: var(--space-surface); }
+        .result-card-images img { aspect-ratio: 16/9; object-fit: contain; }
+        .result-card-images button:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: 2px; }
         .result-action-btn {
           display: flex;
+          min-height: 44px;
           align-items: center;
           gap: 5px;
           padding: 6px 12px;
@@ -223,6 +190,8 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
         }
         .result-card-meta {
           display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
           align-items: center;
           justify-content: space-between;
           padding: 6px 12px;
@@ -233,12 +202,15 @@ export default function ResultCard({ payload, originalPrompt, onRegenerate, onMo
         .result-card-id {
           font-family: var(--font-code);
           letter-spacing: 0.04em;
+          overflow-wrap: anywhere;
         }
         .result-card-links {
           display: flex;
+          flex-wrap: wrap;
           gap: 6px;
         }
         .result-card-links a {
+          display: grid; place-items: center; min-width: 44px; min-height: 44px;
           color: var(--glow-cool);
           text-decoration: none;
           font-size: var(--text-caption-size);

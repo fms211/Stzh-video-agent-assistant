@@ -8,6 +8,8 @@ type Props = {
   options: readonly CreativeSelectOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  required?: boolean;
+  name?: string;
   id?: string;
   describedBy?: string;
   placeholder?: string;

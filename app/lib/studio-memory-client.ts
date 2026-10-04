@@ -1,5 +1,6 @@
 "use client";
 import { captureCreativeApi } from "./creative-agent-api";
+import { normalizeContextStatus } from "./studio-context-status";
 import type { StudioMemoryItem, StudioMode, MemoryScope } from "../../shared/studio-context/index.cjs";
 export type MemoryRow = StudioMemoryItem & { sourceAvailable?: boolean; sourceState?: "manual" | "current" | "changed" | "untracked" | "unavailable" };
 export type MemorySourcePreview = { state: MemoryRow["sourceState"]; content: string; fingerprint: string | null; truncated: boolean };
@@ -22,7 +23,7 @@ export function captureStudioMemoryClient(request = captureCreativeApi()) {
   return {
     list: (after = "") => request<{ items: MemoryRow[]; nextCursor: string | null }>(`${base}?limit=50${after ? `&after=${encodeURIComponent(after)}` : ""}`),
     projects: () => request<{ projects: Array<{ id: string; name: string }> }>("/api/creative-projects"),
-    contextStatus: () => request<{ rollout: "off" | "shadow" | "enforce" }>("/api/studio/memories/context-status"),
+    contextStatus: async () => normalizeContextStatus(await request<unknown>("/api/studio/memories/context-status")),
     get: (id: string) => request<{ item: MemoryRow }>(path(id)),
     source: (id: string) => request<MemorySourcePreview>(`${path(id)}/source`),
     refreshSource: (item: MemoryRow, fingerprint: string) => request<{ item: MemoryRow }>(`${path(item.id)}/refresh-source`, { method: "POST", body: JSON.stringify({ expectedRevision: item.revision, expectedSourceFingerprint: fingerprint }) }),

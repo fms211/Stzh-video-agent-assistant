@@ -13,7 +13,7 @@ const studioContext = createStudioContextService(db);
 const { workflowReference } = require("../studio-workflow-reference.js");
 const workflowResults = require("../studio-workflow-results.js").createWorkflowResults(db);
 const { normalizeCapabilities, providerPayload, estimatePayload } = require("../lib/provider-context.js");
-const { discoverProviderModels } = require("../lib/provider-discovery.js");
+const { discoverProviderModels, createProviderDispatcher } = require("../lib/provider-discovery.js");
 const activeModelDiscoveries = new Set();
 
 const router = express.Router();
@@ -39,6 +39,7 @@ function assertProviderBaseUrl(value) {
   try { url = new URL(String(value || "")); } catch { throw new Error("模型地址必须是有效的 HTTP/HTTPS URL"); }
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("模型地址必须以 http:// 或 https:// 开头");
   if (url.username || url.password) throw new Error("模型地址不能包含 URL 用户名或密码");
+  if (url.search || url.hash) throw Object.assign(new Error("API 地址不能包含查询参数或片段"), { status: 400, code: "INVALID_MODEL_ENDPOINT" });
   const allowPrivate = ["1", "true"].includes(String(process.env.STZH_ALLOW_PRIVATE_MODEL_URLS || "").toLowerCase());
   if (!allowPrivate && isPrivateModelHost(url.hostname)) {
     throw new Error("默认禁止访问本机或内网模型地址；确需使用本地模型时由部署者设置 STZH_ALLOW_PRIVATE_MODEL_URLS=1");
@@ -97,12 +98,12 @@ async function invokeProvider(row, messages, options = {}) {
   if (!row?.secret) throw new Error("该模型未保存可用密钥，请在模型与角色中心重新录入并验证");
   const config = parseConfig(row);
   config.baseUrl = assertProviderBaseUrl(config.baseUrl);
-  const apiKey = decryptSecret(row.secret);
   const controller = new AbortController();
   const forwardAbort = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) forwardAbort();
   else options.signal?.addEventListener("abort", forwardAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), 90_000);
+  let dispatcher;
   try {
     const endpoint = config.protocol === "anthropic"
       ? `${config.baseUrl.endsWith("/v1") ? config.baseUrl : config.baseUrl + "/v1"}/messages`
@@ -112,23 +113,50 @@ async function invokeProvider(row, messages, options = {}) {
     if (capacity.contextWindowTokens !== null && estimatePayload(config, messages) > capacity.contextWindowTokens - capacity.maxOutputTokens - capacity.safetyMarginTokens) {
       throw Object.assign(new Error("当前请求超过配置的模型输入容量，请缩短输入或核对容量设置"), { status: 413, code: "CONTEXT_OVER_BUDGET" });
     }
+    // Apply the same checked/pinned DNS boundary to every model invocation,
+    // including connection verification, workflow, research and collaboration.
+    dispatcher = await createProviderDispatcher(new URL(endpoint), {
+      isPrivateHost: isPrivateModelHost,
+      signal: controller.signal,
+    });
+    let apiKey;
+    try { apiKey = decryptSecret(row.secret); }
+    catch { throw Object.assign(new Error("模型密钥无法读取，请核对服务器加密配置或重新录入密钥"), { status: 400, code: "MODEL_KEY_UNAVAILABLE" }); }
     const headers = config.protocol === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
-    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload), signal: controller.signal });
-    if (!response.ok) throw new Error(`模型服务返回 HTTP ${response.status}`);
-    const body = await response.json();
+    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload), redirect: "error", signal: controller.signal, dispatcher });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw Object.assign(new Error(`模型服务返回 HTTP ${response.status}`), { status: 502, code: "MODEL_UPSTREAM_ERROR" });
+    }
+    let body;
+    try { body = await response.json(); }
+    catch { throw Object.assign(new Error("模型服务返回的内容不是有效 JSON"), { status: 502, code: "MODEL_RESPONSE_INVALID" }); }
     const truncated = config.protocol === "anthropic"
       ? body.stop_reason === "max_tokens" : body.choices?.[0]?.finish_reason === "length";
     if (options.requireComplete && truncated) throw Object.assign(new Error("模型回复达到输出上限，研究产物尚未完整返回；请提高模型连接的回复上限后重试"), { status: 502, code: "UPSTREAM_OUTPUT_TRUNCATED" });
     const output = config.protocol === "anthropic"
       ? body.content?.map((part) => part.text || "").join("")
       : body.choices?.[0]?.message?.content;
-    if (!output) throw new Error("模型未返回可用文本");
+    if (!output) throw Object.assign(new Error("模型未返回可用文本"), { status: 502, code: "MODEL_RESPONSE_INVALID" });
     return String(output);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const cancelled = options.signal?.aborted;
+      throw Object.assign(new Error(cancelled ? "模型请求已取消" : "模型请求已超时，请稍后重试"), {
+        name: "AbortError", status: cancelled ? 499 : 504,
+        code: cancelled ? "MODEL_REQUEST_CANCELLED" : "MODEL_REQUEST_TIMEOUT",
+      });
+    }
+    if (["INVALID_MODEL_ENDPOINT", "CONTEXT_OVER_BUDGET", "UPSTREAM_OUTPUT_TRUNCATED", "PREVIEW_PROVIDER_BLOCKED", "MODEL_KEY_UNAVAILABLE", "MODEL_UPSTREAM_ERROR", "MODEL_RESPONSE_INVALID"].includes(error?.code)) throw error;
+    // DNS, redirect and transport exceptions may contain request URLs or
+    // upstream diagnostics. Only expose our fixed, credential-free message.
+    throw Object.assign(new Error("无法连接模型服务，请检查 API 地址与网络；不支持重定向地址"), { status: 502, code: "MODEL_NETWORK_ERROR" });
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", forwardAbort);
+    await dispatcher?.destroy().catch(() => {});
   }
 }
 

@@ -138,7 +138,10 @@ test("mobile restores persisted workflow cards as an action-card message", () =>
 
 async function withOpcPersistence(run) {
   const originalWindow = global.window, originalStorage = global.localStorage;
-  global.window = {}; global.localStorage = createLocalStorage();
+  const events = [];
+  global.window = new EventTarget();
+  global.window.addEventListener("tszh_active_session_changed", event => events.push(event.type));
+  global.localStorage = createLocalStorage();
   let userId = 42;
   const calls = [];
   const api = {
@@ -151,7 +154,7 @@ async function withOpcPersistence(run) {
     "./opc-agent-api": api,
     "./data-owner": { currentDataOwner: () => ({ kind: "account", userId }), ownerScope: owner => `user:${owner.userId}` },
   });
-  try { await run({persist, api, calls, storage: global.localStorage, switchOwner: id => { userId = id; }}); }
+  try { await run({persist, api, calls, events, storage: global.localStorage, switchOwner: id => { userId = id; }}); }
   finally { global.window = originalWindow; global.localStorage = originalStorage; }
 }
 const opcMessage = (content, id = "reply") => ({ id, role: "assistant", content, timestamp: 1720000000000 });
@@ -205,13 +208,14 @@ test("OPC old-owner reads cannot write into the next account and queued writes s
 });
 
 test("OPC failed local edits survive loading an older server snapshot and modes keep distinct active sessions", async () => {
-  await withOpcPersistence(async ({persist,api}) => {
+  await withOpcPersistence(async ({persist,api,events}) => {
     api.apiBatchAddMessages=async()=>{throw new Error("offline");};
     await assert.rejects(persist.saveMessages("session",[opcMessage("latest")]),/offline/);
     api.apiGetMessages=async()=>[opcMessage("old")];
     assert.equal((await persist.loadMessages("session"))[0].content,"latest");
     persist.setActiveSessionId("chat-session");persist.setActiveSessionId("workflow-session","workflow");
     assert.equal(persist.getActiveSessionId(),"chat-session");assert.equal(persist.getActiveSessionId("workflow"),"workflow-session");
+    assert.deepEqual(events, ["tszh_active_session_changed", "tszh_active_session_changed"]);
   });
 });
 

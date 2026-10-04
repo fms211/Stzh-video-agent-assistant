@@ -6,7 +6,7 @@ const test=require("node:test"),assert=require("node:assert/strict"),fs=require(
 function fixture(){
   const slots=[],effects=[],timers=new Map(),reads=[],lateWrites=[];let cursor=0,timer=0,mounted=true,tree;
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((value,index)=>Object.is(value,b[index]));
-  const hooks={
+  const hooks={useId:()=>"center-fixture",
     useState(initial){const index=cursor++,slot=slots[index]||={kind:"state",value:typeof initial==="function"?initial():initial};return[slot.value,next=>{slot.value=typeof next==="function"?next(slot.value):next;if(!mounted)lateWrites.push(index);}];},
     useRef(initial){return(slots[cursor++]||={kind:"ref",value:{current:initial}}).value;},
     useCallback(fn,deps){const index=cursor++,old=slots[index];if(old&&same(old.deps,deps))return old.value;slots[index]={kind:"callback",deps,value:fn};return fn;},

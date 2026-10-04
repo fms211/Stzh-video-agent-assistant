@@ -38,3 +38,16 @@ test("saved reference gaps remain present in conversation, report and continuati
   assert.match(report, /资料状态/); assert.ok(report.endsWith(step.content));
   assert.equal(assistantContentWithReferences("原文", []), "原文");
 });
+
+test("attachment and retrieval descriptions survive export without embedded previews or false verification", async () => {
+  const { exportAssistantConversation, assistantMessageDetails } = await load();
+  const messages = [message("u", "user", "附件问题", { attachments: [{ name: "验收说明.txt", type: "text/plain", size: 52, preview: "PRIVATE_PREVIEW_NOT_FOR_EXPORT" }] }),
+    message("a", "assistant", "长文终点-END", { ragSources: [{ name: "参考.md", score: 0.8, kb_type: "local" }], referenceNotes: ["来源尚未核实"] })];
+  const before = structuredClone(messages), output = exportAssistantConversation(messages);
+  for (const text of ["验收说明.txt", "52 字节", "参考.md", "0.8", "不代表已核实", "来源尚未核实", "长文终点-END"]) assert.ok(output.includes(text));
+  assert.ok(!output.includes("PRIVATE_PREVIEW_NOT_FOR_EXPORT"));
+  assert.deepEqual(assistantMessageDetails(message("plain", "assistant", "正文")), []);
+  assert.deepEqual(assistantMessageDetails(message("bad", "assistant", "正文", { attachments: "invalid", ragSources: [null, { score: 1 }] })), []);
+  assert.deepEqual(assistantMessageDetails(message("legacy", "user", "正文", { attachments: [{ name: "旧附件" }] })), ["附件：旧附件（未知类型，大小未知）"]);
+  assert.deepEqual(messages, before);
+});

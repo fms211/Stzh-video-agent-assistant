@@ -57,6 +57,16 @@ function createTaskRuntime(options = {}) {
 }
 
 function startProductionTaskRuntime(options = {}) {
+  // Gate before constructing the worker, provider, or attachment cleanup timer.
+  // Unset preserves the existing production startup behavior.
+  const env = options.env || process.env;
+  const setting = String(env.STZH_MEDIA_EXECUTOR_ENABLED ?? "1").trim().toLowerCase();
+  if (["0", "false", "off"].includes(setting)) {
+    return { enabled: false, runtime: null, reason: "CONFIG_DISABLED" };
+  }
+  if (!["1", "true", "on"].includes(setting)) {
+    return { enabled: false, runtime: null, reason: "INVALID_MEDIA_EXECUTOR_SETTING" };
+  }
   let runtime;
   try {
     runtime = createTaskRuntime(options);

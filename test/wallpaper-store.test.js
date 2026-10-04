@@ -37,29 +37,45 @@ function makeAsset(overrides = {}) {
   };
 }
 
-function createAsyncRequestFactory() {
+function createAsyncRequestFactory(options = {}) {
   const records = new Map();
-  const request = (work) => {
-    const req = { result: undefined, error: null, onsuccess: null, onerror: null };
-    setTimeout(() => {
-      try {
-        req.result = work();
-        req.onsuccess?.();
-      } catch (error) {
-        req.error = error;
-        req.onerror?.();
-      }
-    }, 5);
-    return req;
-  };
-  const objectStore = {
-    put(value) { return request(() => { records.set(String(value.id), value); return value.id; }); },
-    get(id) { return request(() => records.get(String(id))); },
-    getAll() { return request(() => [...records.values()]); },
-    delete(id) { return request(() => records.delete(String(id))); },
-  };
-  const db = { transaction() { return { objectStore() { return objectStore; } }; } };
-  return { async open() { return { db, version: 1 }; } };
+  const events = [];
+  const db = { transaction(_name, mode = "readonly") {
+    const working = new Map(records);
+    let pending = 0, finished = false, completion;
+    const tx = {
+      error: null, oncomplete: null, onabort: null, onerror: null,
+      abort() { if (finished) return; finished = true; clearTimeout(completion); events.push("abort"); tx.onabort?.(); },
+      objectStore() { return objectStore; },
+    };
+    const request = work => {
+      clearTimeout(completion); pending++;
+      const req = { result: undefined, error: null, onsuccess: null, onerror: null };
+      setTimeout(() => {
+        if (finished) return;
+        try {
+          if (options.failReadOnly && mode === "readonly") throw new Error("模拟读取失败");
+          req.result = work(); events.push("request-success"); req.onsuccess?.();
+        } catch (cause) { req.error = cause; tx.error = cause; req.onerror?.(); tx.onerror?.(); tx.abort(); }
+        pending--;
+        if (!pending && !finished) completion = setTimeout(() => {
+          if (finished) return;
+          if (mode === "readwrite" && options.failWriteCommit) { tx.error = new Error("模拟事务提交失败"); tx.abort(); return; }
+          if (mode === "readwrite") { records.clear(); for (const [key, value] of working) records.set(key, value); }
+          finished = true; events.push("complete"); tx.oncomplete?.();
+        }, 5);
+      }, 5);
+      return req;
+    };
+    const objectStore = {
+      put(value) { return request(() => { working.set(String(value.id), value); return value.id; }); },
+      get(id) { return request(() => working.get(String(id))); },
+      getAll() { return request(() => [...working.values()]); },
+      delete(id) { return request(() => working.delete(String(id))); },
+    };
+    return tx;
+  } };
+  return { events, async open() { return { db, version: 1 }; } };
 }
 
 describe("wallpaper-store（内存/注入 IDB）", () => {
@@ -154,8 +170,8 @@ describe("wallpaper-validation（纯函数）", () => {
   });
 });
 
-describe("wallpaper-store（真实 IndexedDB 异步请求语义）", () => {
-  test("CRUD 等待 request success 后才返回", async () => {
+describe("wallpaper-store（确定性事务适配器，不代替浏览器 IndexedDB 验收）", () => {
+  test("CRUD 等待事务完成后才返回", async () => {
     const mod = await load("app/lib/wallpaper-store.ts");
     mod.setDatabaseFactoryForTest(createAsyncRequestFactory());
     const asset = makeAsset({ id: "async-1" });
@@ -164,5 +180,41 @@ describe("wallpaper-store（真实 IndexedDB 异步请求语义）", () => {
     assert.deepEqual((await mod.listWallpapers("user:5")).map((item) => item.id), ["async-1"]);
     await mod.deleteWallpaper("async-1", "user:5");
     assert.equal(await mod.getWallpaper("async-1", "user:5"), null);
+  });
+
+  test("写请求成功但事务失败时，保存和删除都拒绝且记录不被提前改变", async () => {
+    const mod = await load("app/lib/wallpaper-store.ts");
+    const options = { failWriteCommit: false };
+    const factory = createAsyncRequestFactory(options);
+    mod.setDatabaseFactoryForTest(factory);
+    await mod.putWallpaper(makeAsset(), "user:5");
+    assert.equal(factory.events.at(-1), "complete");
+    options.failWriteCommit = true;
+    await assert.rejects(mod.putWallpaper(makeAsset({ width: 800 }), "user:5"), /事务提交失败/u);
+    assert.equal((await mod.getWallpaper("wall-1", "user:5")).width, 1920);
+    await assert.rejects(mod.deleteWallpaper("wall-1", "user:5"), /事务提交失败/u);
+    assert.ok(await mod.getWallpaper("wall-1", "user:5"));
+  });
+
+  for (const [name, createFactory] of [["内存", createMemoryFactory], ["事务", createAsyncRequestFactory]]) {
+    test(`${name}分支不能通过同ID覆盖、删除或touch另一账号的壁纸`, async () => {
+      const mod = await load("app/lib/wallpaper-store.ts");
+      mod.setDatabaseFactoryForTest(createFactory());
+      await mod.putWallpaper(makeAsset(), "user:5");
+      await assert.rejects(mod.putWallpaper(makeAsset({ ownerScope: "guest" }), "guest"), /不属于当前账号/u);
+      await assert.rejects(mod.deleteWallpaper("wall-1", "guest"), /不属于当前账号/u);
+      await assert.rejects(mod.touchWallpaper("wall-1", "guest"), /不属于当前账号/u);
+      assert.equal((await mod.getWallpaper("wall-1", "user:5")).lastUsedAt, 1000);
+      await mod.deleteWallpaper("wall-1", "user:5");
+      await mod.touchWallpaper("wall-1", "user:5");
+      assert.equal(await mod.getWallpaper("wall-1", "user:5"), null);
+    });
+  }
+
+  test("列表读取失败向调用方报错，不返回伪空库", async () => {
+    const mod = await load("app/lib/wallpaper-store.ts");
+    mod.setDatabaseFactoryForTest(createAsyncRequestFactory({ failReadOnly: true }));
+    await assert.rejects(mod.listWallpapers("user:5"), /读取失败/u);
+    await assert.rejects(mod.getWallpaper("wall-1", "user:5"), /读取失败/u);
   });
 });

@@ -49,11 +49,11 @@ function normalizeNotification(value: unknown): Notification | null {
   const timestamp = typeof sourceTime === "number" && sourceTime < 10_000_000_000
     ? sourceTime * 1000
     : sourceTime as string | number;
-  const time = new Date(timestamp || Date.now());
+  const time = new Date(typeof timestamp === "string" || typeof timestamp === "number" ? timestamp : NaN);
   const type = ["success", "error", "info"].includes(String(row.type))
     ? row.type as Notification["type"]
     : "info";
-  return { id: row.id, title: row.title, message: row.message, time, read: Boolean(row.read), type };
+  return { id: row.id, title: row.title, message: row.message, time, read: row.read === true || row.read === 1, type };
 }
 
 type Props = {
@@ -121,12 +121,31 @@ export default function NavigationBar({
   onAuthOpen,
   reducedMotion = false,
 }: Props) {
-  const { user } = useAuth();
+  const { user, verification, notice } = useAuth();
   const [hovered, setHovered] = useState<Page | null>(null);
   const [scrollPulse, setScrollPulse] = useState<Page | null>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number>(0);
+
+  // Text enlargement may wrap navigation labels; reserve the rendered height.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const root = document.documentElement;
+    const previous = root.style.getPropertyValue("--workspace-nav-clearance");
+    const update = () => root.style.setProperty("--workspace-nav-clearance", `${Math.max(86, Math.ceil(nav.getBoundingClientRect().bottom) + 8)}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(nav);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      if (previous) root.style.setProperty("--workspace-nav-clearance", previous);
+      else root.style.removeProperty("--workspace-nav-clearance");
+    };
+  }, []);
 
   // 滑动窗口偏移（0 = 显示前4个, 1 = 显示后4个）
   const [windowStart, setWindowStart] = useState(0);
@@ -137,18 +156,24 @@ export default function NavigationBar({
 
   // 天气状态
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherIcon, setWeatherIcon] = useState<string>("🌤️");
   const [glowColor, setGlowColor] = useState<string>("var(--glow-warm)");
 
   // 通知状态
   const notificationOwner = user ? `user:${user.id}` : "guest";
-  const [notificationState, setNotificationState] = useState({ owner: notificationOwner, rows: [] as Notification[], busy: false, error: "" });
-  const notifications = notificationState.owner === notificationOwner ? notificationState.rows : [];
-  const notificationError = notificationState.owner === notificationOwner ? notificationState.error : "";
-  const notificationBusy = notificationState.owner === notificationOwner && notificationState.busy;
+  const [notificationState, setNotificationState] = useState({ owner: notificationOwner, rows: [] as Notification[], busy: false, loading: true, error: "" });
   const notificationFeed = useRef<ReturnType<typeof createNotificationFeed> | null>(null);
+  const notificationScopeCurrent = notificationState.owner === notificationOwner && Boolean(notificationFeed.current?.current());
+  const notifications = notificationScopeCurrent ? notificationState.rows : [];
+  const notificationError = notificationScopeCurrent ? notificationState.error : "";
+  const notificationBusy = notificationScopeCurrent && notificationState.busy;
+  const notificationLoading = !notificationScopeCurrent || notificationState.loading;
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationSessionRevision, setNotificationSessionRevision] = useState(0);
   const notifRef = useRef<HTMLDivElement>(null);
+  const notifButtonRef = useRef<HTMLButtonElement>(null);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // 按钮弹簧动画
@@ -239,12 +264,15 @@ export default function NavigationBar({
     return () => clearInterval(timer);
   }, []);
 
-  // 获取天气
+  // 获取天气；缺失配置和离线状态不显示伪造温度。
   useEffect(() => {
+    let disposed = false;
     const loadWeather = async () => {
       const data = await fetchWeather();
+      if (disposed) return;
+      setWeather(data);
+      setWeatherLoading(false);
       if (data) {
-        setWeather(data);
         setWeatherIcon(getWeatherIcon(data.icon));
         const mood = getWeatherMood(data.icon);
         setGlowColor(getWeatherGlowColor(mood));
@@ -252,13 +280,19 @@ export default function NavigationBar({
     };
     loadWeather();
     const timer = setInterval(loadWeather, 30 * 60 * 1000);
-    return () => clearInterval(timer);
+    return () => { disposed = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    const changed = () => setNotificationSessionRevision(value => value + 1);
+    window.addEventListener("tszh_data_owner_changed", changed);
+    return () => window.removeEventListener("tszh_data_owner_changed", changed);
   }, []);
 
   // 读取通知
   useEffect(() => {
     const client = captureNotificationClient();
-    const feed = createNotificationFeed(client, state => setNotificationState({ ...state, owner: notificationOwner, rows: state.rows.map(normalizeNotification).filter((item): item is Notification => Boolean(item)) }));
+    const feed = createNotificationFeed(client, state => setNotificationState({ ...state, owner: client.owner, rows: state.rows.map(normalizeNotification).filter((item): item is Notification => Boolean(item)) }));
     notificationFeed.current = feed;
     feed.start();
     const handleNewNotif = () => { void feed.refresh(); };
@@ -286,25 +320,30 @@ export default function NavigationBar({
       feed.dispose(); notificationFeed.current = null;
       stopRealtime?.();
     };
-  }, [notificationOwner]);
+  }, [notificationOwner, notificationSessionRevision]);
 
-  // 点击外部关闭通知面板 + ESC 关闭
+  // Non-modal notification popover: focus enters it; Escape returns to its trigger.
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setShowNotifications(false);
-      }
+    if (!showNotifications) return;
+    const handleOutside = (event: MouseEvent | FocusEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) setShowNotifications(false);
     };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowNotifications(false);
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setShowNotifications(false);
+      if (notifButtonRef.current?.isConnected) notifButtonRef.current.focus({ preventScroll: true });
     };
-    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("focusin", handleOutside);
     document.addEventListener("keydown", handleKey);
+    notifPanelRef.current?.focus({ preventScroll: true });
     return () => {
-      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("focusin", handleOutside);
       document.removeEventListener("keydown", handleKey);
     };
-  }, []);
+  }, [showNotifications]);
 
   // 标记全部已读
   const markAllRead = () => {
@@ -318,6 +357,7 @@ export default function NavigationBar({
 
   // 格式化时间
   const formatNotifTime = (date: Date) => {
+    if (!Number.isFinite(date.getTime())) return "时间未知";
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     if (diff < 60000) return "刚刚";
@@ -424,13 +464,17 @@ export default function NavigationBar({
               <span className="nav-time">{time}</span>
               <span className="nav-date">{date}</span>
             </div>
-            {weather && (
+            {weather ? (
               <div className="nav-weather-block pixel-corners">
                 <span className="nav-weather-icon">{weatherIcon}</span>
                 <div className="nav-weather-info">
                   <span className="nav-weather-temp">{weather.temp}°</span>
                   <span className="nav-weather-text">{weather.text}</span>
                 </div>
+              </div>
+            ) : (
+              <div className="nav-weather-block" title={weatherLoading ? "正在读取天气" : "天气暂不可用"}>
+                <span className="nav-weather-text">{weatherLoading ? "天气加载中…" : "天气暂不可用"}</span>
               </div>
             )}
           </div>
@@ -477,7 +521,7 @@ export default function NavigationBar({
                     <span
                       className="nav-tab-label"
                       style={{
-                        maxWidth: locked ? 0 : 100,
+                        maxWidth: locked ? 0 : "none",
                         opacity: locked ? 0 : 1,
                         marginLeft: locked ? 0 : 4,
                       }}
@@ -514,14 +558,18 @@ export default function NavigationBar({
               </button>
             )}
             {!locked && accessMode === "authenticated" && user && (
-              <button type="button" className="nav-user-chip" title={user.displayName || user.username} aria-label="管理账户" onClick={onAuthOpen}>
+              <button type="button" className="nav-user-chip" title={notice || user.displayName || user.username} aria-label={notice ? `管理账户：${notice}` : "管理账户"} onClick={onAuthOpen}>
                 <UserRound size={13} aria-hidden="true" /><span className="nav-user-name">{user.displayName || user.username}</span>
+                {(notice || verification !== "verified") && <span className="nav-user-status" aria-hidden="true" />}
               </button>
             )}
 
             <button
               type="button"
+              ref={notifButtonRef}
               className={`nav-notif-btn pixel-corners ${showNotifications ? "active" : ""}`}
+              aria-haspopup="dialog"
+              aria-controls={showNotifications ? "workspace-notifications" : undefined}
               onClick={() => setShowNotifications(!showNotifications)}
               aria-label="通知"
               aria-expanded={showNotifications}
@@ -531,7 +579,7 @@ export default function NavigationBar({
             </button>
 
             {showNotifications && (
-              <div className="nav-notif-panel edge-glow edge-glow-subtle">
+              <div ref={notifPanelRef} id="workspace-notifications" role="dialog" aria-label="通知" tabIndex={-1} className="nav-notif-panel edge-glow edge-glow-subtle">
                 <div className="nav-notif-header">
                   <span className="nav-notif-title">通知</span>
                   <div className="nav-notif-actions">
@@ -543,12 +591,11 @@ export default function NavigationBar({
                     )}
                   </div>
                 </div>
-                {notificationError && <div className="nav-notif-empty" role="alert">{notificationError} <button type="button" disabled={notificationBusy} onClick={() => void notificationFeed.current?.refresh()}>重新读取</button></div>}
-                <div className="nav-notif-list">
-                  {notifications.length === 0 ? (
-                    <div className="nav-notif-empty">暂无通知</div>
-                  ) : (
-                    notifications.map((n) => (
+                <div className="nav-notif-list" aria-busy={notificationLoading || notificationBusy}>
+                  {(notificationLoading || notificationBusy) && <div className="nav-notif-empty" role="status">{notificationBusy ? "正在更新通知…" : notifications.length ? "正在刷新通知…" : "正在读取通知…"}</div>}
+                  {notificationError && <div className="nav-notif-empty" role="alert">{notificationError} <button type="button" disabled={notificationBusy || notificationLoading} onClick={() => void notificationFeed.current?.refresh()}>重新读取</button></div>}
+                  {notifications.length === 0 && !notificationLoading && !notificationBusy && !notificationError && <div className="nav-notif-empty">暂无通知</div>}
+                  {notifications.map((n) => (
                       <div key={n.id} className={`nav-notif-item ${n.read ? "" : "unread"}`}>
                         <span className={`nav-notif-type ${n.type}`}>
                           {n.type === "success" ? <Check size={8} strokeWidth={2.5} /> : n.type === "error" ? <X size={8} strokeWidth={2.5} /> : <Info size={8} strokeWidth={2.5} />}
@@ -557,11 +604,10 @@ export default function NavigationBar({
                           <span className="nav-notif-item-title" title={n.title}>{n.title}</span>
                           <span className="nav-notif-item-msg" title={n.message}>{n.message}</span>
                           {onOpenTask && notificationTaskId(n.id) && <button type="button" className="nav-notif-action" onClick={() => { onOpenTask(notificationTaskId(n.id)!); setShowNotifications(false); }}>查看任务</button>}
+                          <span className="nav-notif-time">{formatNotifTime(n.time)}</span>
                         </div>
-                        <span className="nav-notif-time">{formatNotifTime(n.time)}</span>
                       </div>
-                    ))
-                  )}
+                    ))}
                 </div>
               </div>
             )}
@@ -882,8 +928,9 @@ export default function NavigationBar({
 
         .nav-tab-label {
           transition: max-width 0.28s var(--ease-out-expo), opacity 0.2s var(--ease-out-expo);
-          overflow: hidden;
-          white-space: nowrap;
+          min-width: 0;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
 
         /* 右侧通知 */
@@ -983,8 +1030,10 @@ export default function NavigationBar({
           top: calc(100% + 6px);
           right: 0;
           width: min(360px, calc(100vw - 32px));
-          max-height: 420px;
-          border-radius: 12px;
+          max-height: min(420px, calc(100svh - 120px));
+          display: flex;
+          flex-direction: column;
+          border-radius: var(--shape-card);
           background: var(--space-panel);
           border: 1px solid var(--border-subtle);
           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px color-mix(in srgb, var(--glow-warm) 8%, transparent);
@@ -1000,6 +1049,9 @@ export default function NavigationBar({
 
         .nav-notif-header {
           display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          flex-shrink: 0;
           align-items: center;
           justify-content: space-between;
           padding: 8px 10px;
@@ -1011,11 +1063,11 @@ export default function NavigationBar({
           font-weight: var(--weight-semibold);
           color: var(--foreground);
           letter-spacing: 0.04em; line-height: var(--text-label-line); }
-        .nav-notif-actions { display: flex; gap: 5px; }
+        .nav-notif-actions { display: flex; flex-wrap: wrap; gap: 5px; }
         .nav-notif-action {
-          min-height: 28px;
-          padding: 4px 7px;
-          border-radius: 4px;
+          min-height: 44px;
+          padding: 6px 10px;
+          border-radius: var(--shape-control);
           border: none;
           background: transparent;
           color: var(--text-muted);
@@ -1028,7 +1080,7 @@ export default function NavigationBar({
         }
         .nav-notif-action:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: 2px; }
 
-        .nav-notif-list { max-height: 350px; overflow-y: auto; }
+        .nav-notif-list { min-height: 0; overflow-y: auto; overflow-wrap: anywhere; }
 
         .nav-notif-empty {
           padding: 24px 12px;
@@ -1072,11 +1124,6 @@ export default function NavigationBar({
           font-size: var(--text-caption-size);
           line-height: var(--text-caption-line);
           color: var(--text-muted);
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          line-clamp: 3;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
           white-space: normal;
           overflow-wrap: anywhere;
         }
@@ -1084,8 +1131,8 @@ export default function NavigationBar({
           font-size: var(--text-caption-size);
           line-height: var(--text-caption-line);
           color: var(--text-muted);
-          white-space: nowrap;
-          flex-shrink: 0;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         :root[data-reduced-motion="true"] .nav-notif-panel,
         :root[data-reduced-motion="true"] .nav-notif-badge { animation: none; }

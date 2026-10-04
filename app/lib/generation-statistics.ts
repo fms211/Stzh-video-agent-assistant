@@ -65,7 +65,13 @@ export async function loadGenerationRecords(
     if (!isCurrent()) return [];
     const page = await fetchPage(cursor);
     if (!isCurrent()) return [];
+    if (!page || !Array.isArray(page.tasks) || (page.nextCursor != null && typeof page.nextCursor !== "string")) {
+      throw new Error("统计响应格式不正确，请刷新重试");
+    }
     for (const task of page.tasks) {
+      if (!task || typeof task !== "object" || typeof task.id !== "string" || !task.id || typeof task.status !== "string") {
+        throw new Error("统计任务记录格式不正确，请刷新重试");
+      }
       if (task.status !== "completed" || !task.output) continue;
       const ts = Date.parse(task.completedAt || task.createdAt || "");
       if (!validTimestamp(ts)) continue;

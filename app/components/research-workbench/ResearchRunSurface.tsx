@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { Play, Pause, RotateCcw, X, CheckCircle2, AlertTriangle, Clock, FileSearch } from "lucide-react";
 import type { ResearchRunSnapshot, ResearchRunAction } from "@/app/lib/research-runtime/types";
 import { ResearchPlanEditor } from "./ResearchPlanEditor";
+import { DialogueLatticeLoader } from "../DialogueLatticeLoader";
 
 type Props = {
   snapshot: ResearchRunSnapshot;
@@ -47,7 +48,8 @@ export function ResearchRunSurface({ snapshot, act, updatePlan, busy, planDirty,
           {input.styleName} × {input.useCase}
         </h3>
         <div className="rrun-metrics" role="status" aria-live="polite">
-          <span className="rrun-metric rrun-metric-status">{statusLabel(status)}</span>
+          <span className="rrun-metric rrun-metric-status">{status === "planning" || status === "running"
+            ? <DialogueLatticeLoader label={statusLabel(status)} live={false} /> : statusLabel(status)}</span>
           <span className="rrun-metric">
             步骤 {metrics.completedSteps}/{metrics.totalSteps}
           </span>

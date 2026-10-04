@@ -17,7 +17,7 @@ const server = app.listen(port, "0.0.0.0", () => {
   console.log(`腾昇智和服务已启动：http://0.0.0.0:${port}`);
   console.log(runtimeState.enabled
     ? "[TaskRuntime] 服务端视频任务执行已启用"
-    : "[TaskRuntime] 未启用：缺少 Coze 运行配置，任务会安全保持排队");
+    : `[TaskRuntime] 未启用（${runtimeState.reason}）：此进程不领取视频任务`);
 });
 server.stzhTaskRuntime = runtimeState.runtime;
 const realtime = attachRealtime(server);

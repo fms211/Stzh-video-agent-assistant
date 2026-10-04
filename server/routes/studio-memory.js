@@ -34,7 +34,7 @@ router.get("/api/studio/summaries/:id/sources", endpoint((req,res)=>res.json(sum
 router.delete("/api/studio/summaries/:id", endpoint((req,res)=>{summaries.remove(req.user.userId,req.params.id);res.status(204).end();}));
 router.get("/api/studio/memories", endpoint((req, res) => res.json(store.list(req.user.userId, { limit: req.query.limit === undefined ? 50 : Number(req.query.limit), after: req.query.after ?? "" }))));
 router.get("/api/studio/memories/export", endpoint((req, res) => res.json(store.exportItems(req.user.userId))));
-router.get("/api/studio/memories/context-status", endpoint((_req, res) => res.json({ rollout: require("../studio-context-service.js").rolloutMode() })));
+router.get("/api/studio/memories/context-status", endpoint((_req, res) => res.json(require("../studio-context-rollout.js").contextRolloutStatus())));
 router.post("/api/studio/memories/search", endpoint((req, res) => res.json(store.search(req.user.userId, req.body))));
 const present = (userId, item) => ({ ...item, sourceAvailable: store.available(userId, item), sourceState: store.sourceState(userId, item) });
 router.get("/api/studio/memories/:id/source", endpoint((req, res) => res.json(store.readSource(req.user.userId, req.params.id))));

@@ -71,16 +71,23 @@ export async function prepareMediaDownload(
 
 export function saveFileDownload(file: { blob: Blob; filename: string }) {
   const url = URL.createObjectURL(file.blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.filename;
-  link.hidden = true;
-  document.body.append(link);
-  try { link.click(); }
-  finally {
-    link.remove();
-    // Keep the URL alive until the browser has consumed the download navigation.
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  let link: HTMLAnchorElement | null = null;
+  let handedOff = false;
+  try {
+    link = document.createElement("a");
+    link.href = url;
+    link.download = file.filename;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    handedOff = true;
+  } finally {
+    try { link?.remove(); }
+    finally {
+      // A failed setup releases immediately; successful navigation needs time.
+      if (handedOff) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      else URL.revokeObjectURL(url);
+    }
   }
 }
 

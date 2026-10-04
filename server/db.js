@@ -225,6 +225,16 @@ db.exec(`
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  -- Remote appearance settings are account-owned. Keep unowned legacy values
+  -- and internal migration markers in app_settings; never guess their owner.
+  CREATE TABLE IF NOT EXISTS account_app_settings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, key)
+  );
+
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -518,6 +528,7 @@ function opcGenerateId(prefix = "opc") {
 // --- 会话 ---
 
 db.opcCreateSession = function (id, title, userId) {
+  require("./history-retention.js").assertAvailable(db, userId || 0, id);
   db.prepare("INSERT OR IGNORE INTO opc_sessions (id, user_id, title) VALUES (?, ?, ?)").run(id, userId || 0, title || "新对话");
   return id;
 };
@@ -730,6 +741,18 @@ db.settingsGetAll = function () {
   return result;
 };
 
+db.accountSettingsGetAll = function (userId) {
+  const rows = db.prepare("SELECT key, value FROM account_app_settings WHERE user_id = ?").all(userId);
+  return Object.fromEntries(rows.map(row => [row.key, row.value]));
+};
+
+db.accountSettingsSetBatch = db.transaction(function (userId, entries) {
+  const write = db.prepare(`INSERT INTO account_app_settings (user_id, key, value, updated_at)
+    VALUES (?, ?, ?, unixepoch())
+    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+  for (const [key, value] of entries) write.run(userId, key, value);
+});
+
 // === 两端联动任务 ===
 
 db.taskCreate = function (data) {
@@ -778,6 +801,10 @@ db.taskPage = function (userId, options = {}) {
   const statuses = taskStatuses(options.status);
   const where = ["user_id = ?"];
   const baseParams = [userId];
+  if (typeof options.conversationId === "string" && options.conversationId) {
+    where.push("json_extract(CASE WHEN json_valid(input) THEN input ELSE '{}' END, '$.conversationId') = ?");
+    baseParams.push(options.conversationId);
+  }
   if (statuses.length) {
     where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
     baseParams.push(...statuses);

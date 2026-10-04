@@ -196,6 +196,7 @@ export async function getGenerationStats() {
 // === 两端联动任务 ===
 export type LinkedTask = {
   id: string;
+  conversationMessageId?: string | null;
   kind: string;
   title: string;
   status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
@@ -211,8 +212,9 @@ export type LinkedTask = {
   updatedAt: string;
 };
 
-export async function getTasks(options?: { status?: string; limit?: number; offset?: number; cursor?: string }) {
+export async function getTasks(options?: { status?: string; limit?: number; offset?: number; cursor?: string; conversationId?: string }) {
   const params = new URLSearchParams();
+  if (options?.conversationId) params.set("conversationId", options.conversationId);
   if (options?.status) params.set("status", options.status);
   if (options?.limit) params.set("limit", String(options.limit));
   if (options?.offset) params.set("offset", String(options.offset));

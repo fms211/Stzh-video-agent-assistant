@@ -1,0 +1,36 @@
+/* Shared by the gallery and Coze results; never depend on visiting another page. */
+.gallery-filter-btn {
+  padding: 5px 12px;
+  min-height: 44px;
+  border-radius: var(--shape-control);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  cursor: pointer;
+  transition: border-color 150ms, color 150ms, background-color 150ms;
+  outline: none;
+}
+.gallery-filter-btn:hover { border-color: color-mix(in srgb, var(--glow-warm) 40%, transparent); color: var(--foreground); }
+.gallery-filter-btn.active { border-color: var(--glow-warm); color: var(--glow-warm); background: color-mix(in srgb, var(--glow-warm) 10%, transparent); }
+.gallery-filter-btn:focus-visible { outline: 2px solid var(--glow-warm); outline-offset: 2px; }
+.gallery-filter-btn:disabled { opacity: .55; cursor: wait; }
+.gallery-download { padding: 0 10px 12px; min-width: 0; }
+.gallery-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.gallery-actions a { text-decoration: none; }
+.gallery-actions .gallery-filter-btn { min-height: 44px; }
+.gallery-download-message { color: var(--text-muted); font-size: var(--text-caption-size); margin: 8px 0 0; overflow-wrap: anywhere; line-height: var(--text-caption-line); }
+.gallery-preview {
+  box-sizing: border-box; border: 0; padding: 12px; margin: auto;
+  background: transparent; color: var(--foreground);
+  width: min(1248px, calc(100vw - 24px)); max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px); overflow: auto; overscroll-behavior: contain;
+}
+.gallery-preview::backdrop { background: color-mix(in srgb, var(--space-deep) 90%, transparent); }
+.gallery-preview-panel { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--border-subtle); border-radius: var(--shape-control); padding: 12px; background: var(--space-panel); }
+.gallery-preview-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-bottom: 12px; }
+.gallery-preview-header h3 { margin: 0; font-size: var(--text-body-size); overflow-wrap: anywhere; line-height: var(--text-body-line); }
+.gallery-preview-header button { flex-shrink: 0; min-height: 44px; }
+.gallery-preview-panel img { display: block; width: 100%; height: auto; max-height: 75dvh; object-fit: contain; }

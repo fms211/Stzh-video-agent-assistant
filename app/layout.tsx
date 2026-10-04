@@ -6,6 +6,7 @@ import "./rounding.css";
 import "./studio-context-ui.css";
 import "./squish-switch.css";
 import "./coze-dialogue.css";
+import "./liquid-material.css";
 import ServiceWorkerRegister from "./components/ServiceWorkerRegister";
 import LayerStack from "./components/LayerStack";
 import ClientProviders from "./ClientProviders";

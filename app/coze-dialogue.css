@@ -2,6 +2,15 @@
 body .product-shell .coze-dialogue-stage { position: relative; flex: 1; min-width: 0; min-height: 0; }
 body .product-shell .coze-dialogue-stage > .coze-dialogue-surface { position: absolute; left: 0; top: 0; overflow: hidden; }
 body .product-shell .coze-dialogue-stage--preview { height: 220px; flex: none; }
+/* Keep a readable message window; short screens scroll to the composer. */
+body .product-shell .cws-workspace[data-creative-mode="coze"] .cws-center { overflow-y: auto; }
+body .product-shell .cws-workspace[data-creative-mode="coze"] .cws-conversation:has(.coze-dialogue-surface:is([data-phase="active"], [data-phase="opening"])) {
+  min-height: calc(var(--text-heading-line) + var(--text-label-line) + var(--text-body-line) * 3 + 64px);
+  flex-shrink: 0;
+}
+body .product-shell .cws-workspace[data-creative-mode="coze"] .cws-conversation:has(.coze-context-panel:not([hidden])) {
+  min-height: calc(var(--text-heading-line) + var(--text-label-line) + var(--text-body-line) * 3 + 92px + min(280px, 35svh));
+}
 body .product-shell .coze-dialogue-surface { --coze-shadow-tint: color-mix(in srgb, var(--coze-background, #3b4049) 88%, var(--glow-cool) 12%); }
 body .product-shell .coze-dialogue-surface__glow::before {
   padding: var(--coze-border-width, 2px);
@@ -13,13 +22,14 @@ body .product-shell .coze-dialogue-surface__glow::after {
   background: color-mix(in srgb, var(--coze-color-two) calc(var(--coze-fill-opacity, 0) * 100%), transparent);
 }
 body .product-shell .coze-dialogue-intro { flex: none; padding: 16px 20px 0; min-width: 0; }
-body .product-shell .coze-dialogue-intro h2 { margin: 0; font: 600 18px/26px var(--font-ui); letter-spacing: -.02em; transition: font-size 360ms var(--ease-out-expo), line-height 360ms var(--ease-out-expo); }
+body .product-shell .coze-dialogue-intro h2 { margin: 0; font: 600 var(--text-heading-size)/var(--text-heading-line) var(--font-ui); letter-spacing: -.02em; transition: font-size 360ms var(--ease-out-expo), line-height 360ms var(--ease-out-expo); }
 body .product-shell .coze-dialogue-intro :is(.chat-welcome-eyebrow, p) { margin: 0; max-height: 0; opacity: 0; overflow: hidden; visibility: hidden; transition: opacity 160ms ease-out, transform 160ms ease-out, max-height 160ms ease-out, visibility 0s 160ms; transform: translateY(-6px); }
+body .product-shell .coze-dialogue-surface[data-phase="active"] .coze-dialogue-intro :is(.chat-welcome-eyebrow, p) { display: none; }
 body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; overflow: auto; }
-body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font: 700 28px/36px var(--font-ui); }
+body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font: 700 var(--text-page-size)/var(--text-page-line) var(--font-ui); }
 body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro :is(.chat-welcome-eyebrow, p) { flex: none; max-height: 160px; opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-body .product-shell .coze-dialogue-intro p { font: 400 14px/22px var(--font-ui); color: var(--text-muted); }
-body .product-shell .coze-dialogue-intro .chat-welcome-eyebrow { font: 400 13px/21px var(--font-ui); color: var(--glow-cool); }
+body .product-shell .coze-dialogue-intro p { font: 400 var(--text-body-size)/var(--text-body-line) var(--font-ui); color: var(--text-muted); }
+body .product-shell .coze-dialogue-intro .chat-welcome-eyebrow { font: 400 var(--text-label-size)/var(--text-label-line) var(--font-ui); color: var(--glow-cool); }
 body .product-shell .coze-dialogue-intro h2 { max-width: 100%; overflow-wrap: anywhere; }
 body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .chat-viewport { display: none; }
 body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-context-header { padding-bottom: 12px; }
@@ -32,17 +42,17 @@ body .product-shell .coze-dialogue-surface[data-phase="idle"] .coze-dialogue-int
 .coze-glow-settings { display: grid; gap: 20px; min-width: 0; }
 .coze-glow-settings__preview { min-width: 0; }
 .coze-glow-settings__sample { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; height: 100%; padding: 28px; }
-.coze-glow-settings__sample span { color: var(--glow-cool); font-size: 13px; }
-.coze-glow-settings__sample strong { font-size: 22px; }
-.coze-glow-settings__sample p { font-size: 14px; color: var(--text-muted); }
+.coze-glow-settings__sample span { color: var(--glow-cool); font-size: var(--text-label-size); line-height: var(--text-label-line); }
+.coze-glow-settings__sample strong { font-size: var(--text-dialog-size); line-height: var(--text-dialog-line); }
+.coze-glow-settings__sample p { font-size: var(--text-body-size); line-height: var(--text-body-line); color: var(--text-muted); }
 .coze-glow-settings__colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
-.coze-glow-settings__colors label { display: grid; gap: 8px; font-size: 13px; }
+.coze-glow-settings__colors label { display: grid; gap: 8px; font-size: var(--text-label-size); line-height: var(--text-label-line); }
 .coze-glow-settings__colors input { width: 100%; height: 44px; padding: 4px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-reading); }
 @media (max-width: 720px) {
   body .product-shell .coze-dialogue-intro { padding-inline: 12px; }
-  body .product-shell .coze-dialogue-intro h2 { font-size: 16px; line-height: 24px; }
+  body .product-shell .coze-dialogue-intro h2 { font-size: var(--text-subheading-size); line-height: var(--text-subheading-line); }
   body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro { padding: 16px; }
-  body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font-size: 24px; line-height: 32px; }
+  body .product-shell .coze-dialogue-surface:is([data-phase="idle"], [data-phase="loading"]) .coze-dialogue-intro h2 { font-size: var(--text-section-size); line-height: var(--text-section-line); }
 }
 @media (prefers-reduced-motion: reduce) {
   body .product-shell .coze-dialogue-stage *, body .product-shell .coze-dialogue-stage *::before { animation: none !important; transition: none !important; }

@@ -4,9 +4,9 @@
 
 [English](README.md) · **版本 1.40** · [历史发布与验收记录](docs/releases/v1.40.zh-CN.md)
 
-腾昇智和面向短视频与 AIGC 创作者：统一管理提示词、参考文件、模型连接、项目记忆、角色和结果。本文按 **main 当前源码** 更新（2026-10-02，Web/服务端包版本1.40.0）。**阶段4尚未完成**；真实媒体、独立质量、跨设备和生产验收仍有待办，阶段4完整开发记录暂不生成。
+腾昇智和面向短视频与 AIGC 创作者：统一管理提示词、参考文件、模型连接、项目记忆、角色和结果。**阶段四仍在开发与体验收尾，1.40是阶段成果，不代表Web开发结束。** Web功能、交互、美观与安全完成并经用户实际满意确认后，才进入阶段五手机端开发。本轮已恢复本地构建、相关回归与视觉冒烟；仍有未覆盖项，详见下方证据。
 
-![1.40 创作工作台](docs/releases/images/v1.40/welcome.png)
+![1.40 创作工作台](docs/releases/images/v1.40/current-web/welcome.jpg)
 
 ## 功能：在哪里做什么
 
@@ -19,41 +19,50 @@
 - **任务、通知与设备**：排队／运行／暂停／完成／失败状态，筛选、暂停、取消、重排；WebSocket同步配合轮询校准，提供手机配对入口。接口已存在，手机完整体验尚未验收。
 - **统计与画廊**：成功媒体任务的日／周／月趋势和活动日历；视频／图片筛选、已有结果预览、下载。文本任务不计入媒体统计，历史播放取决于原链接可用性。
 - **插件中心**：发现、来源安装、权限选择、账户插件库、项目启用、恢复诊断；区分系统受信登记与账户安装包，第三方工具各自配置和联调。
-- **个性化**：主题、壁纸、液态玻璃、保留星环的鼠标交互银河、可调边缘光、圆角开关、统一文字；减少动画／透明度、键盘关闭和焦点恢复。1.40新增银色标题扫光、原位展开及状态辉光。
+- **历史保留**：默认关闭自动清理；明确开启后只处理当前账号过期对话，保护当前会话和未结束任务关联记录，不删除作品、记忆、研究及协作记录。离线和结果未确认的工作流暂保留。
+- **个性化**：主题、壁纸、液态玻璃、保留星环的鼠标交互银河、可调边缘光、琉璃方块等待动效及颜色/节奏参数、圆角开关、统一文字；减少动画／透明度、键盘关闭和焦点恢复。1.40新增银色标题扫光、原位展开及状态辉光。
 
 ## 功能截图
 
-以下为1.40历史发布快照；本地模拟账号、静态素材、访客／空状态展示布局，**不代表调用模型或生成视频**。按组展开，全部保留；见[截图来源与范围](docs/releases/images/v1.40/features/README.md)。
+以下**23张截图来自2026-10-03当前工作区**，在独立演示库中拍摄，未读取原账号私人资料。预写对话、角色、任务与品牌图标仅展示功能，**未调用模型或生成媒体**；静态截图不代替动效、设备或端到端验收。[逐图来源与实际尺寸](docs/releases/images/v1.40/current-web/README.md)；[10月1日旧发布截图归档](docs/releases/images/v1.40/features/README.md)。
 
 <details open>
-<summary>创作：Coze、单助手、工作流、研究与协作</summary>
+<summary>创作：四模式、研究计划与协作结果</summary>
 
-![Coze 对话与历史](docs/releases/images/v1.40/features/coze.png)
-![单助手：模型未配置](docs/releases/images/v1.40/features/assistant.png)
-![工作流选择](docs/releases/images/v1.40/features/workflow.png)
-![研究计划入口](docs/releases/images/v1.40/features/research.png)
-![协作编排：访客入口](docs/releases/images/v1.40/features/collaboration.png)
+![Coze分镜讨论与历史](docs/releases/images/v1.40/current-web/coze.jpg)
+![单助手创意笔记](docs/releases/images/v1.40/current-web/assistant.jpg)
+![工作流选择与项目入口](docs/releases/images/v1.40/current-web/workflow.jpg)
+![可编辑研究计划工作台](docs/releases/images/v1.40/current-web/research.jpg)
+![项目角色编队与协作预算](docs/releases/images/v1.40/current-web/collaboration.jpg)
+![协作最终指令与风险](docs/releases/images/v1.40/current-web/collaboration-result.jpg)
 
 </details>
+
 <details>
 <summary>管理：模型、角色、插件、记忆与账号</summary>
 
-![模型表单](docs/releases/images/v1.40/features/models.png)
-![角色库](docs/releases/images/v1.40/features/roles.png)
-![插件中心](docs/releases/images/v1.40/features/plugins.png)
-![记忆与临时排除](docs/releases/images/v1.40/features/memory.png)
-![登录入口](docs/releases/images/v1.40/features/login.png)
+![厂商预设与模型连接表单](docs/releases/images/v1.40/current-web/models.jpg)
+![个人角色库与编辑入口](docs/releases/images/v1.40/current-web/roles.jpg)
+![插件发现与安装入口](docs/releases/images/v1.40/current-web/plugins.jpg)
+![记忆管理与shadow说明](docs/releases/images/v1.40/current-web/memory.jpg)
+![登录与注册入口](docs/releases/images/v1.40/current-web/login.jpg)
 
 </details>
-<details>
-<summary>产出与外观：任务、统计、画廊、主题、银河与辉光</summary>
 
-![任务中心：模拟任务](docs/releases/images/v1.40/features/tasks.png)
-![统计：无媒体任务](docs/releases/images/v1.40/features/statistics.png)
-![画廊：空状态](docs/releases/images/v1.40/features/gallery.png)
-![主题设置](docs/releases/images/v1.40/features/appearance.png)
-![银河参数](docs/releases/images/v1.40/features/galaxy.png)
-![辉光参数与预览](docs/releases/images/v1.40/glow-settings.png)
+<details>
+<summary>产出与个性化：任务、统计、画廊及参数设置</summary>
+
+![任务列表与当前详情](docs/releases/images/v1.40/current-web/tasks.jpg)
+![频率统计与图例](docs/releases/images/v1.40/current-web/statistics.jpg)
+![图片画廊与下载入口](docs/releases/images/v1.40/current-web/gallery.jpg)
+![素材预览弹窗](docs/releases/images/v1.40/current-web/gallery-preview.jpg)
+![主题设置与预览](docs/releases/images/v1.40/current-web/appearance.jpg)
+![液态玻璃参数](docs/releases/images/v1.40/current-web/glass.jpg)
+![银河鼠标交互参数](docs/releases/images/v1.40/current-web/galaxy.jpg)
+![边缘光参数与预览](docs/releases/images/v1.40/current-web/glow.jpg)
+![琉璃方块等待参数](docs/releases/images/v1.40/current-web/loader.jpg)
+![导出格式与时间戳](docs/releases/images/v1.40/current-web/export-settings.jpg)
+![历史保留与保护范围](docs/releases/images/v1.40/current-web/retention.jpg)
 
 </details>
 
@@ -69,10 +78,10 @@ Web / Electron / Expo 客户端
 
 | 层次 | 技术与用途 |
 |---|---|
-| Web | Next.js **16.2.4**静态导出、React **19.2.4**、TypeScript、Tailwind CSS 4；React Aria Components交互、Lucide图标 |
+| Web | Next.js **16.3.8**静态导出、React **19.2.4**、TypeScript、Tailwind CSS 4；React Aria Components交互、Lucide图标 |
 | 视觉 / 内容 | Motion、GSAP / @gsap/react；Three.js、React Three Fiber / Drei、OGL；react-markdown、remark-gfm、rehype-highlight / sanitize。React Bits / Aceternity为视觉及注明来源的实现参考 |
 | 后端 / 安全 / 数据 | Node.js、Express 5、CORS、dotenv；SQLite / better-sqlite3、JWT / jsonwebtoken、bcryptjs、Node crypto AES-256-GCM；Multer上传、ws实时通信、Undici HTTP |
-| 编排 / 插件 / 导出 | @langchain/langgraph状态图，自有TaskRuntime、研究运行时及插件子进程；AJV契约、semver / tar / yauzl版本归档；docx、pptxgenjs / pptx-automizer、qrcode文档、演示与配对能力 |
+| 编排 / 插件 / 导出 | @langchain/langgraph状态图，自有TaskRuntime、研究运行时及插件子进程；AJV契约、semver / tar / yauzl版本归档；qrcode；docx用于仓库报告脚本，并非Web的DOCX/PPT导出功能文档、演示与配对能力 |
 | 下游 | Coze Bot / Workflow API、OpenAI兼容和Anthropic Messages多厂商模型；搜索、网页读取等研究工具依赖具体适配器或插件及各自配额 |
 | 可选 RAG | Python、FastAPI / Uvicorn、ChromaDB、Sentence Transformers / BAAI bge-large-zh-v1.5；pandas、openpyxl、python-docx；检索、Wiki式组织、MQE / HyDE按配置启用 |
 | 桌面 / 手机 | Electron 35、electron-builder；Expo 56、React Native 0.85、Expo Router、AsyncStorage、WebView、相机／通知／手势／安全区组件，含Capacitor安卓依赖。源码存在不等于本版安装包或手机已验收 |
@@ -82,10 +91,10 @@ Web / Electron / Expo 客户端
 
 ## 克隆、配置与启动
 
-需要Git和npm。应用包声明Node.js ≥20；本仓库验证使用node:sqlite，统一开发/检查基线采用 **22.18+**。Python仅RAG需要。SQLite为原生依赖，安装失败需匹配Node版本和平台编译环境。
+需要Git与npm；推荐 **Node.js22.18+**，本批干净克隆实际使用Windows x64/Node25.9.0，其他环境未验证；根项目最低版本20.9.0。Python仅用于可选RAG。SQLite是原生依赖，安装可能需要匹配的编译工具链。当前阶段四按下方开发分支验证；main保留已发布阶段成果。
 
 ```bash
-git clone https://github.com/fms211/Stzh-video-agent-assistant.git
+git clone --branch fms688/v1.40 https://github.com/fms211/Stzh-video-agent-assistant.git
 cd Stzh-video-agent-assistant
 npm ci
 npm --prefix server ci
@@ -107,6 +116,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 JWT_SECRET=填入第一项随机结果
 STZH_LLM_ENCRYPTION_KEY=填入第二项随机结果
 PORT=8080
+STZH_MEDIA_EXECUTOR_ENABLED=0
 # 真实Coze执行才需以下项；密钥不要放进NEXT_PUBLIC变量
 # COZE_API_TOKEN=你的令牌
 # COZE_BOT_ID=已发布Bot的ID
@@ -122,12 +132,16 @@ npm --prefix server start
 npm run dev
 ```
 
+本机验收原账号与历史时，必须在服务端环境设置 `STZH_MEDIA_EXECUTOR_ENABLED=0` 后启动；此进程不领取 `video.generate` 任务，也不启动该执行器的附件清理定时器。支持 `0/false/off` 关闭、`1/true/on` 开启；未设置沿用原启动方式，无Coze配置仍禁用，非法值禁用并显示原因。该开关只控制此进程启动，不会取消运行中的任务或停止其他进程；单助手、研究及插件仍需分别控制调用。变更后需重启对应服务。
+
+天气为可选功能：仅在`server/.env.local`设置`QWEATHER_API_HOST`、`QWEATHER_API_KEY`、`QWEATHER_LOCATION`与`QWEATHER_CITY`，浏览器只读取`/api/weather`。未配置时显示“天气暂不可用”。旧前端密钥已公开，须由拥有者撤销并换新；本机验收禁用天气出站，本轮未做真实天气服务验收。
+
 4. 注册自己的账号并登录 → 模型中心选厂商、填API地址与密钥、获取并选模型、保存 → 工坊选模式、项目和参数 → 提交 → 任务中心、画廊查看结果。Coze需发布、权限与余额；未配置执行器时任务不会自行生成媒体。新克隆没有开发者账号或历史库。
 
 **静态部署**：本项目 `output: export`，用Express托管 `out/`，不要用 `npm start`（`next start`）。将根目录 `.env.local` 改为 `NEXT_PUBLIC_AGENT_BACKEND_URL=`（留空），清除终端同名旧变量：
 
 ```bash
-npm run build
+npm run build -- --webpack
 npm --prefix server start
 ```
 
@@ -166,14 +180,22 @@ Electron需 `server/native/electron-v<ABI>/better_sqlite3.node` 绑定，不能�
 
 ## 进度、检查与待办
 
-**阶段4仍在进行**。此前发布和局部验收的原始通过数保留在[历史发布说明](docs/releases/v1.40.zh-CN.md)，不作为本次执行结果。阶段1、2、3开发记录保留原文，不生成阶段4记录。
+**2026-10-04**：历史清理已阻止迟到正文、列表和上传确认恢复已删记录。main技术说明已协调合入开发分支，草稿PR冲突已消除、尚未合并main。已提供普通前后端复查和开发交接；安全插件正式报告封存失败，不能作为验收通过结果。
 
-可复现源码命令：`npm run build`、`npm run lint`、`npm run test:p0`（前端后接后端），或 `npm --prefix server test`。已跟踪只读冒烟脚本需要另配隔离环境与测试账号；完整条件见[验证指南](docs/TESTING.md)。本次统一文档更新核对源码、链接、路径、命令与配置，未重新执行业务全量回归、构建或付费外部调用。
+| 最新检查 | 实际范围/结果 |
+|---|---|
+| 相关回归 | **43/43通过**，含5项删除竞态；未宣称最终全量重跑 |
+| 构建 | 生产及同源Webpack预览构建通过；首个默认产物含开发API地址，没有部署它 |
+| 接口冒烟 | 独立本机合成数据库 **26项通过**，无真实模型/媒体调用 |
+| 浏览器冒烟 | 五页1440/960/390共15组根布局；四模式、Escape焦点、刷新登录通过，代表截图复查 |
+| 原库预览 |18080已更新，HTML及21资源与冻结构建一致；原9条历史不变、数据库完整性ok、媒体关闭 |
 
-- **外部与媒体**：真实Coze Bot/工具权限及配额、付费视频/图片、完整媒体执行和历史链接播放需分别验收。
-- **质量与灰度**：实际厂商、检索/任务独立质量、生产延迟/成本、enforce灰度仍需证据；合成样本和有限文字联调不能覆盖全部场景。
-- **设备与交付**：触屏、IME、文字放大、手机阶段5、新Electron安装包与生产部署未由本次验证。
-- **可选组件**：RAG含开发机路径/外部语料，插件按服务配置；旧部署脚本存在打包遗漏和入口错误，见[部署指南](deploy/DEPLOY.md)。
+[交接与各部分状态](docs/handoffs/stage4-web-20261004.md) · [普通复查与工具故障](docs/reviews/stage4-web-20261004.md) · [本轮公开证据](docs/releases/evidence/v1.40/stage4-20261004-closeout.json) · [草稿PR #1](https://github.com/fms211/Stzh-video-agent-assistant/pull/1)。
+
+此前全量计数及更广主题/文字检查按各批范围保留在[61批](更新md/2026-10-04-61-工作流排版与天气凭据保护.md)和历史发布记录，不与本轮相加。复现：`npm run build -- --webpack`、`npm run test:p0`，或`npm --prefix server test`。只读冒烟需另配隔离环境和测试账号，见[验证指南](docs/TESTING.md)；不能指向媒体执行器开启的生产环境。
+
+- **仍未完成**：真实模型发现、Coze权限/配额和第三方工具；默认shadow下的记忆独立质量与enforce灰度；实体触屏/IME/原生字号及剩余UI状态；工具链15项高危、旧天气凭据撤销、生产/Electron/手机交付及用户确认。阶段四仍在继续。
+- **媒体事实**：用户确认此前两条混剪链路成功生成，连贯模式曾在Coze底层试用成功；后续未生成因额度不足，不能据此说功能坏了。本轮没有重新核验这些历史结果。画廊有记录、链接有效和当前播放须分别验证；视频和付费媒体调用继续排除。
 
 ## 代码导航与许可
 

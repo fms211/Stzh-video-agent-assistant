@@ -1,41 +1,25 @@
 "use client";
 
-import { useLayoutEffect, useId, useRef } from "react";
+import { useId, useState } from "react";
 import Image from "next/image";
 import type { MediaItem } from "@/app/lib/workspace-media";
 import { needsUnoptimized } from "@/app/lib/needsUnoptimized";
+import { ModalDialog } from "./ModalDialog";
+import "./GalleryMedia.css";
 
 export default function GalleryPreview({ item, onClose }: { item: MediaItem; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.showModal();
-    // Close before React removes the modal; passive cleanup loses native focus restoration.
-    return () => {
-      dialog.close();
-      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-    };
-  }, []);
+  const [failed, setFailed] = useState(false);
+  const [revision, setRevision] = useState(0);
 
-  return <dialog ref={dialogRef} className="gallery-preview" aria-labelledby={titleId}
-    onCancel={(event) => { event.preventDefault(); onClose(); }}
-    onKeyDown={(event) => {
-      if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
-      // Image preview has one interactive control; keep either Tab direction on it.
-      event.preventDefault();
-      closeButtonRef.current?.focus({ preventScroll: true });
-    }}
-    onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <ModalDialog className="gallery-preview" labelledBy={titleId} onClose={onClose}>
     <div className="gallery-preview-panel">
       <header className="gallery-preview-header">
         <h3 id={titleId}>{item.sessionTitle}</h3>
-        <button ref={closeButtonRef} type="button" autoFocus className="gallery-filter-btn" onClick={onClose}>关闭预览</button>
+        <button type="button" autoFocus className="gallery-filter-btn" onClick={onClose}>关闭预览</button>
       </header>
-      <Image src={item.url} alt={item.sessionTitle} width={1200} height={900} sizes="90vw" unoptimized={needsUnoptimized(item.url)} />
+      {failed ? <div className="gallery-preview-error" role="alert"><p>图片暂时无法显示，原作品记录仍保留。可重新加载，或关闭预览后从作品卡片打开原文件。</p><button type="button" className="gallery-filter-btn" onClick={() => { setFailed(false); setRevision(value => value + 1); }}>重新加载图片</button></div>
+        : <Image key={revision} src={item.url} alt={item.sessionTitle} width={1200} height={900} sizes="90vw" unoptimized={needsUnoptimized(item.url)} onError={() => setFailed(true)} />}
     </div>
-  </dialog>;
+  </ModalDialog>;
 }

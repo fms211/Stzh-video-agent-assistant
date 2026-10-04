@@ -4,8 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const dns = require("node:dns/promises");
 const test = require("node:test");
 const httpFetch = global.fetch;
+const originalLookup = dns.lookup;
 
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` });
 const jsonRequest = (route, token, method, body) => request(route, { method, headers: authHeaders(token), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -22,6 +24,18 @@ let server;
 let baseUrl;
 let tokenA;
 let tokenB;
+
+test.beforeEach(() => {
+  // Route fixtures use mocked upstream transport; resolve only synthetic hosts
+  // locally so production DNS validation never makes a real network request.
+  dns.lookup = async (host) => {
+    assert.ok(host.endsWith(".invalid"), "Only synthetic model hosts belong in these route fixtures");
+    return [{ address: "1.1.1.1", family: 4 }];
+  };
+  global.fetch = async () => { throw new Error("Upstream transport must be injected by each route fixture"); };
+});
+
+test.afterEach(() => { dns.lookup = originalLookup; global.fetch = httpFetch; });
 
 async function request(route, options = {}) {
   const response = await httpFetch(`${baseUrl}${route}`, {

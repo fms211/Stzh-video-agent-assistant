@@ -133,7 +133,8 @@ describe("research-workbench 组件契约（Task 4–6）", () => {
     assert.match(artifacts, /style-feature-pack/);
     assert.match(artifacts, /application-prompt-pack/);
     assert.match(artifacts, /createObjectURL/);
-    assert.match(artifacts, /revokeObjectURL/);
+    assert.match(artifacts, /saveFileDownload/);
+    assert.match(read("app/lib/media-download.ts"), /revokeObjectURL/);
   });
 
   test("PromptRail 三态且焦点返回", () => {

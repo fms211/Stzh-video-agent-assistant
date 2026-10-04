@@ -81,7 +81,8 @@ describe("AppearanceSettingsStudio（规划 §3）", () => {
     assert.match(source, /恢复主题默认值/);
     assert.match(source, /advancedGlassOpen/);
     assert.match(source, /aria-expanded=\{advancedGlassOpen\}/);
-    assert.match(source, /blurPx/);
+    assert.match(source, /GlassSurfaceSettingsPanel/);
+    assert.match(read("app/components/GlassSurfaceSettingsPanel.tsx"), /GLASS_SURFACE_CONTROLS/);
     assert.match(source, /edgeGlow/);
   });
 
@@ -104,13 +105,15 @@ describe("AppearanceSettingsStudio（规划 §3）", () => {
 test("CreativeWorkspace 将玻璃设置应用到真实 CSS 变量并按 owner 保存", () => {
   const workspace = read("app/components/CreativeWorkspace.tsx");
   assert.match(workspace, /glassSettings/);
-  assert.match(workspace, /--glass-blur/);
-  assert.match(workspace, /--glass-opacity/);
+  const glass = read("app/components/LiquidGlassProvider.tsx");
+  assert.match(workspace, /useLiquidGlassSettings/);
+  assert.match(glass, /--glass-blur/);
+  assert.match(glass, /--glass-opacity/);
   assert.match(workspace, /onGlassSettingsChange/);
-  assert.match(workspace, /glass-settings/);
-  assert.match(workspace, /localStorage\.setItem\("theme"/);
-  assert.match(workspace, /fetchServerSettings/);
-  assert.match(workspace, /saveServerSettings/);
+  assert.match(glass, /tszh:v2:\$\{owner\}:glass-settings/);
+  const theme = read("app/hooks/useWorkspaceTheme.ts");
+  assert.match(workspace, /useWorkspaceTheme\(ownerScope\)/);
+  assert.match(theme, /fetchServerSettings/); assert.match(theme, /saveServerSettings/);
   assert.match(workspace, /const root = document\.documentElement/);
   assert.match(workspace, /root\.dataset\.theme\s*=\s*theme\.id/);
   assert.match(workspace, /getThemeDefinition/);

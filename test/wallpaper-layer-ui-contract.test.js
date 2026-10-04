@@ -59,7 +59,8 @@ describe("WallpaperLayer（规划 §2.4）", () => {
   });
 
   test("本地 Blob URL 使用 state 触发重渲染，并由每个 WallpaperLayer 实例独立 revoke", () => {
-    assert.match(source, /setMediaUrl/);
+    assert.match(source, /setResolvedMedia/);
+    assert.match(source, /resolvedMedia\.asset === asset/);
     assert.match(source, /URL\.createObjectURL/);
     assert.match(source, /URL\.revokeObjectURL/);
     assert.doesNotMatch(source, /createAssetObjectUrl|revokeAssetObjectUrl/);

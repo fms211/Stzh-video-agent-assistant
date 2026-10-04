@@ -83,13 +83,20 @@ function decodeCursor(value) {
 
 function serializeTask(row) {
   if (!row) return null;
+  const input = parseJson(row.input, {});
+  const prefix = typeof input?.conversationId === "string" ? `chat_${input.conversationId}_` : null;
+  // Recover the exact original reply, including requests created by older clients.
+  const conversationMessageId = row.kind === "video.generate" && prefix &&
+    typeof row.idempotency_key === "string" && row.idempotency_key.startsWith(prefix)
+    ? row.idempotency_key.slice(prefix.length) || null : null;
   return {
     id: row.id,
     kind: row.kind,
     title: row.title,
     status: row.status,
     origin: row.origin,
-    input: parseJson(row.input, {}),
+    input,
+    conversationMessageId,
     output: parseJson(row.output, null),
     progress: row.progress,
     stage: row.stage || "",

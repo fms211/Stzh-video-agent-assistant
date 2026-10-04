@@ -88,3 +88,12 @@ test("local calendar arithmetic keeps unique days through daylight-saving transi
   `], { cwd: require("node:path").resolve(__dirname, ".."), env: { ...process.env, TZ: "America/New_York" }, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
 });
+
+// Prepared during source-only review; not executed in the paused-test round.
+test("malformed task pages fail instead of displaying apparently complete counts", async () => {
+  const { loadGenerationRecords } = await load();
+  for (const page of [null, {}, { tasks: null, nextCursor: null }, { tasks: [], nextCursor: {} },
+    { tasks: [null], nextCursor: null }, { tasks: [{ status: "completed" }], nextCursor: null }]) {
+    await assert.rejects(loadGenerationRecords(async () => page), /格式不正确/);
+  }
+});

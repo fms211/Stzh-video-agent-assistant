@@ -103,6 +103,7 @@ router.post("/api/conversations", (req, res) => {
     const userId = req.user.userId;
     const { id, title } = req.body;
     const convId = id || generateId();
+    require("../history-retention.js").assertAvailable(db, userId, convId);
     const existing = db.prepare(
       "SELECT id, user_id FROM opc_sessions WHERE id = ?"
     ).get(convId);
@@ -129,7 +130,7 @@ router.post("/api/conversations", (req, res) => {
     res.json({ id: convId, title: title || "新对话" });
   } catch (error) {
     console.error("[Conversations] 创建失败:", error.message);
-    res.status(500).json({ error: { message: "创建会话失败" } });
+    res.status(error.status || 500).json({ error: { code: error.code, message: error.status ? error.message : "创建会话失败" } });
   }
 });
 

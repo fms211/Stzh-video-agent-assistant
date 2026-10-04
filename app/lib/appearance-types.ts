@@ -2,6 +2,8 @@
 // 零运行时依赖纯类型模块（node:test 原生 type-stripping 直载）。
 // 名称与字面量为页面/组件/存储共同契约，不得自行改名。
 
+import { CLEAR_GLASS_SURFACE, normalizeGlassSurface, type GlassSurfaceSettings } from "./glass-surface-settings.ts";
+
 // ---- §1.4 底部四模式 ----
 
 export type CreativeWorkspaceMode = "coze" | "assistant" | "workflow" | "collaboration";
@@ -64,9 +66,11 @@ export type GlassSettings = {
   reduceTransparency: boolean;
   refractionEnabled: boolean;
   videoAutoplay: boolean;
+  /** Optional for old stored records; normalized before rendering or saving. */
+  surface?: GlassSurfaceSettings;
 };
 
-export const GLASS_PRESETS: Record<GlassPreset, Omit<GlassSettings, "preset" | "reduceTransparency" | "refractionEnabled" | "videoAutoplay">> = {
+export const GLASS_PRESETS: Record<GlassPreset, Omit<GlassSettings, "preset" | "reduceTransparency" | "refractionEnabled" | "videoAutoplay" | "surface">> = {
   clear: { blurPx: 12, opacity: 0.14, refraction: 32, edgeGlow: 0.18, wallpaperDim: 0.2, smartTint: 0.12 },
   balanced: { blurPx: 18, opacity: 0.22, refraction: 24, edgeGlow: 0.24, wallpaperDim: 0.32, smartTint: 0.18 },
   deep: { blurPx: 24, opacity: 0.34, refraction: 16, edgeGlow: 0.3, wallpaperDim: 0.48, smartTint: 0.25 },
@@ -79,7 +83,25 @@ export function defaultGlassSettings(): GlassSettings {
     reduceTransparency: false,
     refractionEnabled: true,
     videoAutoplay: true,
+    surface: { ...CLEAR_GLASS_SURFACE },
   };
+}
+
+/** Accept legacy records without trusting arbitrary CSS values or non-finite numbers. */
+export function normalizeGlassSettings(value: unknown): GlassSettings {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const next = defaultGlassSettings();
+  if (raw.preset === "clear" || raw.preset === "balanced" || raw.preset === "deep") next.preset = raw.preset;
+  const bounds = { blurPx: [0, 36], opacity: [0, 1], refraction: [0, 300], edgeGlow: [0, .5], wallpaperDim: [0, .6], smartTint: [0, .25] } as const;
+  for (const key of Object.keys(bounds) as Array<keyof typeof bounds>) {
+    const number = raw[key];
+    if (typeof number === "number" && Number.isFinite(number)) next[key] = Math.max(bounds[key][0], Math.min(bounds[key][1], number));
+  }
+  for (const key of ["reduceTransparency", "refractionEnabled", "videoAutoplay"] as const) {
+    if (typeof raw[key] === "boolean") next[key] = raw[key];
+  }
+  next.surface = normalizeGlassSurface(raw.surface);
+  return next;
 }
 
 // ---- §2.4 壁纸显示配置 ----

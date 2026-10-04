@@ -15,7 +15,7 @@ let server, base, tokenA, tokenB;
 const prefix = "/api/studio/memories";
 async function request(route = "", method = "GET", body, token = tokenA) {
   const response = await fetch(base + prefix + route, { method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const value = response.status === 204 ? null : await response.json();
+  const value = response.status === 204 ? null : response.headers.get("content-type")?.includes("application/json") ? await response.json() : await response.text();
   return { status: response.status, body: value, cache: response.headers.get("cache-control") };
 }
 async function create(patch = {}, token = tokenA) {
@@ -29,16 +29,28 @@ async function confirmed(patch = {}) {
 
 test("context status is authenticated, uncached and reports the effective rollout without enabling it", async () => {
   const previous = process.env.STZH_CONTEXT_MODE;
+  const { MODE_KEYS, contextRolloutStatus } = require("../studio-context-rollout.js");
+  const previousOverrides = Object.fromEntries(Object.values(MODE_KEYS).map(key => [key,process.env[key]]));
+  for (const key of Object.values(MODE_KEYS)) delete process.env[key];
   try {
     assert.equal((await request("/context-status", "GET", undefined, null)).status, 401);
     for (const [setting, expected] of [[undefined,"shadow"],["invalid","shadow"],["off","off"],["shadow","shadow"],["enforce","enforce"]]) {
       if (setting === undefined) delete process.env.STZH_CONTEXT_MODE; else process.env.STZH_CONTEXT_MODE = setting;
       const result = await request("/context-status");
       assert.equal(result.status, 200); assert.equal(result.cache,"no-store");
-      assert.deepEqual(result.body,{rollout:expected});
+      assert.equal(result.body.rollout,expected);
+      assert.deepEqual(result.body,contextRolloutStatus());
       assert.equal(process.env.STZH_CONTEXT_MODE,setting);
     }
-  } finally { if (previous === undefined) delete process.env.STZH_CONTEXT_MODE; else process.env.STZH_CONTEXT_MODE = previous; }
+    process.env.STZH_CONTEXT_MODE="shadow"; process.env.STZH_CONTEXT_MODE_ASSISTANT="enforce"; process.env.STZH_CONTEXT_MODE_COZE="off";
+    const result=await request("/context-status?mode=coze&rollout=enforce");
+    assert.equal(result.body.byMode.assistant.rollout,"enforce"); assert.equal(result.body.byMode.coze.rollout,"off"); assert.equal(result.body.byMode.workflow.rollout,"shadow");
+    assert.equal(process.env.STZH_CONTEXT_MODE_COZE,"off");
+    assert.equal((await request("/context-status","POST",{mode:"coze",rollout:"enforce"})).status,404);
+  } finally {
+    if (previous === undefined) delete process.env.STZH_CONTEXT_MODE; else process.env.STZH_CONTEXT_MODE = previous;
+    for (const [key,value] of Object.entries(previousOverrides)) { if(value===undefined) delete process.env[key];else process.env[key]=value; }
+  }
 });
 test.before(async () => {
   // Test-only fault injection: commit deletion, then lose the successful reply.

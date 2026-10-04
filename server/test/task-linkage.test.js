@@ -57,6 +57,24 @@ test.after(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
+test("conversation recovery exposes exact legacy reply IDs, scoped by both account and conversation", async () => {
+  const owner = await register("recovery-owner"), stranger = await register("recovery-stranger");
+  const create = async (conversationId, key) => request("/api/tasks", {method:"POST",token:owner.token,
+    body:JSON.stringify({kind:"video.generate",title:"只验证任务元数据",origin:"desktop",input:{conversationId},idempotencyKey:key})});
+  const one = await create("conversation_with_underscores", "chat_conversation_with_underscores_reply-original");
+  await create("other", "chat_other_other-reply");
+  await create("conversation_with_underscores", "unrelated-key");
+  assert.equal(one.body.task.conversationMessageId,"reply-original");
+  const page = await request("/api/tasks?conversationId=conversation_with_underscores",{token:owner.token});
+  assert.equal(page.body.total,2);assert.equal(page.body.tasks.filter(task=>task.conversationMessageId).length,1);
+  assert.equal(page.body.tasks.find(task=>task.id===one.body.task.id).conversationMessageId,"reply-original");
+  const hidden = await request("/api/tasks?conversationId=conversation_with_underscores",{token:stranger.token});
+  assert.equal(hidden.body.tasks.length,0);
+  const before = db.prepare("SELECT COUNT(*) n FROM tasks WHERE user_id=?").get(owner.user.id).n;
+  await request("/api/tasks?conversationId=conversation_with_underscores",{token:owner.token});
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM tasks WHERE user_id=?").get(owner.user.id).n,before);
+});
+
 test("task API is idempotent, user-isolated, and supports lifecycle controls", async () => {
   const owner = await register("task-owner");
   const stranger = await register("task-stranger");

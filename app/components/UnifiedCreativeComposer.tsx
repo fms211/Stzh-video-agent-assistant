@@ -42,7 +42,7 @@ type Props = {
   /** 协作确认投递回执 */
   onCollabDispatched: (taskId: string) => void;
   /** 工作流运行时启动（style-research → ResearchWorkbench） */
-  onLaunchRuntime?: (input: ResearchLaunchInput) => void;
+  onLaunchRuntime?: (input: ResearchLaunchInput) => void | Promise<boolean>;
   /** 打开当前账户保存的研究运行记录 */
   onOpenResearchHistory?: () => void;
   /** 插入到输入的参数片段（revision 去重由 Workspace 层持有） */

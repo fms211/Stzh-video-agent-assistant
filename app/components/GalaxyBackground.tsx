@@ -28,10 +28,10 @@ function readThemeHue() {
 /** Configurable React Bits Galaxy; no cursor trail or click effect. */
 export default function GalaxyBackground({ reducedMotion = false, staticPreview = false, visible = true, mouseInteraction = true, settings }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const controlsRef = useRef<{ sync: () => void } | null>(null);
   const optionsRef = useRef({ reducedMotion, staticPreview, visible, mouseInteraction, settings: normalizeGalaxySettings(settings) });
   const [mode, setMode] = useState<RenderMode>("initializing");
+  const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const [pointerEnabled, setPointerEnabled] = useState(false);
 
   useEffect(() => {
@@ -41,8 +41,15 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
 
   useEffect(() => {
     const host = hostRef.current;
-    const canvas = canvasRef.current;
-    if (!host || !canvas) return;
+    if (!host) return;
+    // Each effect owns a fresh canvas/context. React Strict Mode replays effect
+    // setup after cleanup; a deliberately lost context must never be reused.
+    const canvas = document.createElement("canvas");
+    canvas.className = "galaxy-background__canvas";
+    canvas.hidden = true;
+    host.appendChild(canvas);
+    setMode("initializing");
+    setFallbackReason(null);
 
     let disposed = false;
     let failed = false;
@@ -67,16 +74,22 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
     let pointerBound = false;
     let bounds = { left: 0, top: 0, width: 1, height: 1 };
 
-    const signal = (next: RenderMode) => { if (!disposed) setMode(next); };
+    const signal = (next: RenderMode) => {
+      if (!disposed) {
+        canvas.hidden = next === "fallback" || next === "initializing";
+        setMode(next);
+      }
+    };
     const stop = () => {
       cancelAnimationFrame(frame);
       frame = 0;
       previousTime = null;
     };
-    const fallback = () => {
+    const fallback = (reason: "initialization_failed" | "render_failed" | "context_lost") => {
       failed = true;
       stop();
       bindPointer(false);
+      if (!disposed) setFallbackReason(reason);
       signal("fallback");
     };
     const wantsStatic = () => optionsRef.current.staticPreview || optionsRef.current.reducedMotion || motionQuery.matches || optionsRef.current.settings.disableAnimation;
@@ -144,7 +157,7 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
       try {
         renderer.render({ scene: mesh });
       } catch {
-        fallback();
+        fallback("render_failed");
       }
     };
     const tick = (now: number) => {
@@ -220,7 +233,7 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
     const onBlur = () => { focused = false; sync(); };
     const onContextLost = (event: Event) => {
       event.preventDefault();
-      fallback();
+      fallback("context_lost");
     };
 
     try {
@@ -260,7 +273,7 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
       controlsRef.current = { sync };
       resize();
     } catch {
-      fallback();
+      fallback("initialization_failed");
     }
 
     const resizeObserver = new ResizeObserver(resize);
@@ -301,6 +314,7 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
         }
         gl.getExtension("WEBGL_lose_context")?.loseContext();
       }
+      canvas.remove();
     };
   }, []);
 
@@ -308,8 +322,7 @@ export default function GalaxyBackground({ reducedMotion = false, staticPreview 
   return (
     <div ref={hostRef} className={`galaxy-background${staticPreview ? " galaxy-background--preview" : ""}`}
       aria-hidden="true" data-background="galaxy" data-motion-state={mode} data-visible={visible}
-      data-pointer-interaction={pointerEnabled ? "subtle" : "off"}>
-      <canvas ref={canvasRef} className="galaxy-background__canvas" hidden={showFallback} />
+      data-pointer-interaction={pointerEnabled ? "subtle" : "off"} data-fallback-reason={fallbackReason ?? undefined}>
       {showFallback && <div className="galaxy-background__fallback">
         {FALLBACK_STARS.map(([x, y, size], index) => <i key={index} style={{
           "--star-x": `${x}%`, "--star-y": `${y}%`, "--star-size": `${size}px`,

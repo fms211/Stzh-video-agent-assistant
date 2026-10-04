@@ -1,14 +1,17 @@
 "use client";
+import { LiquidMaterialBackdrop } from "@/app/components/LiquidMaterialBackdrop";
+import { MaterialSelect } from "@/app/components/MaterialSelect";
 
 // 插件中心 — 发现页（规划 §8.1）
 // 搜索、分类、签名、权限筛选均由 Adapter query 驱动；卡片显示发布者/版本/tier/贡献数；
 // 选中打开 420px 右侧详情抽屉；安装入口进入四步向导（PluginInstallFlow）。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, ShieldCheck, ShieldAlert, X, Layers, User } from "lucide-react";
 import type { PluginCenterAdapter } from "@/app/lib/plugin-center/adapter";
 import type { CatalogPage, InstallPreview, PluginPermissionTier, PluginSource } from "@/app/lib/plugin-center/types";
 import { PluginInstallFlow } from "./PluginInstallFlow";
+import { PluginDialog } from "./PluginDialog";
 
 type Props = {
   adapter: PluginCenterAdapter;
@@ -22,22 +25,41 @@ export function PluginDiscover({ adapter, authenticated, onAuthRequired }: Props
   const [text, setText] = useState("");
   const [signature, setSignature] = useState<"all" | "verified" | "unsigned">("all");
   const [permissionTier, setPermissionTier] = useState<PluginPermissionTier | null>(null);
-  const [page, setPage] = useState<CatalogPage | null>(null);
-  const [selected, setSelected] = useState<CatalogPage["items"][number] | null>(null);
-  const [installSource, setInstallSource] = useState<PluginSource | null>(null);
-  const [error, setError] = useState("");
+  const query = JSON.stringify([text, signature, permissionTier]);
+  const [catalog, setCatalog] = useState<{ adapter: PluginCenterAdapter; query: string; page: CatalogPage } | null>(null);
+  const page = catalog?.adapter === adapter && catalog.query === query ? catalog.page : null;
+  const [selection, setSelection] = useState<{ adapter: PluginCenterAdapter; item: CatalogPage["items"][number] } | null>(null);
+  const selected = selection?.adapter === adapter ? selection.item : null;
+  const setSelected = (item: CatalogPage["items"][number] | null) => setSelection(item ? { adapter, item } : null);
+  const [installation, setInstallation] = useState<{ adapter: PluginCenterAdapter; source: PluginSource } | null>(null);
+  const installSource = installation?.adapter === adapter ? installation.source : null;
+  const setInstallSource = useCallback((source: PluginSource | null) => setInstallation(source ? { adapter, source } : null), [adapter]);
+  const [failure, setFailure] = useState<{ adapter: PluginCenterAdapter; query: string; message: string } | null>(null);
+  const error = failure?.adapter === adapter && failure.query === query ? failure.message : "";
+  const [loading, setLoading] = useState(true);
+  const requestRef = useRef(0);
 
   const reload = useCallback(async () => {
+    const request = ++requestRef.current;
+    setLoading(true);
+    setCatalog(null);
+    setFailure(null);
     try {
-    const result = await adapter.searchCatalog({ text, category: null, signature, permissionTier, cursor: null, limit: 50 });
-    setPage(result);
-    setError("");
-    } catch (error) { setError(error instanceof Error ? error.message : "读取插件目录失败"); }
-  }, [adapter, text, signature, permissionTier]);
+      const result = await adapter.searchCatalog({ text, category: null, signature, permissionTier, cursor: null, limit: 50 });
+      if (request === requestRef.current) setCatalog({ adapter, query, page: result });
+    } catch (error) {
+      if (request === requestRef.current) setFailure({ adapter, query, message: error instanceof Error ? error.message : "读取插件目录失败" });
+    } finally {
+      if (request === requestRef.current) setLoading(false);
+    }
+  }, [adapter, text, signature, permissionTier, query]);
 
   useEffect(() => {
     void reload();
+    return () => { requestRef.current++; };
   }, [reload]);
+
+  useEffect(() => { setSelection(null); setInstallation(null); }, [adapter]);
 
   const startInstall = useCallback(
     (source: PluginSource) => {
@@ -47,12 +69,12 @@ export function PluginDiscover({ adapter, authenticated, onAuthRequired }: Props
       }
       setInstallSource(source);
     },
-    [authenticated, onAuthRequired],
+    [authenticated, onAuthRequired, setInstallSource],
   );
 
   return (
     <div className="pc-discover">
-      {error && <p role="alert" className="pc-note">{error}</p>}
+      {error && <div role="alert" className="pc-note"><span>{error}</span><button type="button" className="pc-btn" onClick={() => void reload()} disabled={loading}>重试读取目录</button></div>}
       <div className="pc-discover__filters">
         <input
           type="search"
@@ -61,24 +83,25 @@ export function PluginDiscover({ adapter, authenticated, onAuthRequired }: Props
           value={text}
           onChange={(event) => setText(event.target.value)}
         />
-        <select value={signature} onChange={(event) => setSignature(event.target.value as typeof signature)} aria-label="签名筛选">
+        <MaterialSelect value={signature} onValueChange={selectedValue => setSignature(selectedValue as typeof signature)} aria-label="签名筛选">
           <option value="all">全部签名</option>
           <option value="verified">已签名</option>
           <option value="unsigned">未签名</option>
-        </select>
-        <select
+        </MaterialSelect>
+        <MaterialSelect
           value={permissionTier ?? ""}
-          onChange={(event) => setPermissionTier((event.target.value || null) as PluginPermissionTier | null)}
+          onValueChange={selectedValue => setPermissionTier((selectedValue || null) as PluginPermissionTier | null)}
           aria-label="权限档筛选"
         >
           <option value="">全部权限</option>
           <option value="safe">安全</option>
           <option value="standard">标准</option>
           <option value="full">完全</option>
-        </select>
+        </MaterialSelect>
       </div>
 
-      <div className="pc-discover__grid">
+      {loading && <p role="status" className="pc-empty">正在读取插件目录…</p>}
+      <div className="pc-discover__grid" aria-busy={loading}>
         {(page?.items ?? []).map((item) => {
           const toolCount = item.manifest.contributes.tools?.length ?? 0;
           const workflowCount = item.manifest.contributes.workflows?.length ?? 0;
@@ -125,12 +148,11 @@ export function PluginDiscover({ adapter, authenticated, onAuthRequired }: Props
 
       {/* 详情抽屉（420px，规划 §8.1） */}
       {selected && (
-        <>
-          <button type="button" className="pc-drawer-backdrop" aria-label="关闭详情" onClick={() => setSelected(null)} />
-          <aside className="pc-drawer" role="dialog" aria-modal="true" aria-label={`插件详情：${selected.manifest.name}`}>
+        <PluginDialog label={`插件详情：${selected.manifest.name}`} onClose={() => setSelected(null)}>
+          <aside className="pc-drawer liquid-material-host"><LiquidMaterialBackdrop />
             <div className="pc-drawer__head">
               <h3>{selected.manifest.name}</h3>
-              <button type="button" className="pc-btn" aria-label="关闭详情抽屉" onClick={() => setSelected(null)}>
+              <button type="button" autoFocus className="pc-btn" aria-label="关闭详情抽屉" onClick={() => setSelected(null)}>
                 <X aria-hidden="true" size={13} />
               </button>
             </div>
@@ -186,7 +208,7 @@ export function PluginDiscover({ adapter, authenticated, onAuthRequired }: Props
               </button>
             </div>
           </aside>
-        </>
+        </PluginDialog>
       )}
 
       {/* 四步安装向导 */}

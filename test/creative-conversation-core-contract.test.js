@@ -35,9 +35,11 @@ describe("CreativeConversationCore（规划 §5.2 拆解）", () => {
 
   test("原样导出（json/txt/markdown 三格式）", () => {
     assert.match(core, /exportFormat/);
-    assert.match(core, /text\/markdown/);
-    assert.match(core, /application\/json/);
-    assert.match(core, /text\/plain/);
+    assert.match(core, /exportCozeConversation/);
+    const exporter = read("app/lib/coze-export.ts");
+    assert.match(exporter, /text\/markdown/);
+    assert.match(exporter, /application\/json/);
+    assert.match(exporter, /text\/plain/);
   });
 
   test("不再自行 portal 侧栏、不渲染 ChatInput（Composer 移出）", () => {

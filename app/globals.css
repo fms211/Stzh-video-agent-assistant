@@ -1,5 +1,9 @@
-@import "tailwindcss";
+/* Only application UI declares Tailwind utilities; keep temporary linked checkouts out of build contexts. */
+@import "tailwindcss" source("./");
 @import "highlight.js/styles/github-dark.css";
+
+/* Component flex/grid styles must not expose a closed native dialog before showModal. */
+dialog:not([open]) { display: none !important; }
 
 .plugin-workflow-catalog { min-width: 0; padding-block: 12px; }
 .plugin-workflow-catalog h3, .plugin-workflow-catalog h4 { margin: 8px 0; }
@@ -1387,16 +1391,16 @@ textarea::placeholder {
 .galaxy-settings-section { display: grid; gap: 18px; min-width: 0; }
 .galaxy-settings-panel { display: grid; gap: 18px; min-width: 0; }
 .galaxy-settings-panel__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.galaxy-settings-panel__header h3 { margin: 0 0 6px; font-size: 16px; line-height: 24px; }
-.galaxy-settings-panel__header p, .galaxy-settings-panel__hint { margin: 0; color: var(--foreground-muted); font-size: 13px; line-height: 21px; overflow-wrap: anywhere; }
-.galaxy-settings-panel__header a { flex-shrink: 0; font-size: 13px; line-height: 21px; color: var(--primary); border-radius: 12px; padding: 4px 6px; }
+.galaxy-settings-panel__header h3 { margin: 0 0 6px; font-size: var(--text-subheading-size); line-height: var(--text-subheading-line); }
+.galaxy-settings-panel__header p, .galaxy-settings-panel__hint { margin: 0; color: var(--foreground-muted); font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
+.galaxy-settings-panel__header a { flex-shrink: 0; font-size: var(--text-label-size); line-height: var(--text-label-line); color: var(--primary); border-radius: 12px; padding: 4px 6px; }
 .galaxy-settings-panel__presets, .galaxy-settings-panel__switches { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
 .galaxy-settings-panel__presets button { min-height: 40px; }
 .galaxy-settings-panel__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .galaxy-settings-panel__field { display: grid; gap: 5px; min-width: 0; padding: 14px 16px; border-radius: 20px; background: color-mix(in srgb, var(--space-deep) 84%, transparent); border: 1px solid color-mix(in srgb, var(--glow-cool) 10%, transparent); }
-.galaxy-settings-panel__field > span { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; line-height: 21px; }
+.galaxy-settings-panel__field > span { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--text-label-size); line-height: var(--text-label-line); }
 .galaxy-settings-panel__field output { font-variant-numeric: tabular-nums; color: var(--primary); }
-.galaxy-settings-panel__field small { color: var(--foreground-muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.galaxy-settings-panel__field small { color: var(--foreground-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow-wrap: anywhere; }
 .galaxy-settings-panel__field input[type="range"] { width: 100%; min-width: 0; accent-color: var(--primary); min-height: 28px; }
 .galaxy-settings-panel__field input[type="number"] { width: 100%; min-width: 0; min-height: 40px; padding: 8px 12px; border-radius: 16px; color: var(--foreground); background: var(--space-deep); border: 1px solid color-mix(in srgb, var(--glow-cool) 16%, transparent); }
 .galaxy-settings-panel__advanced { display: grid; gap: 14px; padding-top: 2px; animation: galaxy-enter 180ms var(--ease-out-expo) both; }
@@ -1963,7 +1967,8 @@ textarea::placeholder {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: clamp(180px, 11.25rem, 260px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .cws-studio__nav {
@@ -1972,10 +1977,13 @@ textarea::placeholder {
   gap: 4px;
   padding: 12px 10px;
   border-right: 1px solid var(--border-subtle);
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .cws-studio__nav-item {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
@@ -1988,6 +1996,7 @@ textarea::placeholder {
   text-align: left; line-height: var(--text-caption-line); }
 
 .cws-studio__nav-item:hover { color: var(--foreground); border-color: var(--border-subtle); }
+.cws-studio__nav-item svg { flex-shrink: 0; }
 
 .cws-studio__nav-item.is-active {
   color: var(--glow-warm);
@@ -1996,6 +2005,8 @@ textarea::placeholder {
 }
 
 .cws-studio__content {
+  min-width: 0;
+  min-height: 0;
   padding: 16px 18px;
   overflow-y: auto;
 }
@@ -2240,7 +2251,7 @@ textarea::placeholder {
 .cws-studio__apply-row span { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 
 @media (max-width: 700px) {
-  .cws-studio__body { grid-template-columns: 1fr; }
+  .cws-studio__body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .cws-studio__nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
   .cws-studio__nav-item { white-space: nowrap; }
   .cws-energy-preview { grid-template-columns:1fr; }
@@ -3297,11 +3308,16 @@ textarea::placeholder {
 .product-shell .cws-workspace:not([data-creative-mode="coze"]) .cws-composer { flex: 1; min-height: 0; max-height: none; overflow: hidden; }
 .product-shell .cws-workspace:not([data-creative-mode="coze"]) :is(.cws-composer__content, .cws-composer__mode) { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .product-shell .cws-workspace .cws-composer :is(.studio-assistant.is-compact, .collab-panel--compact) { flex: 1; min-height: 0; width: 100%; margin: 0; overflow: auto; border-radius: var(--shape-card); background: var(--surface-reading); }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact { display: flex; flex-direction: column; overflow: hidden; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact { display: flex; flex-direction: column; overflow: auto; }
 .product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-chat { flex: 1; min-height: 0; max-height: none; }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow { flex: 1; min-height: 0; max-height: none; display: flex; overflow: hidden; }
-.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact :is(.studio-workflow-list, .studio-workflow-form) { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
-.product-shell .cws-workspace .cws-composer .studio-wf-start { position: sticky; bottom: 0; z-index: 1; min-height: 40px; box-shadow: 0 -6px 18px var(--space-panel); }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow { flex: 1; min-height: min(280px, 50svh); max-height: none; display: flex; overflow: hidden; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow-list { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.product-shell .cws-workspace .cws-composer .studio-assistant.is-compact .studio-workflow-form { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.product-shell .cws-workspace .cws-composer .studio-workflow-fields { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.product-shell .cws-workspace .cws-composer .studio-workflow-actions { flex: none; padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: var(--surface-reading); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start { position: static; min-height: 40px; margin: 0; box-shadow: none; background: var(--glow-warm); color: var(--space-deep); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start:hover:not(:disabled) { background: color-mix(in srgb, var(--glow-warm) 86%, var(--foreground)); }
+.product-shell .cws-workspace .cws-composer .studio-wf-start:disabled { background: color-mix(in srgb, var(--foreground) 8%, var(--space-panel)); color: var(--text-muted); }
 .product-shell .cws-workspace :is(.cws-composer__assistant, .cws-composer__workflow) { flex: 1; min-height: 0; max-height: none; overflow: hidden; }
 .product-shell .cws-workspace .studio-composer { flex-shrink: 0; }
 .product-shell .wsd-dock__content { padding: 8px; background: transparent; }
@@ -3715,3 +3731,9 @@ body .product-shell .coze-welcome-emphasis {
 }
 :root[data-reduced-motion="true"] body .product-shell .coze-dialogue :is(.chat-message-group, .coze-context-panel) { animation: none; }
 :root[data-reduced-motion="true"] body .product-shell .coze-dialogue :is(.coze-context-trigger, .coze-context-export, .coze-context-trigger svg) { transition: none; }
+
+/* Account identity verification and data synchronization have separate feedback. */
+.auth-session-notice { display: grid; gap: 10px; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: var(--shape-control); background: var(--surface-reading, var(--space-panel)); color: var(--foreground); }
+.auth-session-notice p { margin: 0; font-size: var(--text-label-size); line-height: var(--text-label-line); overflow-wrap: anywhere; }
+.auth-session-notice button { min-height: 44px; justify-self: start; white-space: normal; overflow-wrap: anywhere; }
+.nav-user-status { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--glow-warm); }

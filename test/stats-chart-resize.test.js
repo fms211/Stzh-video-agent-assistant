@@ -15,13 +15,13 @@ function fixture(){
   };
   const jsx=(type,props)=>({type,props});const moduleObject={exports:{}};
   const source=fs.readFileSync(process.env.STZH_STATS_COMPONENT_SOURCE||require.resolve("../app/components/StatsDashboard.tsx"),"utf8");
-  const requireStub=name=>name==="react"?hooks:name==="react/jsx-runtime"?{jsx,jsxs:jsx,Fragment:"fragment"}:name.endsWith("/tracker")?{getGenerationStats:()=>stats}:name.endsWith("/generation-statistics")?{summarizeGenerations:()=>stats}:{};
-  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText+"\nexports.ChartView=StatsDashboardView;",{module:moduleObject,exports:moduleObject.exports,require:requireStub,Promise,
+  const requireStub=name=>name==="react"?hooks:name==="react/jsx-runtime"?{jsx,jsxs:jsx,Fragment:"fragment"}:name.endsWith("/auth")?{getToken:()=>null}:name.endsWith("/data-owner")?{currentDataOwner:()=>({kind:"guest"}),ownerScope:()=>"guest"}:name.endsWith("/tracker")?{getGenerationStats:()=>stats}:name.endsWith("/generation-statistics")?{summarizeGenerations:()=>stats}:{};
+  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText+"\nexports.ChartView=StatsDashboardView;",{module:moduleObject,exports:moduleObject.exports,require:requireStub,Promise,localStorage:{},
     window:{devicePixelRatio:2,addEventListener(){},removeEventListener(){}},document:{documentElement:{}},getComputedStyle:()=>({getPropertyValue:()=>""}),
     MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{constructor(callback){this.callback=callback;activeObserver=this;}observe(){}disconnect(){this.disconnected=true;}}});
   function attach(node){if(!node||typeof node!=="object")return;if(node.type==="canvas")node.props.ref.current=canvas;const children=node.props?.children;if(Array.isArray(children))children.forEach(attach);else attach(children);}
-  function render(){cursor=0;attach(moduleObject.exports.ChartView({authenticated:false}));effects.splice(0).forEach(effect=>effect());}
-  return{render,async ready(){render();await Promise.resolve();await Promise.resolve();render();},resize(value){width=value;activeObserver.callback([{target:parent,contentRect:{width:Math.max(value,canvas.style.width.endsWith("px")?parseFloat(canvas.style.width):0)}}]);},canvas,draws,source,unmount(){for(const slot of slots)slot?.cleanup?.();return activeObserver.disconnected;}};
+  function render(){cursor=0;attach(moduleObject.exports.ChartView({authenticated:false,owner:"guest"}));effects.splice(0).forEach(effect=>effect());}
+  return{render,async ready(){render();for(let i=0;i<8;i++)await Promise.resolve();render();},resize(value){width=value;activeObserver.callback([{target:parent,contentRect:{width:Math.max(value,canvas.style.width.endsWith("px")?parseFloat(canvas.style.width):0)}}]);},canvas,draws,source,unmount(){for(const slot of slots)slot?.cleanup?.();return activeObserver.disconnected;}};
 }
 test("repeated content-box notifications do not grow the chart through container padding",async()=>{
   const f=fixture();await f.ready();for(let i=0;i<30;i++)f.resize(900);

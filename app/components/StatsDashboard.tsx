@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { getGenerationStats } from "@/app/lib/tracker";
 import { useAuth } from "./AuthProvider";
-import { getTasks } from "@/app/lib/auth";
+import { getToken, type LinkedTask } from "@/app/lib/auth";
+import { currentDataOwner, ownerScope } from "@/app/lib/data-owner";
+import { captureCreativeApi } from "@/app/lib/creative-agent-api";
 import { loadGenerationRecords, summarizeGenerations } from "@/app/lib/generation-statistics";
 import ActivityCalendar from "./ActivityCalendar";
 import { PluginSlot } from "./plugin-slots/PluginSlot";
@@ -16,13 +18,20 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "month", label: "每月" },
 ];
 
+function readStatsScope() {
+  if (typeof window === "undefined") return null;
+  try { return { owner: ownerScope(currentDataOwner(localStorage)), token: getToken() }; }
+  catch { return null; }
+}
+
 export default function StatsDashboard() {
   const { user, loading } = useAuth();
   if (loading) return <p role="status">正在确认统计账户…</p>;
-  return <StatsDashboardView key={user?.id ?? "guest"} authenticated={Boolean(user)} />;
+  const owner = user ? `user:${user.id}` : "guest";
+  return <StatsDashboardView key={owner} authenticated={Boolean(user)} owner={owner} />;
 }
 
-function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
+function StatsDashboardView({ authenticated, owner }: { authenticated: boolean; owner: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [period, setPeriod] = useState<Period>("day");
   const [page, setPage] = useState(0); // 0=生成频率, 1=活动日历
@@ -33,22 +42,40 @@ function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
   const [themeKey, setThemeKey] = useState(0);
 
   useEffect(() => {
-    let current = true;
+    let active = true;
+    const scope = readStatsScope();
+    const current = () => {
+      const live = readStatsScope();
+      return active && scope?.owner === owner && live?.owner === owner && live?.token === scope?.token;
+    };
     setPending(true);
     setError("");
-    const read = authenticated
-      ? loadGenerationRecords(cursor => getTasks({ status: "completed", limit: 100, cursor }), () => current).then(records => summarizeGenerations(records))
-      : Promise.resolve(getGenerationStats());
-    read.then(value => { if (current) setStats(value); })
-      .catch(error => { if (current) setError(error instanceof Error ? error.message : "统计读取失败，请重试"); })
-      .finally(() => { if (current) setPending(false); });
-    return () => { current = false; };
-  }, [authenticated, revision]);
+    const read = Promise.resolve().then(async () => {
+      if (!current()) return null;
+      if (!authenticated) return getGenerationStats();
+      // Capture once for every page: later pages cannot acquire another account's token.
+      const request = captureCreativeApi();
+      const records = await loadGenerationRecords(cursor => {
+        const params = new URLSearchParams({ status: "completed", limit: "100" });
+        if (cursor) params.set("cursor", cursor);
+        return request<{ tasks: LinkedTask[]; nextCursor: string | null }>(`/api/tasks?${params}`);
+      }, current);
+      return summarizeGenerations(records);
+    });
+    read.then(value => { if (value && current()) setStats(value); })
+      .catch(cause => { if (current()) setError(cause instanceof Error ? cause.message : "统计读取失败，请重试"); })
+      .finally(() => { if (current()) setPending(false); });
+    return () => { active = false; };
+  }, [authenticated, owner, revision]);
 
   useEffect(() => {
     const refresh = () => setRevision(value => value + 1);
     window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    window.addEventListener("tszh_data_owner_changed", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("tszh_data_owner_changed", refresh);
+    };
   }, []);
 
   const colorsRef = useRef({ warm: "#e89840", warmSoft: "#f8c878", cool: "#6088d8", aurora: "#9880d0", bg: "#0a1228", fg: "#d8dce8", muted: "#8890a8" });
@@ -77,7 +104,7 @@ function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
 
   // Canvas 生成频率图表
   useEffect(() => {
-    if (page !== 0 || !stats) return;
+    if (page !== 0 || !stats || readStatsScope()?.owner !== owner) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -185,7 +212,11 @@ function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
     });
     resize.observe(canvas.parentElement!);
     return () => resize.disconnect();
-  }, [period, stats, page, themeKey]);
+  }, [period, stats, page, themeKey, owner]);
+
+  const liveScope = readStatsScope();
+  if (!liveScope) return <p role="alert">统计账户存储暂不可用，请恢复浏览器存储后重新打开。</p>;
+  if (liveScope.owner !== owner) return <p role="status">正在切换统计账户…</p>;
 
   const genTotal = stats?.total ?? "—";
   const videoTotal = stats?.videoCount ?? "—";
@@ -198,7 +229,7 @@ function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
       {/* 头部 */}
       <div className="stats-header">
         <div>
-          <h2 className="stats-title page-title">工作统计</h2>
+          <h2 className="stats-title page-title"><span className="page-title__shiny">工作统计</span></h2>
           <p className="stats-sub">
             {authenticated ? "账户内成功媒体任务 · 按本机时区统计" : "本机最近 500 条生成记录"}
           </p>
@@ -225,7 +256,7 @@ function StatsDashboardView({ authenticated }: { authenticated: boolean }) {
       </div>
       {error && <p role="alert">{error}{stats ? "（保留上次读取的统计）" : ""}</p>}
       {!stats && !error && <p role="status">正在读取生成记录…</p>}
-      {stats?.total === 0 && <p role="status">暂无成功的媒体任务。已有任务完成并返回图片或视频后，将显示在这里。</p>}
+      {stats?.total === 0 && !pending && !error && <p role="status">暂无成功的媒体任务。已有任务完成并返回图片或视频后，将显示在这里。</p>}
 
       {stats && <>
       {/* 内容区域（带翻页箭头） */}

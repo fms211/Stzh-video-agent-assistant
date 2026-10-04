@@ -29,7 +29,15 @@ function harness({ narrow = false, reduced = false, fine = true, failRenderer = 
   const documentMock = Object.assign(target(), { hidden: false, hasFocus: () => true, activeElement: null, documentElement: {} });
   const scope = target();
   const host = { clientWidth: narrow ? 390 : 1440, clientHeight: 900, closest: () => scope, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
-  const canvas = Object.assign(target(), { width: 1, height: 1 });
+  const canvases = [];
+  host.children = [];
+  host.appendChild = canvas => { host.children.push(canvas); };
+  documentMock.createElement = tag => {
+    assert.equal(tag, "canvas");
+    const canvas = Object.assign(target(), { width: 1, height: 1, lost: false, hidden: false,
+      remove() { host.children = host.children.filter(child => child !== canvas); } });
+    canvases.push(canvas); return canvas;
+  };
   const queries = new Map([
     ["(prefers-reduced-motion: reduce)", Object.assign(target(), { matches: reduced })],
     ["(max-width: 720px)", Object.assign(target(), { matches: narrow })],
@@ -55,13 +63,13 @@ function harness({ narrow = false, reduced = false, fine = true, failRenderer = 
   let uniforms;
   class Renderer {
     constructor({ canvas }) {
-      if (failRenderer) throw new Error("WebGL unavailable");
+      if (failRenderer || canvas.lost) throw new Error("WebGL unavailable");
       metrics.renderers++;
       this.dpr = 1;
       this.gl = { canvas, LINK_STATUS: 1, clearColor() {}, getProgramParameter: () => !failShader,
-        deleteShader() { metrics.deletedShaders++; }, getExtension: () => ({ loseContext() { metrics.releasedContexts++; } }) };
+        deleteShader() { metrics.deletedShaders++; }, getExtension: () => ({ loseContext() { metrics.releasedContexts++; canvas.lost = true; } }) };
     }
-    setSize(width, height) { canvas.width = Math.floor(width * this.dpr); canvas.height = Math.floor(height * this.dpr); }
+    setSize(width, height) { this.gl.canvas.width = Math.floor(width * this.dpr); this.gl.canvas.height = Math.floor(height * this.dpr); }
     render() { metrics.draws.push({ time: clock, elapsed: uniforms.uTime.value, mouse: [...uniforms.uMouse.value], active: uniforms.uMouseActiveFactor.value }); }
   }
   class Program {
@@ -76,7 +84,6 @@ function harness({ narrow = false, reduced = false, fine = true, failRenderer = 
     useEffect(fn, deps) { pending.push({ slot: cursor++, fn, deps }); },
   };
   const jsx = (type, props) => {
-    if (props.ref && type === "canvas") props.ref.current = canvas;
     if (props.ref && props["data-background"] === "galaxy") props.ref.current = host;
     return { type, props };
   };
@@ -100,8 +107,8 @@ function harness({ narrow = false, reduced = false, fine = true, failRenderer = 
     cancelAnimationFrame(id) { frames.delete(id); },
   });
   return {
-    metrics, frames, scope, canvas, window: windowMock, document: documentMock, queries, observers,
-    get uniforms() { return uniforms; }, get mode() { return slots[4]; }, get pointerEnabled() { return slots[5]; },
+    metrics, frames, scope, get canvas() { return canvases.at(-1); }, get canvasCount() { return host.children.length; }, window: windowMock, document: documentMock, queries, observers,
+    get uniforms() { return uniforms; }, get mode() { return slots[3]; }, get pointerEnabled() { return slots[5]; },
     render(props = {}) {
       cursor = 0;
       pending = [];
@@ -110,12 +117,13 @@ function harness({ narrow = false, reduced = false, fine = true, failRenderer = 
         const prior = effects.get(slot);
         if (prior && deps.every((value, index) => Object.is(value, prior.deps[index]))) continue;
         prior?.cleanup?.();
-        effects.set(slot, { deps, cleanup: fn() });
+        effects.set(slot, { deps, setup: fn, cleanup: fn() });
       }
       return tree;
     },
     at(time) { clock = time; const scheduled = [...frames.values()]; frames.clear(); for (const fn of scheduled) fn(time); },
     setTheme(color) { hue = color; observers[1].fn(); },
+    replayEffects() { for (const effect of effects.values()) effect.cleanup?.(); for (const effect of effects.values()) effect.cleanup = effect.setup(); },
     unmount() { for (const effect of effects.values()) effect.cleanup?.(); effects.clear(); },
   };
 }
@@ -261,4 +269,15 @@ test("official mouse interaction switch and animation pause take effect independ
   h.render({ settings: normalizeGalaxySettings({ disableAnimation: false }) });
   assert.equal(h.mode, "running"); assert.equal(h.metrics.renderers, 1);
   h.unmount();
+});
+
+// Reproduce React Strict Mode's setup -> cleanup -> setup on the SAME component.
+test("Strict Mode replay owns a fresh context and leaves exactly one visible galaxy canvas", () => {
+  const h = harness(); h.render(); const first = h.canvas;
+  h.replayEffects();
+  assert.equal(first.lost, true); assert.notEqual(h.canvas, first);
+  assert.equal(h.mode, "running"); assert.equal(h.canvas.hidden, false);
+  assert.equal(h.canvasCount, 1); assert.equal(h.frames.size, 1);
+  assert.equal(h.scope.count("pointermove"), 1); assert.equal(h.metrics.renderers, 2);
+  h.unmount(); assert.equal(h.canvasCount, 0); assert.equal(h.frames.size, 0);
 });
